@@ -1,0 +1,59 @@
+services:
+  localstack:
+    container_name: localstack
+    image: localstack/localstack
+    ports:
+      - '127.0.0.1:4566:4566'
+    environment:
+      - DEBUG=1
+      - SERVICES=s3,dynamodb,sns,sqs,lambda
+      - DEFAULT_REGION=us-west-2
+      - LAMBDA_EXECUTOR=local
+    volumes:
+      - './volume:/var/lib/localstack'
+      - '/var/run/docker.sock:/var/run/docker.sock'
+      - './scripts:/etc/localstack/init/ready.d'
+      - './app/lambdas/target:/opt/lambdas'
+    depends_on:
+      - grafana
+
+  grafana:
+    container_name: grafana-lgtm
+    image: grafana/otel-lgtm
+    ports:
+      - '3000:3000'
+      - '4317:4317'
+      - '4318:4318'
+    environment:
+      - GF_PATHS_DATA=/data/grafana
+
+  api:
+    container_name: media-service-api
+    build:
+      context: ./app/api
+      dockerfile: Dockerfile
+    ports:
+      - '9000:9000'
+    environment:
+      - APP_PORT=9000
+      - AWS_REGION=us-west-2
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - MEDIA_DYNAMODB_TABLE_NAME=media
+      - MEDIA_BUCKET_NAME=media-bucket
+      - MEDIA_MANAGEMENT_TOPIC_ARN=arn:aws:sns:us-west-2:000000000000:media-management-topic
+      - AWS_DYNAMODB_ENDPOINT=http://localstack:4566
+      - AWS_S3_ENDPOINT=http://localstack:4566
+      - AWS_S3_PRESIGNER_ENDPOINT=http://127.0.0.1:4566
+      - AWS_SNS_ENDPOINT=http://localstack:4566
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://grafana:4318
+      - OTEL_SERVICE_NAME=media-service
+    depends_on:
+      - localstack
+      - grafana
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/v1/media/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s

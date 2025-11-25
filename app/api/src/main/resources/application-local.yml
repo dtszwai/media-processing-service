@@ -1,0 +1,25 @@
+# Local development configuration (use with --spring.profiles.active=local)
+server:
+  port: 9000
+
+aws:
+  region: us-west-2
+  dynamodb:
+    table-name: media
+    endpoint: http://localhost:4566
+  s3:
+    bucket-name: media-bucket
+    endpoint: http://localhost:4566
+  sns:
+    topic-arn: arn:aws:sns:us-west-2:000000000000:media-management-topic
+    endpoint: http://localhost:4566
+
+otel:
+  exporter:
+    otlp:
+      endpoint: http://localhost:4318
+
+logging:
+  level:
+    com.mediaservice: DEBUG
+    software.amazon.awssdk: INFO

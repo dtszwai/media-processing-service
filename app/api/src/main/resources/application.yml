@@ -1,0 +1,58 @@
+server:
+  port: ${APP_PORT:9000}
+
+spring:
+  application:
+    name: media-service
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+# AWS Configuration
+aws:
+  region: ${AWS_REGION:us-west-2}
+  dynamodb:
+    table-name: ${MEDIA_DYNAMODB_TABLE_NAME:media}
+    endpoint: ${AWS_DYNAMODB_ENDPOINT:}
+  s3:
+    bucket-name: ${MEDIA_BUCKET_NAME:media-bucket}
+    endpoint: ${AWS_S3_ENDPOINT:}
+    presigner-endpoint: ${AWS_S3_PRESIGNER_ENDPOINT:}
+  sns:
+    topic-arn: ${MEDIA_MANAGEMENT_TOPIC_ARN:}
+    endpoint: ${AWS_SNS_ENDPOINT:}
+
+# Media Configuration
+media:
+  width:
+    default: 500
+    min: 100
+    max: 1024
+  max-file-size: 104857600  # 100MB in bytes
+
+# OpenTelemetry Configuration
+otel:
+  exporter:
+    otlp:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}
+  service:
+    name: media-service
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    root: INFO
+    com.mediaservice: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"

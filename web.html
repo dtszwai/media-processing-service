@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Media Processing Service</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      }
+      body {
+        background: #f9fafb;
+      }
+      .upload-zone {
+        border: 2px dashed #d1d5db;
+        transition: all 0.2s ease;
+      }
+      .upload-zone:hover,
+      .upload-zone.dragover {
+        border-color: #3b82f6;
+        background: #eff6ff;
+      }
+      .upload-zone.has-file {
+        border-color: #10b981;
+        background: #f0fdf4;
+      }
+      .btn-primary {
+        background: #111827;
+        color: white;
+        transition: background 0.2s;
+      }
+      .btn-primary:hover {
+        background: #1f2937;
+      }
+      .btn-primary:disabled {
+        background: #9ca3af;
+        cursor: not-allowed;
+      }
+      .status-badge {
+        padding: 2px 10px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .status-pending {
+        background: #fef3c7;
+        color: #92400e;
+      }
+      .status-processing {
+        background: #dbeafe;
+        color: #1e40af;
+      }
+      .status-complete {
+        background: #d1fae5;
+        color: #065f46;
+      }
+      .status-error {
+        background: #fee2e2;
+        color: #991b1b;
+      }
+      .status-uploading {
+        background: #f3f4f6;
+        color: #374151;
+      }
+      .pulse {
+        animation: pulse 1.5s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.6;
+        }
+      }
+
+      .card {
+        background: white;
+        border: 1px solid #e5e7eb;
+      }
+      .image-box {
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 1rem;
+      }
+      .image-box img {
+        width: 100%;
+        height: 180px;
+        object-fit: contain;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen">
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200">
+      <div class="max-w-5xl mx-auto px-6 py-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-3">
+            <svg
+              class="w-8 h-8 text-gray-800"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+              ></path>
+            </svg>
+            <span class="text-lg font-semibold text-gray-900"
+              >Media Processing Service</span
+            >
+          </div>
+          <div
+            id="apiStatus"
+            class="flex items-center space-x-2 text-sm text-gray-500"
+          >
+            <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+            <span>Connected</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-5xl mx-auto px-6 py-8">
+      <div class="grid lg:grid-cols-3 gap-8">
+        <!-- Upload Section -->
+        <div class="lg:col-span-2 space-y-6">
+          <div class="card rounded-lg p-6">
+            <h2 class="text-base font-semibold text-gray-900 mb-4">
+              Upload Image
+            </h2>
+
+            <!-- Upload Zone -->
+            <div
+              id="uploadZone"
+              class="upload-zone rounded-lg p-8 text-center cursor-pointer"
+              onclick="triggerFileSelect()"
+            >
+              <input
+                type="file"
+                id="fileInput"
+                accept="image/*"
+                class="hidden"
+                onchange="handleFileSelect(event)"
+              />
+              <div id="uploadPlaceholder">
+                <svg
+                  class="w-10 h-10 mx-auto text-gray-400 mb-3"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.5"
+                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                  ></path>
+                </svg>
+                <p class="text-gray-600 text-sm">
+                  Drop image here or click to browse
+                </p>
+                <p class="text-gray-400 text-xs mt-1">
+                  JPG, PNG, GIF, WebP supported
+                </p>
+              </div>
+              <div id="filePreview" class="hidden">
+                <img id="previewImage" class="max-h-24 mx-auto rounded mb-2" />
+                <p id="fileName" class="text-gray-800 text-sm font-medium"></p>
+                <p id="fileSize" class="text-gray-400 text-xs"></p>
+              </div>
+            </div>
+
+            <!-- Options -->
+            <div class="flex flex-wrap items-end gap-4 mt-4">
+              <div class="flex-1 min-w-48">
+                <label class="block text-xs font-medium text-gray-600 mb-2"
+                  >Target Width</label
+                >
+                <div class="flex items-center space-x-3">
+                  <input
+                    type="range"
+                    id="widthSlider"
+                    min="100"
+                    max="1024"
+                    value="500"
+                    class="flex-1 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                    oninput="updateWidthDisplay()"
+                  />
+                  <span
+                    id="widthDisplay"
+                    class="text-xs font-mono text-gray-600 bg-gray-100 px-2 py-1 rounded"
+                    >500px</span
+                  >
+                </div>
+              </div>
+              <button
+                id="uploadBtn"
+                onclick="uploadImage()"
+                disabled
+                class="btn-primary px-5 py-2 text-sm font-medium rounded-lg"
+              >
+                Process Image
+              </button>
+            </div>
+
+
+          </div>
+
+          <!-- Result Section -->
+          <div id="resultSection" class="hidden card rounded-lg p-6">
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="text-base font-semibold text-gray-900">Result</h2>
+              <a
+                id="downloadLink"
+                href="#"
+                target="_blank"
+                class="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center space-x-1"
+              >
+                <span>Download</span>
+                <svg
+                  class="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                  ></path>
+                </svg>
+              </a>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+              <div class="image-box">
+                <p class="text-xs font-medium text-gray-500 mb-2">Original</p>
+                <img id="originalImage" src="" alt="Original" />
+                <p id="originalSize" class="text-xs text-gray-400 mt-2"></p>
+              </div>
+              <div class="image-box">
+                <p class="text-xs font-medium text-gray-500 mb-2">Processed</p>
+                <img id="processedImage" src="" alt="Processed" />
+                <p id="processedSize" class="text-xs text-gray-400 mt-2"></p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- History Sidebar -->
+        <div class="lg:col-span-1">
+          <div class="card rounded-lg p-5 sticky top-6">
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="text-base font-semibold text-gray-900">History</h2>
+              <span id="historyCount" class="text-xs text-gray-400"
+                >0 items</span
+              >
+            </div>
+            <div id="historyList" class="space-y-2 max-h-80 overflow-y-auto">
+              <p
+                id="emptyHistory"
+                class="text-sm text-gray-400 text-center py-6"
+              >
+                No uploads yet
+              </p>
+            </div>
+            <button
+              id="clearHistory"
+              onclick="clearHistory()"
+              class="hidden w-full mt-3 pt-3 border-t border-gray-100 text-xs text-gray-400 hover:text-red-500 transition-colors"
+            >
+              Clear history
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const API_BASE = 'http://localhost:9000/v1/media';
+      let selectedFile = null;
+      let history = [];
+      let isProcessing = false;
+
+      // Drag and drop
+      const uploadZone = document.getElementById('uploadZone');
+      ['dragenter', 'dragover', 'dragleave', 'drop'].forEach((event) => {
+        uploadZone.addEventListener(event, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        });
+      });
+      ['dragenter', 'dragover'].forEach((event) => {
+        uploadZone.addEventListener(event, () => {
+          if (!isProcessing) uploadZone.classList.add('dragover');
+        });
+      });
+      ['dragleave', 'drop'].forEach((event) => {
+        uploadZone.addEventListener(event, () =>
+          uploadZone.classList.remove('dragover')
+        );
+      });
+      uploadZone.addEventListener('drop', (e) => {
+        if (isProcessing) return;
+        const files = e.dataTransfer.files;
+        if (files.length) handleFile(files[0]);
+      });
+
+      function triggerFileSelect() {
+        if (isProcessing) return;
+        document.getElementById('fileInput').click();
+      }
+
+      function handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (file) handleFile(file);
+      }
+
+      function handleFile(file) {
+        if (isProcessing) return;
+        if (!file.type.startsWith('image/')) {
+          alert('Please select an image file');
+          return;
+        }
+        selectedFile = file;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          document.getElementById('previewImage').src = e.target.result;
+          document.getElementById('fileName').textContent = file.name;
+          document.getElementById('fileSize').textContent = formatFileSize(
+            file.size
+          );
+          document.getElementById('uploadPlaceholder').classList.add('hidden');
+          document.getElementById('filePreview').classList.remove('hidden');
+          uploadZone.classList.add('has-file');
+          document.getElementById('uploadBtn').disabled = false;
+        };
+        reader.readAsDataURL(file);
+      }
+
+      function updateWidthDisplay() {
+        document.getElementById('widthDisplay').textContent =
+          document.getElementById('widthSlider').value + 'px';
+      }
+
+      function formatFileSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+      }
+
+      async function uploadImage() {
+        if (!selectedFile || isProcessing) return;
+
+        const widthSlider = document.getElementById('widthSlider');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const resultSection = document.getElementById('resultSection');
+        
+        isProcessing = true;
+        
+        // UI Updates for processing state
+        uploadBtn.disabled = true;
+        uploadBtn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg> Processing...`;
+        
+        widthSlider.disabled = true;
+        uploadZone.classList.add('opacity-50', 'pointer-events-none');
+        resultSection.classList.add('hidden');
+
+        const width = widthSlider.value;
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        formData.append('width', width);
+
+        try {
+          const response = await fetch(`${API_BASE}/upload`, {
+            method: 'POST',
+            body: formData,
+          });
+          const data = await response.json();
+
+          if (!data.mediaId) throw new Error('Upload failed');
+
+          const mediaId = data.mediaId;
+          const fileName = selectedFile.name;
+          const originalSize = selectedFile.size;
+
+          const historyItem = {
+            id: mediaId,
+            name: fileName,
+            width,
+            status: 'PROCESSING',
+            timestamp: new Date(),
+            originalSize,
+          };
+          addToHistory(historyItem);
+
+          let status = 'PROCESSING';
+          while (status === 'PENDING' || status === 'PROCESSING') {
+            await new Promise((r) => setTimeout(r, 800));
+            const statusRes = await fetch(`${API_BASE}/${mediaId}/status`);
+            const statusData = await statusRes.json();
+            status = statusData.status;
+            updateHistoryStatus(mediaId, status);
+          }
+
+          if (status === 'COMPLETE') {
+            const downloadUrl = `${API_BASE}/${mediaId}/download`;
+            const originalUrl = `http://127.0.0.1:4566/media-bucket/uploads/${mediaId}/${fileName}`;
+
+            document.getElementById('originalImage').src = originalUrl;
+            document.getElementById('processedImage').src = downloadUrl;
+            document.getElementById('originalSize').textContent =
+              formatFileSize(originalSize);
+            document.getElementById('downloadLink').href = downloadUrl;
+            resultSection.classList.remove('hidden');
+
+            fetch(downloadUrl)
+              .then((r) => r.blob())
+              .then((blob) => {
+                document.getElementById(
+                  'processedSize'
+                ).textContent = `${formatFileSize(blob.size)} @ ${width}px`;
+                updateHistoryItem(mediaId, {
+                  processedSize: blob.size,
+                  downloadUrl,
+                });
+              })
+              .catch(() => {});
+
+            updateHistoryStatus(mediaId, 'COMPLETE');
+          } else {
+            throw new Error('Processing failed: ' + status);
+          }
+        } catch (error) {
+          console.error("Error during image upload or processing:", error);
+          alert("An error occurred: " + error.message);
+        } finally {
+          isProcessing = false;
+          uploadBtn.innerHTML = 'Process Image';
+          uploadBtn.disabled = false;
+          widthSlider.disabled = false;
+          uploadZone.classList.remove('opacity-50', 'pointer-events-none');
+        }
+      }
+
+      function addToHistory(item) {
+        history.unshift(item);
+        renderHistory();
+      }
+
+      function updateHistoryStatus(id, status) {
+        const item = history.find((h) => h.id === id);
+        if (item) {
+          item.status = status;
+          renderHistory();
+        }
+      }
+
+      function updateHistoryItem(id, updates) {
+        const item = history.find((h) => h.id === id);
+        if (item) Object.assign(item, updates);
+      }
+
+      function renderHistory() {
+        const list = document.getElementById('historyList');
+        const empty = document.getElementById('emptyHistory');
+        const count = document.getElementById('historyCount');
+        const clearBtn = document.getElementById('clearHistory');
+
+        count.textContent =
+          history.length + (history.length === 1 ? ' item' : ' items');
+
+        if (history.length === 0) {
+          if (empty) empty.classList.remove('hidden');
+          clearBtn.classList.add('hidden');
+          list.innerHTML =
+            '<p id="emptyHistory" class="text-sm text-gray-400 text-center py-6">No uploads yet</p>';
+          return;
+        }
+
+        clearBtn.classList.remove('hidden');
+        list.innerHTML = history
+          .map(
+            (item) => `
+                <div class="p-3 rounded-lg bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors" onclick="viewHistoryItem('${
+                  item.id
+                }')">
+                    <div class="flex items-center justify-between">
+                        <div class="flex-1 min-w-0 mr-3">
+                            <p class="text-sm text-gray-800 truncate">${
+                              item.name
+                            }</p>
+                            <p class="text-xs text-gray-400 mt-0.5">${
+                              item.width
+                            }px · ${formatTime(item.timestamp)}</p>
+                        </div>
+                        <span class="status-badge status-${item.status.toLowerCase()}">${
+              item.status
+            }</span>
+                    </div>
+                </div>
+            `
+          )
+          .join('');
+      }
+
+      function viewHistoryItem(id) {
+        const item = history.find((h) => h.id === id);
+        if (!item || item.status !== 'COMPLETE') return;
+
+        const downloadUrl = `${API_BASE}/${id}/download`;
+        const originalUrl = `http://127.0.0.1:4566/media-bucket/uploads/${id}/${item.name}`;
+
+        document.getElementById('originalImage').src = originalUrl;
+        document.getElementById('processedImage').src = downloadUrl;
+        document.getElementById('originalSize').textContent = formatFileSize(
+          item.originalSize
+        );
+        document.getElementById('processedSize').textContent =
+          item.processedSize
+            ? `${formatFileSize(item.processedSize)} @ ${item.width}px`
+            : '';
+        document.getElementById('downloadLink').href = downloadUrl;
+        document.getElementById('resultSection').classList.remove('hidden');
+        document
+          .getElementById('resultSection')
+          .scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+
+      function formatTime(date) {
+        const diff = Math.floor((new Date() - date) / 1000);
+        if (diff < 60) return 'Just now';
+        if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+        return date.toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+      }
+
+      function clearHistory() {
+        history = [];
+        renderHistory();
+        document.getElementById('resultSection').classList.add('hidden');
+      }
+
+      // Check API
+      fetch(`${API_BASE}/health`)
+        .then(() => {
+          document.getElementById('apiStatus').innerHTML =
+            '<span class="w-2 h-2 bg-green-500 rounded-full"></span><span>Connected</span>';
+        })
+        .catch(() => {
+          document.getElementById('apiStatus').innerHTML =
+            '<span class="w-2 h-2 bg-red-500 rounded-full"></span><span>Disconnected</span>';
+        });
+    </script>
+  </body>
+</html>
