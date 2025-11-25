@@ -8,30 +8,7 @@ This service handles image uploads asynchronously using an event-driven architec
 
 ## Architecture
 
-```
-┌─────────┐     ┌─────────────┐     ┌────────┐
-│  Client │────▶│  REST API   │────▶│   S3   │
-└─────────┘     │(Spring Boot)│     │(uploads)│
-                └──────┬──────┘     └────────┘
-                       │
-                       ▼
-                ┌─────────────┐
-                │  DynamoDB   │
-                │  (metadata) │
-                └─────────────┘
-                       │
-                       ▼
-                ┌─────────────┐
-                │   SNS/SQS   │◀── Event buffer (decouples API from processing)
-                │   (events)  │
-                └──────┬──────┘
-                       │
-                       ▼
-                ┌─────────────┐     ┌────────┐
-                │   Lambda    │────▶│   S3   │
-                │ (processing)│     │(resized)│
-                └─────────────┘     └────────┘
-```
+![High-Level System Architecture](images/high-level-system-architecture.png)
 
 **Key Design Decisions:**
 
