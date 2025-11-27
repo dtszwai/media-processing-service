@@ -9,12 +9,7 @@ import java.net.URI;
 
 public class AwsClientFactory {
 
-  private static final String AWS_REGION = System.getenv("AWS_REGION") != null
-      ? System.getenv("AWS_REGION")
-      : "us-west-2";
-
-  private static final String DYNAMODB_ENDPOINT = System.getenv("AWS_DYNAMODB_ENDPOINT");
-  private static final String S3_ENDPOINT = System.getenv("AWS_S3_ENDPOINT");
+  private static final LambdaConfig CONFIG = LambdaConfig.getInstance();
 
   private static DynamoDbClient dynamoDbClient;
   private static S3Client s3Client;
@@ -22,13 +17,11 @@ public class AwsClientFactory {
   public static synchronized DynamoDbClient getDynamoDbClient() {
     if (dynamoDbClient == null) {
       var builder = DynamoDbClient.builder()
-          .region(Region.of(AWS_REGION))
+          .region(Region.of(CONFIG.getAwsRegion()))
           .credentialsProvider(DefaultCredentialsProvider.create());
-
-      if (DYNAMODB_ENDPOINT != null && !DYNAMODB_ENDPOINT.isEmpty()) {
-        builder.endpointOverride(URI.create(DYNAMODB_ENDPOINT));
+      if (CONFIG.getDynamoDbEndpoint() != null) {
+        builder.endpointOverride(URI.create(CONFIG.getDynamoDbEndpoint()));
       }
-
       dynamoDbClient = builder.build();
     }
     return dynamoDbClient;
@@ -37,14 +30,12 @@ public class AwsClientFactory {
   public static synchronized S3Client getS3Client() {
     if (s3Client == null) {
       var builder = S3Client.builder()
-          .region(Region.of(AWS_REGION))
+          .region(Region.of(CONFIG.getAwsRegion()))
           .credentialsProvider(DefaultCredentialsProvider.create())
           .forcePathStyle(true);
-
-      if (S3_ENDPOINT != null && !S3_ENDPOINT.isEmpty()) {
-        builder.endpointOverride(URI.create(S3_ENDPOINT));
+      if (CONFIG.getS3Endpoint() != null) {
+        builder.endpointOverride(URI.create(CONFIG.getS3Endpoint()));
       }
-
       s3Client = builder.build();
     }
     return s3Client;

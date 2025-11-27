@@ -17,8 +17,9 @@ This directory contains the application source code.
 ├── lambdas/              # AWS Lambda functions
 │   ├── src/main/java/
 │   │   └── com/mediaservice/lambda/
-│   │       ├── ProcessMediaUploadHandler.java
 │   │       ├── ManageMediaHandler.java
+│   │       ├── config/
+│   │       ├── model/
 │   │       └── service/
 │   └── pom.xml
 └── docs/                 # API specs, schemas
@@ -26,15 +27,15 @@ This directory contains the application source code.
 
 ## API Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/v1/media/health` | Health check |
-| POST | `/v1/media/upload` | Upload an image |
-| GET | `/v1/media/{id}` | Get media metadata |
-| GET | `/v1/media/{id}/status` | Get processing status |
-| GET | `/v1/media/{id}/download` | Download processed image |
-| PUT | `/v1/media/{id}/resize` | Resize an existing image |
-| DELETE | `/v1/media/{id}` | Delete media |
+| Method | Endpoint                  | Description              |
+| ------ | ------------------------- | ------------------------ |
+| GET    | `/v1/media/health`        | Health check             |
+| POST   | `/v1/media/upload`        | Upload an image          |
+| GET    | `/v1/media/{id}`          | Get media metadata       |
+| GET    | `/v1/media/{id}/status`   | Get processing status    |
+| GET    | `/v1/media/{id}/download` | Download processed image |
+| PUT    | `/v1/media/{id}/resize`   | Resize an existing image |
+| DELETE | `/v1/media/{id}`          | Delete media             |
 
 ## Processing Flow
 
@@ -47,11 +48,11 @@ This directory contains the application source code.
 
 ## Configuration
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `APP_PORT` | API server port | 9000 |
-| `AWS_REGION` | AWS region | us-west-2 |
-| `MEDIA_BUCKET_NAME` | S3 bucket name | media-bucket |
-| `MEDIA_DYNAMODB_TABLE_NAME` | DynamoDB table | media |
+| Variable                    | Description     | Default      |
+| --------------------------- | --------------- | ------------ |
+| `APP_PORT`                  | API server port | 9000         |
+| `AWS_REGION`                | AWS region      | us-west-2    |
+| `MEDIA_BUCKET_NAME`         | S3 bucket name  | media-bucket |
+| `MEDIA_DYNAMODB_TABLE_NAME` | DynamoDB table  | media        |
 
 See root `docker-compose.yml` for full configuration.
