@@ -4,12 +4,12 @@ import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.SQSEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mediaservice.lambda.config.OpenTelemetryInitializer;
 import com.mediaservice.lambda.model.MediaEvent;
 import com.mediaservice.lambda.model.MediaStatus;
 import com.mediaservice.lambda.service.DynamoDbService;
 import com.mediaservice.lambda.service.ImageProcessingService;
 import com.mediaservice.lambda.service.S3Service;
-import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongCounter;
@@ -33,6 +33,9 @@ import java.io.IOException;
  * - media.v1.resize: Resize existing media to a new width
  */
 public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
+  static {
+    OpenTelemetryInitializer.initialize();
+  }
 
   private static final Logger logger = LoggerFactory.getLogger(ManageMediaHandler.class);
   private static final String DELETE_EVENT_TYPE = "media.v1.delete";
@@ -56,8 +59,12 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
     this.s3Service = new S3Service();
     this.imageProcessingService = new ImageProcessingService();
     this.objectMapper = new ObjectMapper();
-    this.tracer = GlobalOpenTelemetry.getTracer("media-service-manage-media-lambda");
-    var meter = GlobalOpenTelemetry.getMeter("media-service-manage-media-lambda");
+
+    // Initialize OpenTelemetry with OTLP exporters
+    var openTelemetry = OpenTelemetryInitializer.initialize();
+    this.tracer = openTelemetry.getTracer("media-service-manage-media-lambda");
+    var meter = openTelemetry.getMeter("media-service-manage-media-lambda");
+
     this.deleteSuccessCounter = meter.counterBuilder("lambda.delete_media.success")
         .setDescription("Count of successful media delete operations")
         .build();
@@ -81,10 +88,14 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
   @Override
   public String handleRequest(SQSEvent sqsEvent, Context context) {
     logger.info("ManageMedia Lambda invoked");
-    for (var message : sqsEvent.getRecords()) {
-      processMessage(message);
+    try {
+      for (var message : sqsEvent.getRecords()) {
+        processMessage(message);
+      }
+      return "OK";
+    } finally {
+      OpenTelemetryInitializer.flush();
     }
-    return "OK";
   }
 
   private void processMessage(SQSEvent.SQSMessage message) {

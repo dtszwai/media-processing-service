@@ -98,7 +98,7 @@ create_lambda_function() {
         --zip-file "fileb://${LAMBDA_JAR_PATH}" \
         --timeout 60 \
         --memory-size 512 \
-        --environment "Variables={AWS_REGION=${AWS_REGION},MEDIA_BUCKET_NAME=${BUCKET_NAME},MEDIA_DYNAMODB_TABLE_NAME=${TABLE_NAME},AWS_S3_ENDPOINT=http://host.docker.internal:4566,AWS_DYNAMODB_ENDPOINT=http://host.docker.internal:4566}" \
+        --environment "Variables={AWS_REGION=${AWS_REGION},MEDIA_BUCKET_NAME=${BUCKET_NAME},MEDIA_DYNAMODB_TABLE_NAME=${TABLE_NAME},AWS_S3_ENDPOINT=http://host.docker.internal:4566,AWS_DYNAMODB_ENDPOINT=http://host.docker.internal:4566,OTEL_EXPORTER_OTLP_ENDPOINT=http://grafana-lgtm:4318,OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf,OTEL_SERVICE_NAME=media-service-manage-media-handler,OTEL_LOGS_EXPORTER=otlp}" \
         --region "${AWS_REGION}"
     log "Lambda function created: ${LAMBDA_NAME}"
 }

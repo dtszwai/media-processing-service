@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <appender name="Console" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="OpenTelemetry" class="io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender">
+        <captureExperimentalAttributes>true</captureExperimentalAttributes>
+        <captureCodeAttributes>true</captureCodeAttributes>
+    </appender>
+
+    <logger name="com.mediaservice" level="DEBUG" additivity="false">
+        <appender-ref ref="Console"/>
+        <appender-ref ref="OpenTelemetry"/>
+    </logger>
+
+    <logger name="software.amazon.awssdk" level="INFO" additivity="false">
+        <appender-ref ref="Console"/>
+        <appender-ref ref="OpenTelemetry"/>
+    </logger>
+
+    <root level="INFO">
+        <appender-ref ref="Console"/>
+        <appender-ref ref="OpenTelemetry"/>
+    </root>
+</configuration>
