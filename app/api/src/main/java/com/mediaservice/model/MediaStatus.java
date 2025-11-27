@@ -4,5 +4,6 @@ public enum MediaStatus {
   PENDING,
   PROCESSING,
   COMPLETE,
-  ERROR
+  ERROR,
+  DELETING
 }

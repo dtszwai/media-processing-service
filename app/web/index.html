@@ -66,6 +66,10 @@
         background: #f3f4f6;
         color: #374151;
       }
+      .status-deleting {
+        background: #fecaca;
+        color: #7f1d1d;
+      }
       .pulse {
         animation: pulse 1.5s ease-in-out infinite;
       }
@@ -194,7 +198,6 @@
                 <p id="mediaName" class="text-xs text-gray-500 mt-0.5"></p>
               </div>
               <div class="flex items-center space-x-3">
-                <span id="mediaId" class="text-xs font-mono text-gray-400"></span>
                 <a
                   id="downloadLink"
                   href="#"
@@ -239,7 +242,7 @@
             </div>
 
             <!-- Image Comparison -->
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-2 gap-4 mb-4">
               <div class="image-box">
                 <p class="text-xs font-medium text-gray-500 mb-2">Original</p>
                 <img id="originalImage" src="" alt="Original" />
@@ -255,6 +258,40 @@
                 </div>
               </div>
             </div>
+
+            <!-- Media Metadata -->
+            <div class="p-3 bg-gray-50 rounded-lg">
+              <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                <div>
+                  <span class="text-gray-400">Media ID:</span>
+                  <p id="metaMediaId" class="font-mono text-gray-600 truncate"></p>
+                </div>
+                <div>
+                  <span class="text-gray-400">Status:</span>
+                  <p id="metaStatus" class="text-gray-600"></p>
+                </div>
+                <div>
+                  <span class="text-gray-400">MIME Type:</span>
+                  <p id="metaMimetype" class="text-gray-600"></p>
+                </div>
+                <div>
+                  <span class="text-gray-400">Original Size:</span>
+                  <p id="metaSize" class="text-gray-600"></p>
+                </div>
+                <div>
+                  <span class="text-gray-400">Width:</span>
+                  <p id="metaWidth" class="text-gray-600"></p>
+                </div>
+                <div>
+                  <span class="text-gray-400">Created:</span>
+                  <p id="metaCreatedAt" class="text-gray-600"></p>
+                </div>
+                <div>
+                  <span class="text-gray-400">Updated:</span>
+                  <p id="metaUpdatedAt" class="text-gray-600"></p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -262,19 +299,24 @@
         <div class="lg:col-span-1">
           <div class="card rounded-lg p-5 sticky top-6">
             <div class="flex items-center justify-between mb-4">
-              <h2 class="text-base font-semibold text-gray-900">History</h2>
-              <span id="historyCount" class="text-xs text-gray-400">0 items</span>
+              <h2 class="text-base font-semibold text-gray-900">All Media</h2>
+              <div class="flex items-center space-x-2">
+                <span id="historyCount" class="text-xs text-gray-400">0 items</span>
+                <button onclick="loadAllMedia()" class="text-gray-400 hover:text-gray-600" title="Refresh">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    ></path>
+                  </svg>
+                </button>
+              </div>
             </div>
             <div id="historyList" class="space-y-2 max-h-80 overflow-y-auto">
               <p id="emptyHistory" class="text-sm text-gray-400 text-center py-6">No uploads yet</p>
             </div>
-            <button
-              id="clearHistory"
-              onclick="clearHistory()"
-              class="hidden w-full mt-3 pt-3 border-t border-gray-100 text-xs text-gray-400 hover:text-red-500 transition-colors"
-            >
-              Clear history
-            </button>
           </div>
         </div>
       </div>
@@ -283,9 +325,22 @@
     <script>
       const API_BASE = "http://localhost:9000/v1/media";
       let selectedFile = null;
-      let history = [];
+      let mediaList = [];
       let isProcessing = false;
       let currentMediaId = null;
+
+      // Load all media from API on page load
+      async function loadAllMedia() {
+        try {
+          const response = await fetch(API_BASE);
+          if (response.ok) {
+            mediaList = await response.json();
+            renderHistory();
+          }
+        } catch (error) {
+          console.error("Failed to load media:", error);
+        }
+      }
 
       // Drag and drop
       const uploadZone = document.getElementById("uploadZone");
@@ -350,6 +405,17 @@
         return (bytes / (1024 * 1024)).toFixed(1) + " MB";
       }
 
+      function formatRelativeTime(isoString) {
+        const date = new Date(isoString);
+        const now = new Date();
+        const diff = Math.floor((now - date) / 1000);
+        if (diff < 60) return "Just now";
+        if (diff < 3600) return Math.floor(diff / 60) + "m ago";
+        if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
+        if (diff < 604800) return Math.floor(diff / 86400) + "d ago";
+        return date.toLocaleDateString();
+      }
+
       async function uploadImage() {
         if (!selectedFile || isProcessing) return;
 
@@ -395,12 +461,13 @@
             status: "PENDING",
             timestamp: new Date(),
             originalSize,
+            mimetype: selectedFile.type,
           };
           addToHistory(historyItem);
 
           let status = "PENDING";
           while (status === "PENDING" || status === "PROCESSING") {
-            await new Promise((r) => setTimeout(r, 800));
+            await new Promise((r) => setTimeout(r, 3000));
             const statusRes = await fetch(`${API_BASE}/${mediaId}/status`);
             const statusData = await statusRes.json();
             status = statusData.status;
@@ -409,8 +476,11 @@
 
           if (status === "COMPLETE") {
             currentMediaId = mediaId;
-            showResult(mediaId, fileName, originalSize, width);
-            updateHistoryStatus(mediaId, "COMPLETE");
+            const mediaItem = mediaList.find((h) => h.mediaId === mediaId);
+            if (mediaItem) {
+              mediaItem.status = "COMPLETE";
+              showResult(mediaItem);
+            }
           } else {
             throw new Error("Processing failed: " + status);
           }
@@ -427,12 +497,21 @@
       }
 
       function addToHistory(item) {
-        history.unshift(item);
+        // Convert to API format
+        const mediaItem = {
+          mediaId: item.id,
+          name: item.name,
+          width: parseInt(item.width),
+          status: item.status,
+          size: item.originalSize,
+          mimetype: item.mimetype,
+        };
+        mediaList.unshift(mediaItem);
         renderHistory();
       }
 
       function updateHistoryStatus(id, status) {
-        const item = history.find((h) => h.id === id);
+        const item = mediaList.find((h) => h.mediaId === id);
         if (item) {
           item.status = status;
           renderHistory();
@@ -440,7 +519,7 @@
       }
 
       function updateHistoryItem(id, updates) {
-        const item = history.find((h) => h.id === id);
+        const item = mediaList.find((h) => h.mediaId === id);
         if (item) Object.assign(item, updates);
       }
 
@@ -448,30 +527,45 @@
         const list = document.getElementById("historyList");
         const empty = document.getElementById("emptyHistory");
         const count = document.getElementById("historyCount");
-        const clearBtn = document.getElementById("clearHistory");
 
-        count.textContent = history.length + (history.length === 1 ? " item" : " items");
+        count.textContent = mediaList.length + (mediaList.length === 1 ? " item" : " items");
 
-        if (history.length === 0) {
+        if (mediaList.length === 0) {
           if (empty) empty.classList.remove("hidden");
-          clearBtn.classList.add("hidden");
-          list.innerHTML = '<p id="emptyHistory" class="text-sm text-gray-400 text-center py-6">No uploads yet</p>';
+          list.innerHTML = '<p id="emptyHistory" class="text-sm text-gray-400 text-center py-6">No media yet</p>';
           return;
         }
 
-        clearBtn.classList.remove("hidden");
-        list.innerHTML = history
+        list.innerHTML = mediaList
           .map(
             (item) => `
-                <div class="p-3 rounded-lg bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors" onclick="viewHistoryItem('${
-                  item.id
-                }')">
-                    <div class="flex items-center justify-between">
-                        <div class="flex-1 min-w-0 mr-3">
-                            <p class="text-sm text-gray-800 truncate">${item.name}</p>
-                            <p class="text-xs text-gray-400 mt-0.5">${item.width}px · ${formatTime(item.timestamp)}</p>
+                <div class="p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors ${
+                  item.status === "DELETING" ? "opacity-50" : ""
+                }">
+                    <div class="flex items-center justify-between mb-1">
+                        <div class="flex-1 min-w-0 mr-3 ${
+                          item.status === "COMPLETE" ? "cursor-pointer" : ""
+                        }" onclick="${item.status === "COMPLETE" ? `viewHistoryItem('${item.mediaId}')` : ""}">
+                            <p class="text-sm text-gray-800 truncate font-medium">${item.name}</p>
                         </div>
-                        <span class="status-badge status-${item.status.toLowerCase()}">${item.status}</span>
+                        <div class="flex items-center space-x-2">
+                            <span class="status-badge status-${item.status.toLowerCase()}">${item.status}</span>
+                            ${
+                              item.status !== "DELETING"
+                                ? `
+                            <button onclick="deleteMedia('${item.mediaId}')" class="text-gray-400 hover:text-red-500 p-1" title="Delete">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                </svg>
+                            </button>
+                            `
+                                : ""
+                            }
+                        </div>
+                    </div>
+                    <div class="text-xs text-gray-400 space-y-0.5">
+                        <p>${item.width}px · ${item.size ? formatFileSize(item.size) : "N/A"}</p>
+                        <p>${item.createdAt ? formatRelativeTime(item.createdAt) : ""}</p>
                     </div>
                 </div>
             `,
@@ -480,21 +574,82 @@
       }
 
       function viewHistoryItem(id) {
-        const item = history.find((h) => h.id === id);
+        const item = mediaList.find((h) => h.mediaId === id);
         if (!item || item.status !== "COMPLETE") return;
 
         currentMediaId = id;
-        showResult(id, item.name, item.originalSize, item.width);
+        showResult(item);
         document.getElementById("resultSection").scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
 
-      function showResult(mediaId, fileName, originalSize, width) {
+      async function deleteMedia(mediaId) {
+        if (isProcessing) return;
+
+        const item = mediaList.find((h) => h.mediaId === mediaId);
+        if (item && item.status === "DELETING") return; // Already deleting
+
+        if (!confirm("Are you sure you want to delete this media?")) return;
+
+        try {
+          const response = await fetch(`${API_BASE}/${mediaId}`, {
+            method: "DELETE",
+          });
+
+          if (response.ok) {
+            // Update status to DELETING in local list
+            updateHistoryStatus(mediaId, "DELETING");
+
+            // Hide result section if we deleted the currently shown media
+            if (currentMediaId === mediaId) {
+              document.getElementById("resultSection").classList.add("hidden");
+              currentMediaId = null;
+            }
+
+            // Poll until item is removed
+            const pollDelete = async () => {
+              const statusRes = await fetch(`${API_BASE}/${mediaId}/status`);
+              if (statusRes.status === 404) {
+                // Item deleted, remove from list
+                mediaList = mediaList.filter((h) => h.mediaId !== mediaId);
+                renderHistory();
+              } else {
+                // Still deleting, check again in 3 seconds
+                setTimeout(pollDelete, 3000);
+              }
+            };
+            setTimeout(pollDelete, 3000);
+          } else {
+            throw new Error("Delete failed");
+          }
+        } catch (error) {
+          console.error("Error deleting media:", error);
+          alert("Failed to delete media: " + error.message);
+        }
+      }
+
+      function formatDateTime(isoString) {
+        if (!isoString) return "N/A";
+        const date = new Date(isoString);
+        return date.toLocaleString();
+      }
+
+      function showResult(media) {
+        const { mediaId, name: fileName, size: originalSize, width, mimetype, status, createdAt, updatedAt } = media;
         const downloadUrl = `${API_BASE}/${mediaId}/download`;
         const originalUrl = `http://127.0.0.1:4566/media-bucket/uploads/${mediaId}/${fileName}`;
 
         // Set media info
         document.getElementById("mediaName").textContent = fileName;
-        document.getElementById("mediaId").textContent = mediaId.substring(0, 8) + "...";
+
+        // Set metadata panel
+        document.getElementById("metaMediaId").textContent = mediaId;
+        document.getElementById("metaMediaId").title = mediaId;
+        document.getElementById("metaStatus").textContent = status;
+        document.getElementById("metaMimetype").textContent = mimetype || "unknown";
+        document.getElementById("metaSize").textContent = originalSize ? formatFileSize(originalSize) : "N/A";
+        document.getElementById("metaWidth").textContent = width + "px";
+        document.getElementById("metaCreatedAt").textContent = formatDateTime(createdAt);
+        document.getElementById("metaUpdatedAt").textContent = formatDateTime(updatedAt);
 
         // Set images
         document.getElementById("originalImage").src = originalUrl;
@@ -558,7 +713,7 @@
           // Poll for completion
           let status = "PROCESSING";
           while (status === "PROCESSING") {
-            await new Promise((r) => setTimeout(r, 800));
+            await new Promise((r) => setTimeout(r, 3000));
             const statusRes = await fetch(`${API_BASE}/${currentMediaId}/status`);
             const statusData = await statusRes.json();
             status = statusData.status;
@@ -566,10 +721,10 @@
           }
 
           if (status === "COMPLETE") {
-            // Update the history item width
-            const item = history.find((h) => h.id === currentMediaId);
+            // Update the media item width
+            const item = mediaList.find((h) => h.mediaId === currentMediaId);
             if (item) {
-              item.width = newWidth;
+              item.width = parseInt(newWidth);
               renderHistory();
             }
 
@@ -603,17 +758,12 @@
         });
       }
 
-      function clearHistory() {
-        history = [];
-        renderHistory();
-        document.getElementById("resultSection").classList.add("hidden");
-      }
-
-      // Check API
+      // Check API and load all media
       fetch(`${API_BASE}/health`)
         .then(() => {
           document.getElementById("apiStatus").innerHTML =
             '<span class="w-2 h-2 bg-green-500 rounded-full"></span><span>Connected</span>';
+          loadAllMedia();
         })
         .catch(() => {
           document.getElementById("apiStatus").innerHTML =

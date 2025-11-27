@@ -10,6 +10,7 @@ import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.ReturnValue;
 import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 
@@ -25,19 +26,22 @@ public class DynamoDbService {
   public Optional<Media> setMediaStatusConditionally(String mediaId, MediaStatus newStatus,
       MediaStatus expectedStatus) {
     var key = Map.of("PK", s("MEDIA#" + mediaId), "SK", s("METADATA"));
-    var expressionValues = Map.of(":newStatus", s(newStatus.name()), ":expectedStatus", s(expectedStatus.name()));
+    var expressionValues = Map.of(
+        ":newStatus", s(newStatus.name()),
+        ":expectedStatus", s(expectedStatus.name()),
+        ":updatedAt", s(Instant.now().toString()));
     var expressionNames = Map.of("#status", "status");
     var request = UpdateItemRequest.builder()
         .tableName(tableName)
         .key(key)
-        .updateExpression("SET #status = :newStatus")
+        .updateExpression("SET #status = :newStatus, updatedAt = :updatedAt")
         .conditionExpression("#status = :expectedStatus")
         .expressionAttributeNames(expressionNames)
         .expressionAttributeValues(expressionValues)
         .returnValues(ReturnValue.ALL_NEW)
         .build();
     var response = client.updateItem(request);
-    Map<String, AttributeValue> attributes = response.attributes();
+    var attributes = response.attributes();
     if (attributes == null || attributes.isEmpty()) {
       return Optional.empty();
     }
@@ -51,12 +55,12 @@ public class DynamoDbService {
 
   public void setMediaStatus(String mediaId, MediaStatus newStatus) {
     var key = Map.of("PK", s("MEDIA#" + mediaId), "SK", s("METADATA"));
-    var expressionValues = Map.of(":newStatus", s(newStatus.name()));
+    var expressionValues = Map.of(":newStatus", s(newStatus.name()), ":updatedAt", s(Instant.now().toString()));
     var expressionNames = Map.of("#status", "status");
     var request = UpdateItemRequest.builder()
         .tableName(tableName)
         .key(key)
-        .updateExpression("SET #status = :newStatus")
+        .updateExpression("SET #status = :newStatus, updatedAt = :updatedAt")
         .expressionAttributeNames(expressionNames)
         .expressionAttributeValues(expressionValues)
         .build();
@@ -71,7 +75,7 @@ public class DynamoDbService {
         .returnValues(ReturnValue.ALL_OLD)
         .build();
     var response = client.deleteItem(request);
-    Map<String, AttributeValue> attributes = response.attributes();
+    var attributes = response.attributes();
     if (attributes == null || attributes.isEmpty()) {
       return Optional.empty();
     }

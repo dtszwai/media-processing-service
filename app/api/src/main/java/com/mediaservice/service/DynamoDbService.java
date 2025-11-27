@@ -9,6 +9,10 @@ import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
 
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -31,24 +35,30 @@ public class DynamoDbService {
   private Media mapToMedia(String mediaId, Map<String, AttributeValue> item) {
     return Media.builder()
         .mediaId(mediaId)
-        .size(item.containsKey("size") ? Long.parseLong(item.get("size").n()) : null)
+        .size(Long.parseLong(item.get("size").n()))
         .name(item.get("name").s())
-        .mimetype(item.containsKey("mimetype") ? item.get("mimetype").s() : null)
+        .mimetype(item.get("mimetype").s())
         .status(MediaStatus.valueOf(item.get("status").s()))
-        .width(item.containsKey("width") ? Integer.parseInt(item.get("width").n()) : null)
+        .width(Integer.parseInt(item.get("width").n()))
+        .createdAt(Instant.parse(item.get("createdAt").s()))
+        .updatedAt(Instant.parse(item.get("updatedAt").s()))
         .build();
   }
 
   public void createMedia(Media media) {
-    var item = Map.of(
-        "PK", s(PK_PREFIX + media.getMediaId()),
-        "SK", s(SK_METADATA),
-        "size", n(String.valueOf(media.getSize())),
-        "name", s(media.getName()),
-        "mimetype", s(media.getMimetype()),
-        "status", s(MediaStatus.PENDING.name()),
-        "width", n(String.valueOf(media.getWidth())));
-    PutItemRequest request = PutItemRequest.builder()
+    var now = Instant.now().toString();
+    var item = new HashMap<String, AttributeValue>();
+    item.put("PK", s(PK_PREFIX + media.getMediaId()));
+    item.put("SK", s(SK_METADATA));
+    item.put("size", n(String.valueOf(media.getSize())));
+    item.put("name", s(media.getName()));
+    item.put("mimetype", s(media.getMimetype()));
+    item.put("status", s(MediaStatus.PENDING.name()));
+    item.put("width", n(String.valueOf(media.getWidth())));
+    item.put("createdAt", s(now));
+    item.put("updatedAt", s(now));
+
+    var request = PutItemRequest.builder()
         .tableName(tableName)
         .item(item)
         .build();
@@ -57,11 +67,11 @@ public class DynamoDbService {
   }
 
   public Optional<Media> getMedia(String mediaId) {
-    GetItemRequest request = GetItemRequest.builder()
+    var request = GetItemRequest.builder()
         .tableName(tableName)
         .key(buildKey(mediaId))
         .build();
-    GetItemResponse response = dynamoDbClient.getItem(request);
+    var response = dynamoDbClient.getItem(request);
     if (!response.hasItem() || response.item().isEmpty()) {
       return Optional.empty();
     }
@@ -74,5 +84,38 @@ public class DynamoDbService {
 
   private AttributeValue n(String value) {
     return AttributeValue.builder().n(value).build();
+  }
+
+  public List<Media> getAllMedia() {
+    var mediaList = new ArrayList<Media>();
+    var request = ScanRequest.builder()
+        .tableName(tableName)
+        .filterExpression("SK = :sk")
+        .expressionAttributeValues(Map.of(":sk", s(SK_METADATA)))
+        .build();
+
+    var response = dynamoDbClient.scan(request);
+    for (var item : response.items()) {
+      var pk = item.get("PK").s();
+      var mediaId = pk.replace(PK_PREFIX, "");
+      mediaList.add(mapToMedia(mediaId, item));
+    }
+    mediaList.sort((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()));
+    log.info("Retrieved {} media records", mediaList.size());
+    return mediaList;
+  }
+
+  public void updateStatus(String mediaId, MediaStatus status) {
+    var request = UpdateItemRequest.builder()
+        .tableName(tableName)
+        .key(buildKey(mediaId))
+        .updateExpression("SET #status = :status, updatedAt = :updatedAt")
+        .expressionAttributeNames(Map.of("#status", "status"))
+        .expressionAttributeValues(Map.of(
+            ":status", s(status.name()),
+            ":updatedAt", s(Instant.now().toString())))
+        .build();
+    dynamoDbClient.updateItem(request);
+    log.info("Updated status for mediaId: {} to {}", mediaId, status);
   }
 }

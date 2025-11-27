@@ -2,6 +2,7 @@ package com.mediaservice.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.mediaservice.model.MediaStatus;
+import java.time.Instant;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -18,5 +19,8 @@ public class MediaResponse {
     private String name;
     private String mimetype;
     private MediaStatus status;
+    private Integer width;
+    private Instant createdAt;
+    private Instant updatedAt;
     private String message;
 }

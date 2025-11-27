@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -128,6 +129,7 @@ public class MediaService {
   public Optional<Media> deleteMedia(String mediaId) {
     return dynamoDbService.getMedia(mediaId)
         .map(media -> {
+          dynamoDbService.updateStatus(mediaId, MediaStatus.DELETING);
           snsService.publishDeleteMediaEvent(mediaId);
           log.info("Delete request submitted for mediaId: {}", mediaId);
           return media;
@@ -136,5 +138,9 @@ public class MediaService {
 
   public boolean mediaExists(String mediaId) {
     return dynamoDbService.getMedia(mediaId).isPresent();
+  }
+
+  public List<Media> getAllMedia() {
+    return dynamoDbService.getAllMedia();
   }
 }

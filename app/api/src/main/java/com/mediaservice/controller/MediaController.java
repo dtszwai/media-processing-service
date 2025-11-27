@@ -18,6 +18,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.net.URI;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
@@ -32,6 +34,14 @@ public class MediaController {
   @GetMapping("/health")
   public ResponseEntity<String> health() {
     return ResponseEntity.ok("OK");
+  }
+
+  @GetMapping
+  public ResponseEntity<List<MediaResponse>> getAllMedia() {
+    log.info("Get all media request");
+    return mediaService.getAllMedia().stream()
+        .map(mediaMapper::toResponse)
+        .collect(Collectors.collectingAndThen(Collectors.toList(), list -> ResponseEntity.ok(list)));
   }
 
   @PostMapping("/upload")
@@ -63,7 +73,7 @@ public class MediaController {
     }
 
     try {
-      MediaResponse response = mediaService.uploadMedia(file, width);
+      var response = mediaService.uploadMedia(file, width);
       return ResponseEntity.accepted().body(response);
     } catch (IllegalArgumentException e) {
       return ResponseEntity.badRequest()
@@ -108,7 +118,7 @@ public class MediaController {
 
     // Check if still processing
     if (mediaService.isMediaProcessing(mediaId)) {
-      HttpHeaders headers = new HttpHeaders();
+      var headers = new HttpHeaders();
       headers.add("Retry-After", "60");
       headers.add("Location", "{}://{}:{}/v1/media/{}/status"
           .formatted(request.getScheme(), request.getServerName(), request.getServerPort(), mediaId));

@@ -1,5 +1,6 @@
 package com.mediaservice.model;
 
+import java.time.Instant;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -16,4 +17,6 @@ public class Media {
   private String mimetype;
   private MediaStatus status;
   private Integer width;
+  private Instant createdAt;
+  private Instant updatedAt;
 }
