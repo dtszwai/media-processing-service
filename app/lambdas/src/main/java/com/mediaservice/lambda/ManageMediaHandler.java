@@ -114,6 +114,10 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
         return;
       }
       var mediaId = payload.getMediaId();
+      if (mediaId == null || mediaId.isEmpty()) {
+        logger.info("Skipping message with no mediaId");
+        return;
+      }
       var width = payload.getWidth();
       span.setAttribute("media.id", mediaId);
       span.setAttribute("event.type", eventType);
@@ -130,18 +134,15 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
             logger.info("Skipping resize message with missing width");
             break;
           }
-          handleMediaProcessing(mediaId, width, MediaStatus.COMPLETE, imageProcessingService::resizeImage, span,
-              resizeSuccessCounter, resizeFailureCounter);
+          handleMediaProcessing(mediaId, width, MediaStatus.COMPLETE, imageProcessingService::resizeImage, span, true);
           break;
         case PROCESS_EVENT_TYPE:
-          handleMediaProcessing(mediaId, width, MediaStatus.PENDING, imageProcessingService::processImage, span,
-              processSuccessCounter, processFailureCounter);
+          handleMediaProcessing(mediaId, width, MediaStatus.PENDING, imageProcessingService::processImage, span, false);
           break;
         default:
           logger.info("Skipping message with unsupported type: {}", eventType);
       }
     } catch (Exception e) {
-      logger.error("Failed to process message: {}", e.getMessage(), e);
       span.setStatus(StatusCode.ERROR, e.getMessage());
       span.recordException(e);
       throw new RuntimeException("Failed to process message", e);
@@ -151,10 +152,6 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
   }
 
   private void handleDelete(String mediaId, Span span) {
-    if (mediaId == null || mediaId.isEmpty()) {
-      logger.info("Skipping delete message with no mediaId");
-      return;
-    }
     logger.info("Deleting media: {}", mediaId);
     try {
       var mediaOpt = dynamoDbService.deleteMedia(mediaId);
@@ -184,12 +181,9 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
   }
 
   private void handleMediaProcessing(String mediaId, Integer requestedWidth, MediaStatus expectedStatus,
-      ImageProcessor processor, Span span,
-      LongCounter successCounter, LongCounter failureCounter) {
-    if (mediaId == null || mediaId.isEmpty()) {
-      logger.info("Skipping message with no mediaId");
-      return;
-    }
+      ImageProcessor processor, Span span, boolean isResize) {
+    var successCounter = isResize ? resizeSuccessCounter : processSuccessCounter;
+    var failureCounter = isResize ? resizeFailureCounter : processFailureCounter;
     logger.info("Processing/Resizing media: {}", mediaId);
     try {
       // Set status to PROCESSING
@@ -216,8 +210,9 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
       // Upload processed image to S3
       s3Service.uploadMedia(mediaId, mediaName, processedImage, "resized");
       logger.info("Uploaded processed media to S3");
-      // Set status to COMPLETE
-      dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.COMPLETE, MediaStatus.PROCESSING);
+      // Set status to COMPLETE and update width
+      dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.COMPLETE, MediaStatus.PROCESSING,
+          targetWidth);
       logger.info("Media operation complete for: {}", mediaId);
       span.setStatus(StatusCode.OK);
       successCounter.add(1);

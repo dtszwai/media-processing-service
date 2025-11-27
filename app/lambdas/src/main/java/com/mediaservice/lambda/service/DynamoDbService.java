@@ -11,6 +11,7 @@ import software.amazon.awssdk.services.dynamodb.model.ReturnValue;
 import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
@@ -25,68 +26,72 @@ public class DynamoDbService {
 
   public Optional<Media> setMediaStatusConditionally(String mediaId, MediaStatus newStatus,
       MediaStatus expectedStatus) {
-    var key = Map.of("PK", s("MEDIA#" + mediaId), "SK", s("METADATA"));
-    var expressionValues = Map.of(
+    return setMediaStatusConditionally(mediaId, newStatus, expectedStatus, null);
+  }
+
+  public Optional<Media> setMediaStatusConditionally(String mediaId, MediaStatus newStatus,
+      MediaStatus expectedStatus, Integer width) {
+    var values = new HashMap<>(Map.of(
         ":newStatus", s(newStatus.name()),
         ":expectedStatus", s(expectedStatus.name()),
-        ":updatedAt", s(Instant.now().toString()));
-    var expressionNames = Map.of("#status", "status");
-    var request = UpdateItemRequest.builder()
-        .tableName(tableName)
-        .key(key)
-        .updateExpression("SET #status = :newStatus, updatedAt = :updatedAt")
-        .conditionExpression("#status = :expectedStatus")
-        .expressionAttributeNames(expressionNames)
-        .expressionAttributeValues(expressionValues)
-        .returnValues(ReturnValue.ALL_NEW)
-        .build();
-    var response = client.updateItem(request);
-    var attributes = response.attributes();
-    if (attributes == null || attributes.isEmpty()) {
-      return Optional.empty();
+        ":updatedAt", s(Instant.now().toString())));
+    if (width != null) {
+      values.put(":width", n(width));
     }
-    return Optional.of(Media.builder()
-        .mediaId(mediaId)
-        .name(attributes.get("name").s())
-        .status(MediaStatus.valueOf(attributes.get("status").s()))
-        .width(Integer.parseInt(attributes.get("width").n()))
-        .build());
+    return toMedia(mediaId, client.updateItem(UpdateItemRequest.builder()
+        .tableName(tableName)
+        .key(keyFor(mediaId))
+        .updateExpression(
+            "SET #status = :newStatus, updatedAt = :updatedAt" + (width != null ? ", width = :width" : ""))
+        .conditionExpression("#status = :expectedStatus")
+        .expressionAttributeNames(Map.of("#status", "status"))
+        .expressionAttributeValues(values)
+        .returnValues(ReturnValue.ALL_NEW)
+        .build()).attributes());
   }
 
   public void setMediaStatus(String mediaId, MediaStatus newStatus) {
-    var key = Map.of("PK", s("MEDIA#" + mediaId), "SK", s("METADATA"));
-    var expressionValues = Map.of(":newStatus", s(newStatus.name()), ":updatedAt", s(Instant.now().toString()));
-    var expressionNames = Map.of("#status", "status");
-    var request = UpdateItemRequest.builder()
+    client.updateItem(UpdateItemRequest.builder()
         .tableName(tableName)
-        .key(key)
+        .key(keyFor(mediaId))
         .updateExpression("SET #status = :newStatus, updatedAt = :updatedAt")
-        .expressionAttributeNames(expressionNames)
-        .expressionAttributeValues(expressionValues)
-        .build();
-    client.updateItem(request);
+        .expressionAttributeNames(Map.of("#status", "status"))
+        .expressionAttributeValues(Map.of(":newStatus", s(newStatus.name()), ":updatedAt", s(Instant.now().toString())))
+        .build());
   }
 
   public Optional<Media> deleteMedia(String mediaId) {
-    var key = Map.of("PK", s("MEDIA#" + mediaId), "SK", s("METADATA"));
     var request = DeleteItemRequest.builder()
         .tableName(tableName)
-        .key(key)
+        .key(keyFor(mediaId))
         .returnValues(ReturnValue.ALL_OLD)
         .build();
-    var response = client.deleteItem(request);
-    var attributes = response.attributes();
-    if (attributes == null || attributes.isEmpty()) {
+    return toMedia(mediaId, client.deleteItem(request).attributes());
+  }
+
+  private Map<String, AttributeValue> keyFor(String mediaId) {
+    return Map.of("PK", s("MEDIA#" + mediaId), "SK", s("METADATA"));
+  }
+
+  private Optional<Media> toMedia(String mediaId, Map<String, AttributeValue> attrs) {
+    if (attrs == null || attrs.isEmpty()) {
       return Optional.empty();
     }
-    return Optional.of(Media.builder()
+    var builder = Media.builder()
         .mediaId(mediaId)
-        .name(attributes.get("name").s())
-        .status(MediaStatus.valueOf(attributes.get("status").s()))
-        .build());
+        .name(attrs.get("name").s())
+        .status(MediaStatus.valueOf(attrs.get("status").s()));
+    if (attrs.containsKey("width")) {
+      builder.width(Integer.parseInt(attrs.get("width").n()));
+    }
+    return Optional.of(builder.build());
   }
 
   private AttributeValue s(String value) {
     return AttributeValue.builder().s(value).build();
+  }
+
+  private AttributeValue n(Integer value) {
+    return AttributeValue.builder().n(String.valueOf(value)).build();
   }
 }
