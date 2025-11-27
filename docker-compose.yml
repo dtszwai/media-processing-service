@@ -3,29 +3,34 @@ services:
     container_name: localstack
     image: localstack/localstack
     ports:
-      - '127.0.0.1:4566:4566'
+      - "127.0.0.1:4566:4566"
     environment:
       - DEBUG=1
-      - SERVICES=s3,dynamodb,sns,sqs,lambda
+      - SERVICES=s3,dynamodb,sns,sqs,lambda,iam
       - DEFAULT_REGION=us-west-2
-      - LAMBDA_EXECUTOR=local
+      - LAMBDA_EXECUTOR=docker-reuse
+      - LAMBDA_DOCKER_NETWORK=media-processing-service_default
+      - LAMBDA_RUNTIME_ENVIRONMENT_TIMEOUT=60
     volumes:
-      - './volume:/var/lib/localstack'
-      - '/var/run/docker.sock:/var/run/docker.sock'
-      - './scripts:/etc/localstack/init/ready.d'
-      - './app/lambdas/target:/opt/lambdas'
+      - "./volume:/var/lib/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      # - "./scripts:/etc/localstack/init/ready.d"
     depends_on:
       - grafana
+    networks:
+      - default
 
   grafana:
     container_name: grafana-lgtm
     image: grafana/otel-lgtm
     ports:
-      - '3000:3000'
-      - '4317:4317'
-      - '4318:4318'
+      - "3000:3000"
+      - "4317:4317"
+      - "4318:4318"
     environment:
       - GF_PATHS_DATA=/data/grafana
+    networks:
+      - default
 
   api:
     container_name: media-service-api
@@ -33,7 +38,7 @@ services:
       context: ./app/api
       dockerfile: Dockerfile
     ports:
-      - '9000:9000'
+      - "9000:9000"
     environment:
       - APP_PORT=9000
       - AWS_REGION=us-west-2
@@ -47,7 +52,7 @@ services:
       - AWS_S3_PRESIGNER_ENDPOINT=http://127.0.0.1:4566
       - AWS_SNS_ENDPOINT=http://localstack:4566
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://grafana:4318
-      - OTEL_SERVICE_NAME=media-service
+      - OTEL_SERVICE_NAME=media-service-api
     depends_on:
       - localstack
       - grafana
@@ -57,3 +62,9 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+    networks:
+      - default
+
+networks:
+  default:
+    name: media-processing-service_default

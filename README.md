@@ -46,28 +46,17 @@ Access Grafana at http://localhost:3000 when running locally.
 - Java 21
 - Maven 3.9+
 - Docker & Docker Compose
-- LocalStack CLI (optional, for full AWS emulation)
+- tflocal
 
 ### Quick Start
 
 ```bash
-# Build and run everything
-make run-all
+# Build and start everything (API, Lambda, LocalStack, Grafana)
+make local-up
 
-# Or step by step:
-make build-all    # Build API and Lambda JARs
-make docker-run   # Start containers
+# Stop and clean up
+make local-down
 ```
-
-### API Endpoints
-
-| Method | Endpoint                  | Description              |
-| ------ | ------------------------- | ------------------------ |
-| POST   | `/v1/media/upload`        | Upload an image          |
-| GET    | `/v1/media/{id}/status`   | Get processing status    |
-| GET    | `/v1/media/{id}/download` | Download processed image |
-| PUT    | `/v1/media/{id}/resize`   | Resize image             |
-| DELETE | `/v1/media/{id}`          | Delete media             |
 
 ### Example
 

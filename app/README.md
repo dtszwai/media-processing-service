@@ -2,29 +2,6 @@
 
 This directory contains the application source code.
 
-## Structure
-
-```
-├── api/                  # Spring Boot REST API
-│   ├── src/main/java/
-│   │   └── com/mediaservice/
-│   │       ├── config/       # AWS, OpenTelemetry config
-│   │       ├── controller/   # REST controllers
-│   │       ├── service/      # Business logic
-│   │       ├── model/        # Domain models
-│   │       └── dto/          # Request/Response DTOs
-│   └── pom.xml
-├── lambdas/              # AWS Lambda functions
-│   ├── src/main/java/
-│   │   └── com/mediaservice/lambda/
-│   │       ├── ManageMediaHandler.java
-│   │       ├── config/
-│   │       ├── model/
-│   │       └── service/
-│   └── pom.xml
-└── docs/                 # API specs, schemas
-```
-
 ## API Endpoints
 
 | Method | Endpoint                  | Description              |
@@ -38,24 +15,15 @@ This directory contains the application source code.
 | PUT    | `/v1/media/{id}/resize`   | Resize an existing image |
 | DELETE | `/v1/media/{id}`          | Delete media             |
 
-## Processing Flow
-
-1. Client uploads image via REST API
-2. API stores image in S3 and metadata in DynamoDB (status: `PENDING`)
-3. API publishes SNS event for async processing
-4. Lambda processes image (resize, watermark) and updates status to `COMPLETE`
-5. Client polls status endpoint until complete
-6. Client downloads processed image via presigned S3 URL
-
 ## Media Status
 
-| Status     | Description                                |
-| ---------- | ------------------------------------------ |
-| PENDING    | Upload complete, waiting for processing    |
-| PROCESSING | Lambda is processing the image             |
-| COMPLETE   | Processing finished, ready for download    |
-| ERROR      | Processing failed                          |
-| DELETING   | Delete requested, waiting for Lambda       |
+| Status     | Description                             |
+| ---------- | --------------------------------------- |
+| PENDING    | Upload complete, waiting for processing |
+| PROCESSING | Lambda is processing the image          |
+| COMPLETE   | Processing finished, ready for download |
+| ERROR      | Processing failed                       |
+| DELETING   | Delete requested, waiting for Lambda    |
 
 ## Media Response
 

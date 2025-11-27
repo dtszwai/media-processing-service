@@ -47,6 +47,8 @@ yarn-error.log*
 !terraform/.local.tfvars
 !terraform/.prd.tfvars
 .terraform.lock.hcl
+.terraform.tfstate.lock.info
+localstack_providers_override.tf
 
 # Project Specific
 volume/
