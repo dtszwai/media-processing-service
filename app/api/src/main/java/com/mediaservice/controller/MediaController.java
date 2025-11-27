@@ -1,14 +1,15 @@
 package com.mediaservice.controller;
 
+import com.mediaservice.config.MediaProperties;
 import com.mediaservice.dto.ErrorResponse;
 import com.mediaservice.dto.MediaResponse;
 import com.mediaservice.dto.ResizeRequest;
+import com.mediaservice.mapper.MediaMapper;
 import com.mediaservice.service.MediaService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -25,9 +26,8 @@ import java.net.URI;
 public class MediaController {
 
   private final MediaService mediaService;
-
-  @Value("${media.max-file-size}")
-  private long maxFileSize;
+  private final MediaMapper mediaMapper;
+  private final MediaProperties mediaProperties;
 
   @GetMapping("/health")
   public ResponseEntity<String> health() {
@@ -43,12 +43,12 @@ public class MediaController {
         file.getOriginalFilename(), file.getSize());
 
     // Validate file size
+    long maxFileSize = mediaProperties.getMaxFileSize();
     if (file.getSize() > maxFileSize) {
       long maxSizeMb = maxFileSize / (1024 * 1024);
       return ResponseEntity.badRequest()
           .body(ErrorResponse.builder()
-              .message("Failed to upload media. Check the file size. Max size is "
-                  + maxSizeMb + " MB.")
+              .message("Failed to upload media. Check the file size. Max size is " + maxSizeMb + " MB.")
               .status(400)
               .build());
     }
@@ -84,25 +84,21 @@ public class MediaController {
   @GetMapping("/{mediaId}")
   public ResponseEntity<?> getMedia(@PathVariable String mediaId) {
     log.info("Get media request: mediaId={}", mediaId);
-
     return mediaService.getMedia(mediaId)
-        .<ResponseEntity<?>>map(ResponseEntity::ok)
+        .<ResponseEntity<?>>map(media -> ResponseEntity.ok(mediaMapper.toResponse(media)))
         .orElse(ResponseEntity.notFound().build());
   }
 
   @GetMapping("/{mediaId}/status")
   public ResponseEntity<?> getMediaStatus(@PathVariable String mediaId) {
     log.info("Status request: mediaId={}", mediaId);
-
     return mediaService.getMediaStatus(mediaId)
-        .<ResponseEntity<?>>map(ResponseEntity::ok)
+        .<ResponseEntity<?>>map(status -> ResponseEntity.ok(mediaMapper.toStatusResponse(status)))
         .orElse(ResponseEntity.notFound().build());
   }
 
   @GetMapping("/{mediaId}/download")
-  public ResponseEntity<?> downloadMedia(
-      @PathVariable String mediaId,
-      HttpServletRequest request) {
+  public ResponseEntity<?> downloadMedia(@PathVariable String mediaId, HttpServletRequest request) {
 
     log.info("Download request: mediaId={}", mediaId);
 
@@ -112,18 +108,13 @@ public class MediaController {
 
     // Check if still processing
     if (mediaService.isMediaProcessing(mediaId)) {
-      String statusUrl = String.format("%s/v1/media/%s/status",
-          request.getServerName(), mediaId);
-
       HttpHeaders headers = new HttpHeaders();
       headers.add("Retry-After", "60");
-      headers.add("Location", statusUrl);
-
+      headers.add("Location", "{}://{}:{}/v1/media/{}/status"
+          .formatted(request.getScheme(), request.getServerName(), request.getServerPort(), mediaId));
       return ResponseEntity.accepted()
           .headers(headers)
-          .body(MediaResponse.builder()
-              .message("Media processing in progress.")
-              .build());
+          .body(mediaMapper.toMessageResponse("Media processing in progress."));
     }
 
     return mediaService.getDownloadUrl(mediaId)
@@ -135,37 +126,18 @@ public class MediaController {
   }
 
   @PutMapping("/{mediaId}/resize")
-  public ResponseEntity<?> resizeMedia(
-      @PathVariable String mediaId,
-      @Valid @RequestBody(required = false) ResizeRequest resizeRequest,
-      @RequestParam(value = "width", required = false) Integer widthParam) {
-
+  public ResponseEntity<?> resizeMedia(@PathVariable String mediaId, @Valid @RequestBody ResizeRequest resizeRequest) {
     log.info("Resize request: mediaId={}", mediaId);
-
-    // Get width from body or query param
-    Integer width = (resizeRequest != null && resizeRequest.getWidth() != null)
-        ? resizeRequest.getWidth()
-        : widthParam;
-
-    if (width == null || width < 100 || width > 1024) {
-      return ResponseEntity.badRequest()
-          .body(ErrorResponse.builder()
-              .message("Width must be between 100 and 1024 pixels")
-              .status(400)
-              .build());
-    }
-
-    return mediaService.resizeMedia(mediaId, width)
-        .<ResponseEntity<?>>map(response -> ResponseEntity.accepted().body(response))
+    return mediaService.resizeMedia(mediaId, resizeRequest.getWidth())
+        .<ResponseEntity<?>>map(media -> ResponseEntity.accepted().body(mediaMapper.toIdResponse(media)))
         .orElse(ResponseEntity.notFound().build());
   }
 
   @DeleteMapping("/{mediaId}")
   public ResponseEntity<?> deleteMedia(@PathVariable String mediaId) {
     log.info("Delete request: mediaId={}", mediaId);
-
     return mediaService.deleteMedia(mediaId)
-        .<ResponseEntity<?>>map(response -> ResponseEntity.accepted().body(response))
+        .<ResponseEntity<?>>map(media -> ResponseEntity.accepted().body(mediaMapper.toIdResponse(media)))
         .orElse(ResponseEntity.notFound().build());
   }
 }
