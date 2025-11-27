@@ -544,8 +544,8 @@
                 }">
                     <div class="flex items-center justify-between mb-1">
                         <div class="flex-1 min-w-0 mr-3 ${
-                          item.status === "COMPLETE" ? "cursor-pointer" : ""
-                        }" onclick="${item.status === "COMPLETE" ? `viewHistoryItem('${item.mediaId}')` : ""}">
+                          item.status !== "DELETING" ? "cursor-pointer" : ""
+                        }" onclick="${item.status !== "DELETING" ? `viewHistoryItem('${item.mediaId}')` : ""}">
                             <p class="text-sm text-gray-800 truncate font-medium">${item.name}</p>
                         </div>
                         <div class="flex items-center space-x-2">
@@ -575,7 +575,7 @@
 
       function viewHistoryItem(id) {
         const item = mediaList.find((h) => h.mediaId === id);
-        if (!item || item.status !== "COMPLETE") return;
+        if (!item || item.status === "DELETING") return;
 
         currentMediaId = id;
         showResult(item);
@@ -637,6 +637,7 @@
         const { mediaId, name: fileName, size: originalSize, width, mimetype, status, createdAt, updatedAt } = media;
         const downloadUrl = `${API_BASE}/${mediaId}/download`;
         const originalUrl = `http://127.0.0.1:4566/media-bucket/uploads/${mediaId}/${fileName}`;
+        const isComplete = status === "COMPLETE";
 
         // Set media info
         document.getElementById("mediaName").textContent = fileName;
@@ -653,8 +654,19 @@
 
         // Set images
         document.getElementById("originalImage").src = originalUrl;
-        document.getElementById("processedImage").src = downloadUrl;
+        const processedImg = document.getElementById("processedImage");
+        if (isComplete) {
+          processedImg.src = downloadUrl;
+          processedImg.style.display = "block";
+        } else {
+          processedImg.src = "";
+          processedImg.style.display = "none";
+        }
         document.getElementById("downloadLink").href = downloadUrl;
+
+        // Show/hide controls based on status
+        document.getElementById("resizeControls").style.display = isComplete ? "flex" : "none";
+        document.getElementById("downloadLink").style.display = isComplete ? "flex" : "none";
 
         // Set original metadata
         document.getElementById("originalMeta").textContent = `Size: ${formatFileSize(originalSize)}`;
@@ -663,18 +675,20 @@
         document.getElementById("resizeSlider").value = width;
         document.getElementById("resizeDisplay").textContent = width + "px";
 
-        // Fetch processed image to get its size
-        fetch(downloadUrl)
-          .then((r) => r.blob())
-          .then((blob) => {
-            document.getElementById("processedMeta").textContent = `Size: ${formatFileSize(
-              blob.size,
-            )} · Width: ${width}px`;
-            updateHistoryItem(mediaId, { processedSize: blob.size, downloadUrl });
-          })
-          .catch(() => {
-            document.getElementById("processedMeta").textContent = `Width: ${width}px`;
-          });
+        // Set processed metadata
+        if (isComplete) {
+          fetch(downloadUrl)
+            .then((r) => r.blob())
+            .then((blob) => {
+              document.getElementById("processedMeta").textContent = `Size: ${formatFileSize(blob.size)} · Width: ${width}px`;
+              updateHistoryItem(mediaId, { processedSize: blob.size, downloadUrl });
+            })
+            .catch(() => {
+              document.getElementById("processedMeta").textContent = `Width: ${width}px`;
+            });
+        } else {
+          document.getElementById("processedMeta").textContent = status === "PROCESSING" ? "Processing..." : "Pending...";
+        }
 
         document.getElementById("resultSection").classList.remove("hidden");
       }
@@ -708,12 +722,12 @@
           if (!response.ok) throw new Error("Resize request failed");
 
           // Update history item status
-          updateHistoryStatus(currentMediaId, "PROCESSING");
+          updateHistoryStatus(currentMediaId, "PENDING");
 
           // Poll for completion
-          let status = "PROCESSING";
-          while (status === "PROCESSING") {
-            await new Promise((r) => setTimeout(r, 3000));
+          let status = "PENDING";
+          while (status === "PENDING" || status === "PROCESSING") {
+            await new Promise((r) => setTimeout(r, 2000));
             const statusRes = await fetch(`${API_BASE}/${currentMediaId}/status`);
             const statusData = await statusRes.json();
             status = statusData.status;
@@ -730,7 +744,9 @@
 
             // Refresh the result display
             const downloadUrl = `${API_BASE}/${currentMediaId}/download`;
-            document.getElementById("processedImage").src = downloadUrl + "?t=" + Date.now();
+            const processedImg = document.getElementById("processedImage");
+            processedImg.src = downloadUrl + "?t=" + Date.now();
+            processedImg.style.display = "block";
 
             // Update processed metadata (may fail due to CORS on redirect to S3)
             document.getElementById("processedMeta").textContent = `Width: ${newWidth}px`;

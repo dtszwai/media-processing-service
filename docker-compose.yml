@@ -7,10 +7,16 @@ services:
     environment:
       - DEBUG=1
       - SERVICES=s3,dynamodb,sns,sqs,lambda,iam
-      - DEFAULT_REGION=us-west-2
-      - LAMBDA_EXECUTOR=docker-reuse
+      - AWS_DEFAULT_REGION=us-west-2
       - LAMBDA_DOCKER_NETWORK=media-processing-service_default
       - LAMBDA_RUNTIME_ENVIRONMENT_TIMEOUT=60
+      - LAMBDA_KEEPALIVE_MS=60000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     volumes:
       - "./volume:/var/lib/localstack"
       - "/var/run/docker.sock:/var/run/docker.sock"

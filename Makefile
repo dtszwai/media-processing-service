@@ -48,8 +48,11 @@ start-api:
 	@docker compose up -d api
 
 .PHONY: local-down
-local-down: tf-destroy docker-stop
-	@echo "LocalStack stopped and resources destroyed"
+local-down:
+	@echo "Stopping services..."
+	@docker compose down --remove-orphans
+	@docker ps -a --filter "name=localstack-lambda" -q | xargs -r docker rm -f 2>/dev/null || true
+	@echo "All services stopped"
 
 # =============================================================================
 # Build

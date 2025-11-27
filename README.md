@@ -69,12 +69,34 @@ curl http://localhost:9000/v1/media/{id}/status
 
 # Download when complete
 curl -L http://localhost:9000/v1/media/{id}/download -o result.jpg
+
+# Resize existing media
+curl -X PUT -H "Content-Type: application/json" \
+  -d '{"width": 800}' http://localhost:9000/v1/media/{id}/resize
+
+# Delete media
+curl -X DELETE http://localhost:9000/v1/media/{id}
 ```
 
 ## Processing Flow
 
+### Upload
+
 1. Client uploads image → API stores in S3, metadata in DynamoDB (status: `PENDING`)
 2. API publishes `media.v1.process` event to SNS
-3. Lambda receives event, processes image (resize + watermark)
+3. Lambda receives event, sets status to `PROCESSING`, processes image (resize + watermark)
 4. Lambda stores result in S3, updates status to `COMPLETE`
 5. Client polls status, downloads via presigned URL
+
+### Resize
+
+1. Client requests resize → API sets status to `PENDING`, publishes `media.v1.resize` event to SNS
+2. Lambda receives event, sets status to `PROCESSING`, resizes image to new width
+3. Lambda stores result in S3, updates status to `COMPLETE`
+4. Client polls status until complete
+
+### Delete
+
+1. Client requests delete → API sets status to `DELETING`, publishes `media.v1.delete` event to SNS
+2. Lambda receives event, deletes files from S3, removes metadata from DynamoDB
+3. Client polls status until 404 (media deleted)

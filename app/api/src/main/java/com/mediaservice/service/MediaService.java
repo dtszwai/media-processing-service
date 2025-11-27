@@ -120,6 +120,7 @@ public class MediaService {
   public Optional<Media> resizeMedia(String mediaId, Integer width) {
     return dynamoDbService.getMedia(mediaId)
         .map(media -> {
+          dynamoDbService.updateStatus(mediaId, MediaStatus.PENDING);
           snsService.publishResizeMediaEvent(mediaId, width);
           log.info("Resize request submitted for mediaId: {}", mediaId);
           return media;

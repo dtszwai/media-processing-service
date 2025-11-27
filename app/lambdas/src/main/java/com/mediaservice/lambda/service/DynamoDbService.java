@@ -7,6 +7,7 @@ import com.mediaservice.lambda.model.MediaStatus;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.ReturnValue;
 import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 
@@ -67,6 +68,14 @@ public class DynamoDbService {
         .returnValues(ReturnValue.ALL_OLD)
         .build();
     return toMedia(mediaId, client.deleteItem(request).attributes());
+  }
+
+  public Optional<Media> getMedia(String mediaId) {
+    var request = GetItemRequest.builder()
+        .tableName(tableName)
+        .key(keyFor(mediaId))
+        .build();
+    return toMedia(mediaId, client.getItem(request).item());
   }
 
   private Map<String, AttributeValue> keyFor(String mediaId) {

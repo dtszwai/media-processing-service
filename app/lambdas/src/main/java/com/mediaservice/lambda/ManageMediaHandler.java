@@ -134,7 +134,7 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
             logger.info("Skipping resize message with missing width");
             break;
           }
-          handleMediaProcessing(mediaId, width, MediaStatus.COMPLETE, imageProcessingService::resizeImage, span, true);
+          handleMediaProcessing(mediaId, width, MediaStatus.PENDING, imageProcessingService::resizeImage, span, true);
           break;
         case PROCESS_EVENT_TYPE:
           handleMediaProcessing(mediaId, width, MediaStatus.PENDING, imageProcessingService::processImage, span, false);
@@ -217,10 +217,10 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
       span.setStatus(StatusCode.OK);
       successCounter.add(1);
     } catch (ConditionalCheckFailedException e) {
-      logger.error("Conditional check failed for media {}: {}", mediaId, e.getMessage());
-      span.setStatus(StatusCode.ERROR, "Conditional check failed");
-      failureCounter.add(1, Attributes.of(
-          AttributeKey.stringKey("reason"), "CONDITIONAL_CHECK_FAILURE"));
+      var actualStatus = dynamoDbService.getMedia(mediaId).map(m -> m.getStatus().name()).orElse("NOT_FOUND");
+      logger.error("Conditional check failed for media {}: expected={}, actual={}", mediaId, expectedStatus, actualStatus);
+      span.setStatus(StatusCode.ERROR, "expected=" + expectedStatus + ", actual=" + actualStatus);
+      failureCounter.add(1);
       throw e;
     } catch (Exception e) {
       logger.error("Failed to process media {}: {}", mediaId, e.getMessage(), e);
