@@ -1,0 +1,14 @@
+# Terraform Variables Example
+# Copy this file to terraform.tfvars and adjust values as needed
+
+# Required variables
+application_environment = "aws"  # or "localstack"
+media_s3_bucket_name    = "media-bucket"
+media_dynamo_table_name = "media"
+
+# Optional variables (with defaults)
+# aws_region             = "us-west-2"
+# api_port               = 9000
+# desired_task_count     = 1
+# otel_exporter_endpoint = "http://localhost:4318"
+# enable_snapstart       = true

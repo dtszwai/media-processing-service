@@ -113,20 +113,12 @@ module "api_container_sg" {
   description     = "API container security group"
 }
 
-module "process_lambda_sg" {
+module "lambda_sg" {
   source          = "./modules/security-group"
   additional_tags = local.common_tags
   vpc_id          = module.networking.vpc_id
-  name_prefix     = "process-lambda-sg"
-  description     = "Process media Lambda security group"
-}
-
-module "manage_lambda_sg" {
-  source          = "./modules/security-group"
-  additional_tags = local.common_tags
-  vpc_id          = module.networking.vpc_id
-  name_prefix     = "manage-lambda-sg"
-  description     = "Manage media Lambda security group"
+  name_prefix     = "lambda-sg"
+  description     = "Lambda security group"
 }
 
 # =============================================================================
@@ -191,14 +183,14 @@ module "lambda" {
   dynamodb_table_name = module.dynamodb.dynamodb_table_name
 
   media_bucket_arn               = module.s3.media_bucket_arn
-  media_bucket_id                = module.s3.media_bucket_id
   media_management_sqs_queue_arn = module.sns-sqs.media_management_sqs_queue_arn
   media_s3_bucket_name           = var.media_s3_bucket_name
 
   otel_exporter_endpoint = var.otel_exporter_endpoint
 
-  process_lambda_sg = module.process_lambda_sg.id
-  manage_lambda_sg  = module.manage_lambda_sg.id
-
+  lambda_sg          = module.lambda_sg.id
   private_subnet_ids = module.networking.private_subnet_ids
+
+  # Java Lambda SnapStart for faster cold starts
+  enable_snapstart = var.enable_snapstart
 }

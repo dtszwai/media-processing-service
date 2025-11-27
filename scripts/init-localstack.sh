@@ -6,12 +6,13 @@ set -euo pipefail
 # Creates AWS resources for local development
 # ============================================================
 
+# These values should match terraform.tfvars
 AWS_REGION="us-west-2"
 BUCKET_NAME="media-bucket"
 TABLE_NAME="media"
 TOPIC_NAME="media-management-topic"
-QUEUE_NAME="media-management-queue"
-LAMBDA_NAME="manage-media-handler"
+QUEUE_NAME="media-management-sqs-queue"
+LAMBDA_NAME="media-service-manage-media-handler"
 LAMBDA_JAR_PATH="/opt/lambdas/media-service-lambdas-1.0.0.jar"
 
 log() {
@@ -45,8 +46,10 @@ create_sns_topic() {
 }
 
 create_sqs_queue() {
+    # Visibility timeout = 6x Lambda timeout (30s * 6 = 180s)
     awslocal sqs create-queue \
         --queue-name "${QUEUE_NAME}" \
+        --attributes "VisibilityTimeout=180" \
         --region "${AWS_REGION}"
     log "SQS queue created: ${QUEUE_NAME}"
 }
@@ -88,7 +91,7 @@ create_lambda_function() {
         --assume-role-policy-document '{"Version": "2012-10-17","Statement": [{"Effect": "Allow","Principal": {"Service": "lambda.amazonaws.com"},"Action": "sts:AssumeRole"}]}' \
         --region "${AWS_REGION}" 2>/dev/null || true
 
-    # Create Lambda function
+    # Create Lambda function (matching Terraform config)
     # Use host.docker.internal to allow Lambda container to reach LocalStack
     awslocal lambda create-function \
         --function-name "${LAMBDA_NAME}" \
@@ -96,9 +99,9 @@ create_lambda_function() {
         --handler "com.mediaservice.lambda.ManageMediaHandler::handleRequest" \
         --role "arn:aws:iam::000000000000:role/lambda-execution-role" \
         --zip-file "fileb://${LAMBDA_JAR_PATH}" \
-        --timeout 60 \
-        --memory-size 512 \
-        --environment "Variables={AWS_REGION=${AWS_REGION},MEDIA_BUCKET_NAME=${BUCKET_NAME},MEDIA_DYNAMODB_TABLE_NAME=${TABLE_NAME},AWS_S3_ENDPOINT=http://host.docker.internal:4566,AWS_DYNAMODB_ENDPOINT=http://host.docker.internal:4566,OTEL_EXPORTER_OTLP_ENDPOINT=http://grafana-lgtm:4318,OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf,OTEL_SERVICE_NAME=media-service-manage-media-handler,OTEL_LOGS_EXPORTER=otlp}" \
+        --timeout 30 \
+        --memory-size 1024 \
+        --environment "Variables={AWS_REGION=${AWS_REGION},MEDIA_BUCKET_NAME=${BUCKET_NAME},MEDIA_DYNAMODB_TABLE_NAME=${TABLE_NAME},AWS_S3_ENDPOINT=http://host.docker.internal:4566,AWS_DYNAMODB_ENDPOINT=http://host.docker.internal:4566,OTEL_EXPORTER_OTLP_ENDPOINT=http://grafana-lgtm:4318,OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf,OTEL_SERVICE_NAME=media-service-lambda,OTEL_LOGS_EXPORTER=otlp}" \
         --region "${AWS_REGION}"
     log "Lambda function created: ${LAMBDA_NAME}"
 }

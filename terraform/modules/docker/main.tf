@@ -1,7 +1,7 @@
 locals {
   files_to_hash = setsubtract(
     fileset(var.docker_build_context, "**/*"),
-    fileset(var.docker_build_context, "node_modules/**/*")
+    fileset(var.docker_build_context, "target/**/*")
   )
   file_hashes = {
     for file in local.files_to_hash :

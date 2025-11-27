@@ -100,25 +100,23 @@ resource "aws_iam_policy" "lambda_iam_policy" {
 }
 
 #######################
-# Build lambda bundle #
+# Build Java Lambda JAR #
 #######################
 locals {
-  files_to_hash = setsubtract(
-    fileset(var.lambdas_src_path, "**/*"),
-    fileset(var.lambdas_src_path, "node_modules/**/*")
-  )
-  file_hashes = {
-    for file in local.files_to_hash :
+  java_src_files = fileset(var.lambdas_src_path, "src/**/*.java")
+  pom_hash       = filesha256("${var.lambdas_src_path}/pom.xml")
+  java_file_hashes = {
+    for file in local.java_src_files :
     file => filesha256("${var.lambdas_src_path}/${file}")
   }
-  combined_hash_input   = join("", values(local.file_hashes))
+  combined_hash_input   = join("", concat(values(local.java_file_hashes), [local.pom_hash]))
   source_directory_hash = sha256(local.combined_hash_input)
-  lambda_zip_file       = "${var.lambdas_src_path}/lambda-functions-payload.zip"
+  lambda_jar_file       = "${var.lambdas_src_path}/target/media-service-lambdas-1.0.0.jar"
 }
 
-resource "null_resource" "build_lambda_bundle" {
+resource "null_resource" "build_lambda_jar" {
   provisioner "local-exec" {
-    command     = "npm run build"
+    command     = "mvn clean package -DskipTests -q"
     working_dir = var.lambdas_src_path
   }
 
@@ -127,127 +125,65 @@ resource "null_resource" "build_lambda_bundle" {
   }
 }
 
-data "archive_file" "lambda" {
-  type        = "zip"
-  source_dir  = "${var.lambdas_src_path}/dist/"
-  output_path = local.lambda_zip_file
-
-  depends_on = [null_resource.build_lambda_bundle]
-}
-
-#######################################
-# Build lambda layer for sharp module #
-#######################################
-locals {
-  sharp_layer_dir_path = "${var.lambdas_src_path}/sharp-layer"
-  sharp_layer_zip_file = "${local.sharp_layer_dir_path}/lambda-sharp-layer.zip"
-}
-
-resource "null_resource" "build_sharp_lambda_layer" {
-  provisioner "local-exec" {
-    command     = "sh build-lambda-layer.sh"
-    working_dir = local.sharp_layer_dir_path
-  }
-
-  triggers = {
-    should_trigger_resource = local.source_directory_hash
-  }
-}
-
-resource "aws_lambda_layer_version" "sharp_lambda_layer" {
-  depends_on          = [null_resource.build_sharp_lambda_layer]
-  filename            = local.sharp_layer_zip_file
-  layer_name          = "media-service-sharp-lambda-layer"
-  compatible_runtimes = ["nodejs22.x"]
-  source_code_hash    = local.source_directory_hash
-}
-
-#######################################
-# Build lambda layer for otel module #
-#######################################
-locals {
-  otel_layer_dir_path = "${var.lambdas_src_path}/otel-layer"
-  otel_layer_zip_file = "${local.otel_layer_dir_path}/lambda-otel-layer.zip"
-}
-
-resource "null_resource" "build_otel_lambda_layer" {
-  provisioner "local-exec" {
-    command     = "sh build-lambda-layer.sh"
-    working_dir = local.otel_layer_dir_path
-  }
-
-  triggers = {
-    should_trigger_resource = local.source_directory_hash
-  }
-}
-
-resource "aws_lambda_layer_version" "otel_lambda_layer" {
-  depends_on          = [null_resource.build_otel_lambda_layer]
-  filename            = local.otel_layer_zip_file
-  layer_name          = "media-service-otel-lambda-layer"
-  compatible_runtimes = ["nodejs22.x"]
-  source_code_hash    = local.source_directory_hash
-}
-
 ########################
 # Manage Media Lambda #
 ########################
-resource "aws_vpc_security_group_egress_rule" "allow_manage_media_lambda_outbound_traffic" {
-  security_group_id = var.manage_media_lambda_sg
+resource "aws_vpc_security_group_egress_rule" "allow_lambda_outbound_traffic" {
+  security_group_id = var.lambda_sg
   description       = "Allow all outbound traffic"
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
 
   tags = merge(var.additional_tags, {
-    Name = "media-service-coll-allow-outbound-traffic-manage-media-lambda"
+    Name = "media-service-allow-outbound-traffic-lambda"
   })
 }
 
-resource "aws_iam_role" "manage_media_iam_role" {
-  name               = "media-service-manage-media-iam-role"
+resource "aws_iam_role" "lambda_iam_role" {
+  name               = "media-service-lambda-iam-role"
   assume_role_policy = data.aws_iam_policy_document.assume_role.json
 
   tags = merge(
     var.additional_tags,
     {
-      Name = "media-service-manage-media-iam-role"
+      Name = "media-service-lambda-iam-role"
     }
   )
 }
 
 resource "aws_lambda_function" "manage_media" {
-  depends_on = [
-    aws_lambda_layer_version.sharp_lambda_layer,
-    aws_lambda_layer_version.otel_lambda_layer,
-  ]
-  layers = [
-    aws_lambda_layer_version.sharp_lambda_layer.arn,
-    aws_lambda_layer_version.otel_lambda_layer.arn
-  ]
+  depends_on = [null_resource.build_lambda_jar]
 
   vpc_config {
-    security_group_ids = [var.manage_media_lambda_sg]
+    security_group_ids = [var.lambda_sg]
     subnet_ids         = var.private_subnet_ids
   }
 
-  filename         = local.lambda_zip_file
+  filename         = local.lambda_jar_file
   function_name    = "media-service-manage-media-handler"
-  role             = aws_iam_role.manage_media_iam_role.arn
-  handler          = "index.handlers.manageMedia"
-  source_code_hash = data.archive_file.lambda.output_base64sha256
-  runtime          = "nodejs22.x"
+  role             = aws_iam_role.lambda_iam_role.arn
+  handler          = "com.mediaservice.lambda.ManageMediaHandler::handleRequest"
+  source_code_hash = filebase64sha256(local.lambda_jar_file)
+  runtime          = "java21"
   architectures    = [var.lambda_architecture]
-  timeout          = 10
+  timeout          = 30
+  memory_size      = 1024
+  publish          = var.enable_snapstart
+
+  dynamic "snap_start" {
+    for_each = var.enable_snapstart ? [1] : []
+    content {
+      apply_on = "PublishedVersions"
+    }
+  }
 
   environment {
     variables = {
-      MEDIA_BUCKET_NAME                   = var.media_s3_bucket_name
-      MEDIA_DYNAMODB_TABLE_NAME           = var.dynamodb_table_name
-      NODE_OPTIONS                        = "--require /var/task/instrumentation.js"
-      OTEL_EXPORTER_OTLP_PROTOCOL         = "http/protobuf"
-      OTEL_EXPORTER_OTLP_ENDPOINT         = var.otel_http_gateway_endpoint
-      OTEL_NODE_DISABLED_INSTRUMENTATIONS = "fs,net,dns"
-      OTEL_SEMCONV_STABILITY_OPT_IN       = "http"
+      MEDIA_BUCKET_NAME           = var.media_s3_bucket_name
+      MEDIA_DYNAMODB_TABLE_NAME   = var.dynamodb_table_name
+      OTEL_EXPORTER_OTLP_ENDPOINT = var.otel_exporter_endpoint
+      OTEL_SERVICE_NAME           = "media-service-lambda"
+      JAVA_TOOL_OPTIONS           = "-XX:+TieredCompilation -XX:TieredStopAtLevel=1"
     }
   }
 
@@ -259,7 +195,7 @@ resource "aws_lambda_function" "manage_media" {
   )
 }
 
-resource "aws_cloudwatch_log_group" "manage_media_cw_log_group" {
+resource "aws_cloudwatch_log_group" "lambda_log_group" {
   depends_on        = [aws_lambda_function.manage_media]
   name              = "/aws/lambda/${aws_lambda_function.manage_media.function_name}"
   retention_in_days = 7
@@ -267,135 +203,24 @@ resource "aws_cloudwatch_log_group" "manage_media_cw_log_group" {
   tags = merge(
     var.additional_tags,
     {
-      Name = "media-service-manage-media-handler-log-group"
+      Name = "media-service-lambda-log-group"
     }
   )
 }
 
-resource "aws_iam_role_policy_attachment" "manage_lambda_iam_policy_policy_attachment" {
-  role       = aws_iam_role.manage_media_iam_role.name
+resource "aws_iam_role_policy_attachment" "lambda_iam_policy_attachment" {
+  role       = aws_iam_role.lambda_iam_role.name
   policy_arn = aws_iam_policy.lambda_iam_policy.arn
 }
 
-resource "aws_lambda_event_source_mapping" "manage_media_sqs_event_source_mapping" {
+resource "aws_lambda_event_source_mapping" "sqs_event_source_mapping" {
   event_source_arn = var.media_management_sqs_queue_arn
   function_name    = aws_lambda_function.manage_media.arn
 
   tags = merge(
     var.additional_tags,
     {
-      Name = "media-service-manage-media-sqs-event-source-mapping"
+      Name = "media-service-sqs-event-source-mapping"
     }
   )
-}
-
-########################
-# Process Media Lambda #
-########################
-resource "aws_vpc_security_group_egress_rule" "allow_process_lambda_outbound_traffic" {
-  security_group_id = var.process_media_lambda_sg
-  description       = "Allow all outbound traffic"
-  cidr_ipv4         = "0.0.0.0/0"
-  ip_protocol       = "-1"
-
-  tags = merge(var.additional_tags, {
-    Name = "media-service-coll-allow-outbound-traffic-process-lambda"
-  })
-}
-
-resource "aws_iam_role" "process_media_iam_role" {
-  name               = "media-service-process-media-iam-role"
-  assume_role_policy = data.aws_iam_policy_document.assume_role.json
-
-  tags = merge(
-    var.additional_tags,
-    {
-      Name = "media-service-process-media-iam-role"
-    }
-  )
-}
-
-resource "aws_lambda_function" "process_media" {
-  depends_on = [
-    aws_lambda_layer_version.sharp_lambda_layer,
-    aws_lambda_layer_version.otel_lambda_layer,
-  ]
-  layers = [
-    aws_lambda_layer_version.sharp_lambda_layer.arn,
-    aws_lambda_layer_version.otel_lambda_layer.arn
-  ]
-
-  vpc_config {
-    security_group_ids = [var.process_media_lambda_sg]
-    subnet_ids         = var.private_subnet_ids
-  }
-
-  filename         = local.lambda_zip_file
-  function_name    = "media-service-process-media-handler"
-  role             = aws_iam_role.process_media_iam_role.arn
-  handler          = "index.handlers.processMediaUpload"
-  source_code_hash = data.archive_file.lambda.output_base64sha256
-  runtime          = "nodejs22.x"
-  timeout          = 30
-
-  # By having 1769 MB of memory, the function will be able to use 1 vCPU
-  # https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html#compute-and-storage
-  memory_size = 1769
-
-  environment {
-    variables = {
-      MEDIA_BUCKET_NAME                   = var.media_s3_bucket_name
-      MEDIA_DYNAMODB_TABLE_NAME           = var.dynamodb_table_name
-      NODE_OPTIONS                        = "--require /var/task/instrumentation.js"
-      OTEL_EXPORTER_OTLP_PROTOCOL         = "http/protobuf"
-      OTEL_EXPORTER_OTLP_ENDPOINT         = var.otel_http_gateway_endpoint
-      OTEL_NODE_DISABLED_INSTRUMENTATIONS = "fs,net,dns"
-      OTEL_SEMCONV_STABILITY_OPT_IN       = "http"
-    }
-  }
-
-  tags = merge(
-    var.additional_tags,
-    {
-      Name = "media-service-process-media-handler"
-    }
-  )
-}
-
-resource "aws_cloudwatch_log_group" "process_media_cw_log_group" {
-  depends_on        = [aws_lambda_function.process_media]
-  name              = "/aws/lambda/${aws_lambda_function.process_media.function_name}"
-  retention_in_days = 7
-
-  tags = merge(
-    var.additional_tags,
-    {
-      Name = "media-service-process-media-handler-log-group"
-    }
-  )
-}
-
-resource "aws_iam_role_policy_attachment" "process_lambda_iam_policy_policy_attachment" {
-  role       = aws_iam_role.process_media_iam_role.name
-  policy_arn = aws_iam_policy.lambda_iam_policy.arn
-}
-
-resource "aws_lambda_permission" "allow_bucket" {
-  statement_id  = "AllowExecutionFromS3Bucket"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.process_media.arn
-  principal     = "s3.amazonaws.com"
-  source_arn    = var.media_bucket_arn
-}
-
-resource "aws_s3_bucket_notification" "media_bucket_notification" {
-  bucket = var.media_bucket_id
-
-  lambda_function {
-    lambda_function_arn = aws_lambda_function.process_media.arn
-    events              = ["s3:ObjectCreated:*"]
-    filter_prefix       = "uploads/"
-  }
-
-  depends_on = [aws_lambda_permission.allow_bucket]
 }

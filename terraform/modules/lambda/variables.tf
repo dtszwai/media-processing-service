@@ -19,11 +19,6 @@ variable "media_bucket_arn" {
   type        = string
 }
 
-variable "media_bucket_id" {
-  description = "ID of the S3 bucket"
-  type        = string
-}
-
 variable "media_s3_bucket_name" {
   description = "S3 bucket name"
   type        = string
@@ -44,17 +39,24 @@ variable "otel_exporter_endpoint" {
   type        = string
 }
 
-variable "process_lambda_sg" {
-  description = "Security group for process lambda"
-  type        = string
-}
-
-variable "manage_lambda_sg" {
-  description = "Security group for manage lambda"
+variable "lambda_sg" {
+  description = "Security group for lambda"
   type        = string
 }
 
 variable "private_subnet_ids" {
   description = "Private subnet IDs"
   type        = list(string)
+}
+
+variable "lambda_architecture" {
+  description = "Lambda architecture (x86_64 or arm64)"
+  type        = string
+  default     = "x86_64"
+}
+
+variable "enable_snapstart" {
+  description = "Enable Lambda SnapStart for faster cold starts (Java runtime only)"
+  type        = bool
+  default     = true
 }

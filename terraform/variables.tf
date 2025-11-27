@@ -36,3 +36,9 @@ variable "otel_exporter_endpoint" {
   type        = string
   default     = "http://localhost:4318"
 }
+
+variable "enable_snapstart" {
+  description = "Enable Lambda SnapStart for faster cold starts (Java 21 runtime)"
+  type        = bool
+  default     = true
+}
