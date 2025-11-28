@@ -119,11 +119,15 @@ public class MediaService {
 
   public Optional<Media> resizeMedia(String mediaId, Integer width) {
     return dynamoDbService.getMedia(mediaId)
-        .map(media -> {
-          dynamoDbService.updateStatus(mediaId, MediaStatus.PENDING);
+        .flatMap(media -> {
+          var updated = dynamoDbService.updateStatusConditionally(mediaId, MediaStatus.PENDING, MediaStatus.COMPLETE);
+          if (!updated) {
+            log.warn("Cannot resize mediaId: {}, not in COMPLETE status", mediaId);
+            return Optional.empty();
+          }
           snsService.publishResizeMediaEvent(mediaId, width);
           log.info("Resize request submitted for mediaId: {}", mediaId);
-          return media;
+          return Optional.of(media);
         });
   }
 

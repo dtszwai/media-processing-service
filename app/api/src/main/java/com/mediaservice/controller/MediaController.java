@@ -138,9 +138,18 @@ public class MediaController {
   @PutMapping("/{mediaId}/resize")
   public ResponseEntity<?> resizeMedia(@PathVariable String mediaId, @Valid @RequestBody ResizeRequest resizeRequest) {
     log.info("Resize request: mediaId={}", mediaId);
+
+    if (!mediaService.mediaExists(mediaId)) {
+      return ResponseEntity.notFound().build();
+    }
+
     return mediaService.resizeMedia(mediaId, resizeRequest.getWidth())
         .<ResponseEntity<?>>map(media -> ResponseEntity.accepted().body(mediaMapper.toIdResponse(media)))
-        .orElse(ResponseEntity.notFound().build());
+        .orElse(ResponseEntity.status(HttpStatus.CONFLICT)
+            .body(ErrorResponse.builder()
+                .message("Cannot resize: media is not in COMPLETE status")
+                .status(409)
+                .build()));
   }
 
   @DeleteMapping("/{mediaId}")

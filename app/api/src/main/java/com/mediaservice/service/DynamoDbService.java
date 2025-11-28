@@ -7,7 +7,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
-import software.amazon.awssdk.services.dynamodb.model.*;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
+import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
+import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -117,5 +122,27 @@ public class DynamoDbService {
         .build();
     dynamoDbClient.updateItem(request);
     log.info("Updated status for mediaId: {} to {}", mediaId, status);
+  }
+
+  public boolean updateStatusConditionally(String mediaId, MediaStatus newStatus, MediaStatus expectedStatus) {
+    try {
+      var request = UpdateItemRequest.builder()
+          .tableName(tableName)
+          .key(buildKey(mediaId))
+          .updateExpression("SET #status = :newStatus, updatedAt = :updatedAt")
+          .conditionExpression("#status = :expectedStatus")
+          .expressionAttributeNames(Map.of("#status", "status"))
+          .expressionAttributeValues(Map.of(
+              ":newStatus", s(newStatus.name()),
+              ":expectedStatus", s(expectedStatus.name()),
+              ":updatedAt", s(Instant.now().toString())))
+          .build();
+      dynamoDbClient.updateItem(request);
+      log.info("Updated status for mediaId: {} from {} to {}", mediaId, expectedStatus, newStatus);
+      return true;
+    } catch (ConditionalCheckFailedException e) {
+      log.warn("Conditional update failed for mediaId: {}, expected status: {}", mediaId, expectedStatus);
+      return false;
+    }
   }
 }
