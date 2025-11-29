@@ -30,6 +30,22 @@ pnpm build
 
 Requires the API server running at `http://localhost:9000`.
 
+## Testing
+
+```bash
+# Unit tests (Vitest)
+pnpm test              # Run once
+pnpm test:watch        # Watch mode
+
+# E2E tests (Playwright)
+pnpm test:e2e          # Run headless
+pnpm test:e2e:ui       # Interactive UI mode
+```
+
+**Test structure:**
+- `src/lib/*.test.ts` - Unit tests for utilities and stores
+- `e2e/*.spec.ts` - E2E tests for user flows
+
 ## Project Structure
 
 ```
@@ -82,3 +98,12 @@ src/
 - Extract shared logic into helper functions (e.g., `createMediaEntry()`)
 - Handle errors at the call site with try/catch
 - Use early returns to reduce nesting
+
+## Tech Stack
+
+- [Svelte 5](https://svelte.dev/) - UI framework with runes
+- [TypeScript](https://www.typescriptlang.org/) - Type safety
+- [Tailwind CSS v4](https://tailwindcss.com/) - Styling
+- [Vite](https://vite.dev/) - Build tool
+- [Vitest](https://vitest.dev/) - Unit testing
+- [Playwright](https://playwright.dev/) - E2E testing
