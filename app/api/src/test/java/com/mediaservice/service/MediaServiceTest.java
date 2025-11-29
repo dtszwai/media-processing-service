@@ -1,0 +1,254 @@
+package com.mediaservice.service;
+
+import com.mediaservice.config.MediaProperties;
+import com.mediaservice.model.Media;
+import com.mediaservice.model.MediaStatus;
+import io.opentelemetry.api.metrics.LongCounter;
+import io.opentelemetry.api.metrics.Meter;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanBuilder;
+import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Scope;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
+
+import java.io.IOException;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class MediaServiceTest {
+
+  @Mock
+  private DynamoDbService dynamoDbService;
+  @Mock
+  private S3Service s3Service;
+  @Mock
+  private SnsService snsService;
+  @Mock
+  private Tracer tracer;
+  @Mock
+  private Meter meter;
+  @Mock
+  private SpanBuilder spanBuilder;
+  @Mock
+  private Span span;
+  @Mock
+  private Scope scope;
+  @Mock
+  private LongCounter counter;
+
+  private MediaProperties mediaProperties;
+  private MediaService mediaService;
+
+  @BeforeEach
+  void setUp() {
+    mediaProperties = new MediaProperties();
+    mediaProperties.setMaxFileSize(100 * 1024 * 1024);
+    var width = new MediaProperties.Width();
+    width.setDefault(500);
+    width.setMin(100);
+    width.setMax(1024);
+    mediaProperties.setWidth(width);
+
+    lenient().when(tracer.spanBuilder(anyString())).thenReturn(spanBuilder);
+    lenient().when(spanBuilder.setSpanKind(any())).thenReturn(spanBuilder);
+    lenient().when(spanBuilder.startSpan()).thenReturn(span);
+    lenient().when(span.makeCurrent()).thenReturn(scope);
+    lenient().when(meter.counterBuilder(anyString()))
+        .thenReturn(mock(io.opentelemetry.api.metrics.LongCounterBuilder.class));
+    lenient().when(meter.counterBuilder(anyString()).setDescription(anyString()))
+        .thenReturn(mock(io.opentelemetry.api.metrics.LongCounterBuilder.class));
+    lenient().when(meter.counterBuilder(anyString()).setDescription(anyString()).build()).thenReturn(counter);
+
+    mediaService = new MediaService(dynamoDbService, s3Service, snsService, mediaProperties, tracer, meter);
+  }
+
+  @Nested
+  @DisplayName("uploadMedia")
+  class UploadMedia {
+    @Test
+    @DisplayName("should upload valid image and return media ID")
+    void shouldUploadValidImage() throws IOException {
+      var file = new MockMultipartFile("file", "test.jpg", "image/jpeg", "test-content".getBytes());
+      var response = mediaService.uploadMedia(file, 500);
+      assertThat(response.getMediaId()).isNotBlank();
+      verify(s3Service).uploadMedia(anyString(), eq("test.jpg"), eq(file));
+      verify(dynamoDbService).createMedia(any(Media.class));
+      verify(snsService).publishProcessMediaEvent(anyString(), eq(500));
+    }
+
+    @Test
+    @DisplayName("should reject non-image content type")
+    void shouldRejectNonImageContentType() {
+      var file = new MockMultipartFile("file", "test.pdf", "application/pdf", "test".getBytes());
+      assertThatThrownBy(() -> mediaService.uploadMedia(file, null))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessage("Invalid file type. Only images are supported.");
+    }
+
+    @Test
+    @DisplayName("should reject null content type")
+    void shouldRejectNullContentType() {
+      var file = new MockMultipartFile("file", "test.jpg", null, "test".getBytes());
+      assertThatThrownBy(() -> mediaService.uploadMedia(file, null))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessage("Invalid file type. Only images are supported.");
+    }
+
+    @Test
+    @DisplayName("should use default filename when original is empty")
+    void shouldUseDefaultFilenameWhenEmpty() throws IOException {
+      var file = new MockMultipartFile("file", "", "image/jpeg", "test".getBytes());
+      mediaService.uploadMedia(file, null);
+      verify(s3Service).uploadMedia(anyString(), eq("image.jpg"), eq(file));
+    }
+
+    @Test
+    @DisplayName("should use default width when not specified")
+    void shouldUseDefaultWidth() throws IOException {
+      var file = new MockMultipartFile("file", "test.jpg", "image/jpeg", "test".getBytes());
+      mediaService.uploadMedia(file, null);
+      verify(snsService).publishProcessMediaEvent(anyString(), eq(500));
+    }
+  }
+
+  @Nested
+  @DisplayName("getMediaStatus")
+  class GetMediaStatus {
+    @Test
+    @DisplayName("should return status when media exists")
+    void shouldReturnStatusWhenMediaExists() {
+      var media = createMedia(MediaStatus.PROCESSING);
+      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
+      var result = mediaService.getMediaStatus("media-123");
+      assertThat(result).contains(MediaStatus.PROCESSING);
+    }
+
+    @Test
+    @DisplayName("should return empty when media not found")
+    void shouldReturnEmptyWhenNotFound() {
+      when(dynamoDbService.getMedia("nonexistent")).thenReturn(Optional.empty());
+      var result = mediaService.getMediaStatus("nonexistent");
+      assertThat(result).isEmpty();
+    }
+  }
+
+  @Nested
+  @DisplayName("getDownloadUrl")
+  class GetDownloadUrl {
+
+    @Test
+    @DisplayName("should return URL when media is complete")
+    void shouldReturnUrlWhenComplete() {
+      var media = createMedia(MediaStatus.COMPLETE);
+      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
+      when(s3Service.getPresignedUrl("media-123", "test.jpg")).thenReturn("https://s3.example.com/signed-url");
+      var result = mediaService.getDownloadUrl("media-123");
+      assertThat(result).contains("https://s3.example.com/signed-url");
+    }
+
+    @Test
+    @DisplayName("should return empty when media is not complete")
+    void shouldReturnEmptyWhenNotComplete() {
+      var media = createMedia(MediaStatus.PROCESSING);
+      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
+      var result = mediaService.getDownloadUrl("media-123");
+      assertThat(result).isEmpty();
+      verify(s3Service, never()).getPresignedUrl(anyString(), anyString());
+    }
+  }
+
+  @Nested
+  @DisplayName("resizeMedia")
+  class ResizeMedia {
+
+    @Test
+    @DisplayName("should submit resize request when media is complete")
+    void shouldSubmitResizeWhenComplete() {
+      var media = createMedia(MediaStatus.COMPLETE);
+      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
+      when(dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.COMPLETE))
+          .thenReturn(true);
+      var result = mediaService.resizeMedia("media-123", 800);
+      assertThat(result).isPresent();
+      verify(snsService).publishResizeMediaEvent("media-123", 800);
+    }
+
+    @Test
+    @DisplayName("should return empty when status update fails")
+    void shouldReturnEmptyWhenStatusUpdateFails() {
+      var media = createMedia(MediaStatus.PROCESSING);
+      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
+      when(dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.COMPLETE))
+          .thenReturn(false);
+      var result = mediaService.resizeMedia("media-123", 800);
+      assertThat(result).isEmpty();
+      verify(snsService, never()).publishResizeMediaEvent(anyString(), any());
+    }
+  }
+
+  @Nested
+  @DisplayName("deleteMedia")
+  class DeleteMedia {
+    @Test
+    @DisplayName("should submit delete request when media exists")
+    void shouldSubmitDeleteWhenExists() {
+      var media = createMedia(MediaStatus.COMPLETE);
+      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
+      var result = mediaService.deleteMedia("media-123");
+      assertThat(result).isPresent();
+      verify(dynamoDbService).updateStatus("media-123", MediaStatus.DELETING);
+      verify(snsService).publishDeleteMediaEvent("media-123");
+    }
+
+    @Test
+    @DisplayName("should return empty when media not found")
+    void shouldReturnEmptyWhenNotFound() {
+      when(dynamoDbService.getMedia("nonexistent")).thenReturn(Optional.empty());
+      var result = mediaService.deleteMedia("nonexistent");
+      assertThat(result).isEmpty();
+      verify(snsService, never()).publishDeleteMediaEvent(anyString());
+    }
+  }
+
+  @Nested
+  @DisplayName("getAllMedia")
+  class GetAllMedia {
+    @Test
+    @DisplayName("should return all media from database")
+    void shouldReturnAllMedia() {
+      var mediaList = List.of(createMedia(MediaStatus.COMPLETE), createMedia(MediaStatus.PROCESSING));
+      when(dynamoDbService.getAllMedia()).thenReturn(mediaList);
+      var result = mediaService.getAllMedia();
+      assertThat(result).hasSize(2);
+    }
+  }
+
+  private Media createMedia(MediaStatus status) {
+    return Media.builder()
+        .mediaId("media-123")
+        .name("test.jpg")
+        .size(1024L)
+        .mimetype("image/jpeg")
+        .status(status)
+        .width(500)
+        .createdAt(Instant.now())
+        .updatedAt(Instant.now())
+        .build();
+  }
+}
