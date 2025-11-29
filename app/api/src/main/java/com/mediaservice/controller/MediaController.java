@@ -2,6 +2,7 @@ package com.mediaservice.controller;
 
 import com.mediaservice.config.MediaProperties;
 import com.mediaservice.dto.ErrorResponse;
+import com.mediaservice.dto.InitUploadRequest;
 import com.mediaservice.dto.MediaResponse;
 import com.mediaservice.dto.ResizeRequest;
 import com.mediaservice.mapper.MediaMapper;
@@ -89,6 +90,58 @@ public class MediaController {
               .status(500)
               .build());
     }
+  }
+
+  @PostMapping("/upload/init")
+  public ResponseEntity<?> initPresignedUpload(@Valid @RequestBody InitUploadRequest request) {
+    log.info("Init presigned upload request: fileName={}, size={}, contentType={}",
+        request.getFileName(), request.getFileSize(), request.getContentType());
+
+    // Validate file size
+    long maxUploadSize = mediaProperties.getUpload().getMaxPresignedUploadSize();
+    if (request.getFileSize() > maxUploadSize) {
+      long maxSizeGb = maxUploadSize / (1024 * 1024 * 1024);
+      return ResponseEntity.badRequest()
+          .body(ErrorResponse.builder()
+              .message("File size exceeds maximum allowed size of " + maxSizeGb + " GB.")
+              .status(400)
+              .build());
+    }
+
+    // Validate content type (images only for now)
+    if (!request.getContentType().startsWith("image/")) {
+      return ResponseEntity.badRequest()
+          .body(ErrorResponse.builder()
+              .message("Invalid content type. Only images are supported.")
+              .status(400)
+              .build());
+    }
+
+    try {
+      var response = mediaService.initPresignedUpload(request);
+      return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    } catch (Exception e) {
+      log.error("Failed to initialize presigned upload: {}", e.getMessage());
+      return ResponseEntity.internalServerError()
+          .body(ErrorResponse.builder()
+              .message("Internal server error")
+              .status(500)
+              .build());
+    }
+  }
+
+  @PostMapping("/{mediaId}/upload/complete")
+  public ResponseEntity<?> completePresignedUpload(@PathVariable String mediaId) {
+    log.info("Complete presigned upload request: mediaId={}", mediaId);
+
+    return mediaService.completePresignedUpload(mediaId)
+        .<ResponseEntity<?>>map(media -> ResponseEntity.accepted()
+            .body(mediaMapper.toIdResponse(media)))
+        .orElse(ResponseEntity.badRequest()
+            .body(ErrorResponse.builder()
+                .message("Upload not found, not in PENDING_UPLOAD status, or file not uploaded to S3.")
+                .status(400)
+                .build()));
   }
 
   @GetMapping("/{mediaId}")

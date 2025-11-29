@@ -31,6 +31,9 @@ media:
     min: 100
     max: 1024
   max-file-size: 104857600  # 100MB in bytes
+  upload:
+    presigned-url-expiration-seconds: 3600  # 1 hour
+    max-presigned-upload-size: 5368709120   # 5GB
 
 # OpenTelemetry Configuration
 otel:

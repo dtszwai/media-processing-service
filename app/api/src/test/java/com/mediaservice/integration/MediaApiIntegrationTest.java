@@ -246,6 +246,110 @@ class MediaApiIntegrationTest extends BaseIntegrationTest {
     }
   }
 
+  @Nested
+  @DisplayName("Presigned Upload")
+  class PresignedUpload {
+
+    @Test
+    @DisplayName("should initialize presigned upload")
+    void shouldInitializePresignedUpload() {
+      var headers = new HttpHeaders();
+      headers.setContentType(MediaType.APPLICATION_JSON);
+
+      var response = restTemplate.postForEntity(
+          baseUrl() + "/upload/init",
+          new HttpEntity<>("""
+              {
+                "fileName": "large-image.jpg",
+                "fileSize": 52428800,
+                "contentType": "image/jpeg",
+                "width": 800
+              }
+              """, headers),
+          String.class);
+
+      assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+      assertThat(response.getBody())
+          .contains("mediaId")
+          .contains("uploadUrl")
+          .contains("expiresIn")
+          .contains("method");
+    }
+
+    @Test
+    @DisplayName("should reject non-image content type")
+    void shouldRejectNonImageContentType() {
+      var headers = new HttpHeaders();
+      headers.setContentType(MediaType.APPLICATION_JSON);
+
+      var response = restTemplate.postForEntity(
+          baseUrl() + "/upload/init",
+          new HttpEntity<>("""
+              {
+                "fileName": "document.pdf",
+                "fileSize": 1024,
+                "contentType": "application/pdf"
+              }
+              """, headers),
+          String.class);
+
+      assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+      assertThat(response.getBody()).contains("Only images are supported");
+    }
+
+    @Test
+    @DisplayName("should complete upload when file exists in S3")
+    void shouldCompleteUploadWhenFileExists() {
+      // Create media in PENDING_UPLOAD status
+      createAndSaveMedia("media-upload-123", MediaStatus.PENDING_UPLOAD);
+
+      // Upload file to S3
+      s3Client.putObject(
+          b -> b.bucket("media-bucket").key("uploads/media-upload-123/test.jpg").contentType("image/jpeg"),
+          software.amazon.awssdk.core.sync.RequestBody.fromBytes("test-content".getBytes()));
+
+      var response = restTemplate.postForEntity(
+          baseUrl() + "/media-upload-123/upload/complete",
+          null,
+          String.class);
+
+      assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+      assertThat(response.getBody()).contains("media-upload-123");
+
+      // Verify status changed to PENDING
+      var media = dynamoDbService.getMedia("media-upload-123");
+      assertThat(media).isPresent();
+      assertThat(media.get().getStatus()).isEqualTo(MediaStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("should return 400 when file not uploaded to S3")
+    void shouldReturn400WhenFileNotUploaded() {
+      // Create media in PENDING_UPLOAD status but don't upload file
+      createAndSaveMedia("media-no-file", MediaStatus.PENDING_UPLOAD);
+
+      var response = restTemplate.postForEntity(
+          baseUrl() + "/media-no-file/upload/complete",
+          null,
+          String.class);
+
+      assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("should return 400 when media not in PENDING_UPLOAD status")
+    void shouldReturn400WhenWrongStatus() {
+      createAndSaveMedia("media-wrong-status", MediaStatus.COMPLETE);
+
+      var response = restTemplate.postForEntity(
+          baseUrl() + "/media-wrong-status/upload/complete",
+          null,
+          String.class);
+
+      assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+  }
+
   private Media createAndSaveMedia(String mediaId, MediaStatus status) {
     var media = Media.builder()
         .mediaId(mediaId)

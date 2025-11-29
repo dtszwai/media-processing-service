@@ -1,6 +1,8 @@
 package com.mediaservice.service;
 
 import com.mediaservice.config.MediaProperties;
+import com.mediaservice.dto.InitUploadRequest;
+import com.mediaservice.dto.InitUploadResponse;
 import com.mediaservice.dto.MediaResponse;
 import com.mediaservice.model.Media;
 import com.mediaservice.model.MediaStatus;
@@ -16,6 +18,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -23,7 +27,6 @@ import java.util.UUID;
 @Slf4j
 @Service
 public class MediaService {
-
   private final DynamoDbService dynamoDbService;
   private final S3Service s3Service;
   private final SnsService snsService;
@@ -147,5 +150,96 @@ public class MediaService {
 
   public List<Media> getAllMedia() {
     return dynamoDbService.getAllMedia();
+  }
+
+  public InitUploadResponse initPresignedUpload(InitUploadRequest request) {
+    Span span = tracer.spanBuilder("init-presigned-upload")
+        .setSpanKind(SpanKind.INTERNAL)
+        .startSpan();
+    try (Scope scope = span.makeCurrent()) {
+      String mediaId = UUID.randomUUID().toString();
+      span.setAttribute("media.id", mediaId);
+
+      int targetWidth = mediaProperties.resolveWidth(request.getWidth());
+      int expirationSeconds = mediaProperties.getUpload().getPresignedUrlExpirationSeconds();
+
+      // Generate presigned URL
+      String uploadUrl = s3Service.generatePresignedUploadUrl(
+          mediaId,
+          request.getFileName(),
+          request.getContentType(),
+          Duration.ofSeconds(expirationSeconds));
+
+      // Store metadata in DynamoDB with PENDING_UPLOAD status
+      dynamoDbService.createMedia(Media.builder()
+          .mediaId(mediaId)
+          .size(request.getFileSize())
+          .name(request.getFileName())
+          .mimetype(request.getContentType())
+          .status(MediaStatus.PENDING_UPLOAD)
+          .width(targetWidth)
+          .build());
+
+      var headers = new LinkedHashMap<String, String>();
+      headers.put("Content-Type", request.getContentType());
+
+      span.setStatus(StatusCode.OK);
+      log.info("Presigned upload initialized: mediaId={}, fileName={}", mediaId, request.getFileName());
+
+      return InitUploadResponse.builder()
+          .mediaId(mediaId)
+          .uploadUrl(uploadUrl)
+          .expiresIn(expirationSeconds)
+          .method("PUT")
+          .headers(headers)
+          .build();
+    } catch (Exception e) {
+      span.setStatus(StatusCode.ERROR, e.getMessage());
+      span.recordException(e);
+      throw e;
+    } finally {
+      span.end();
+    }
+  }
+
+  public Optional<Media> completePresignedUpload(String mediaId) {
+    Span span = tracer.spanBuilder("complete-presigned-upload")
+        .setSpanKind(SpanKind.INTERNAL)
+        .startSpan();
+    try (Scope scope = span.makeCurrent()) {
+      span.setAttribute("media.id", mediaId);
+
+      return dynamoDbService.getMedia(mediaId)
+          .filter(media -> media.getStatus() == MediaStatus.PENDING_UPLOAD)
+          .flatMap(media -> {
+            // Verify file exists in S3
+            if (!s3Service.objectExists(mediaId, media.getName())) {
+              log.warn("File not found in S3 for mediaId: {}", mediaId);
+              return Optional.empty();
+            }
+
+            // Update status to PENDING and trigger processing
+            boolean updated = dynamoDbService.updateStatusConditionally(
+                mediaId, MediaStatus.PENDING, MediaStatus.PENDING_UPLOAD);
+            if (!updated) {
+              log.warn("Failed to update status for mediaId: {}", mediaId);
+              return Optional.empty();
+            }
+
+            // Publish event for async processing
+            snsService.publishProcessMediaEvent(mediaId, media.getWidth());
+            uploadSuccessCounter.add(1);
+            span.setStatus(StatusCode.OK);
+            log.info("Presigned upload completed: mediaId={}", mediaId);
+            return Optional.of(media);
+          });
+    } catch (Exception e) {
+      uploadFailureCounter.add(1);
+      span.setStatus(StatusCode.ERROR, e.getMessage());
+      span.recordException(e);
+      throw e;
+    } finally {
+      span.end();
+    }
   }
 }

@@ -11,6 +11,7 @@ public class MediaProperties {
 
   private Width width = new Width();
   private long maxFileSize;
+  private Upload upload = new Upload();
 
   @Data
   public static class Width {
@@ -25,6 +26,12 @@ public class MediaProperties {
     public void setDefault(int defaultValue) {
       this.defaultValue = defaultValue;
     }
+  }
+
+  @Data
+  public static class Upload {
+    private int presignedUrlExpirationSeconds = 3600; // 1 hour
+    private long maxPresignedUploadSize = 5368709120L; // 5GB
   }
 
   public boolean isWidthValid(Integer width) {

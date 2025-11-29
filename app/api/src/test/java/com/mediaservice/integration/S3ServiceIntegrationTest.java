@@ -10,6 +10,8 @@ import org.springframework.mock.web.MockMultipartFile;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 
+import java.time.Duration;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Tag("integration")
@@ -70,6 +72,62 @@ class S3ServiceIntegrationTest extends BaseIntegrationTest {
           .isNotBlank()
           .contains("media-bucket")
           .contains("resized/media-123/test.jpg");
+    }
+  }
+
+  @Nested
+  @DisplayName("Presigned Upload URL")
+  class PresignedUploadUrl {
+
+    @Test
+    @DisplayName("should generate presigned upload URL")
+    void shouldGeneratePresignedUploadUrl() {
+      var url = s3Service.generatePresignedUploadUrl(
+          "media-456", "large-image.jpg", "image/jpeg", Duration.ofHours(1));
+
+      assertThat(url)
+          .isNotBlank()
+          .contains("media-bucket")
+          .contains("uploads/media-456/large-image.jpg");
+    }
+
+    @Test
+    @DisplayName("should generate different URLs for different files")
+    void shouldGenerateDifferentUrls() {
+      var url1 = s3Service.generatePresignedUploadUrl(
+          "media-1", "file1.jpg", "image/jpeg", Duration.ofHours(1));
+      var url2 = s3Service.generatePresignedUploadUrl(
+          "media-2", "file2.jpg", "image/jpeg", Duration.ofHours(1));
+
+      assertThat(url1).isNotEqualTo(url2);
+      assertThat(url1).contains("media-1");
+      assertThat(url2).contains("media-2");
+    }
+  }
+
+  @Nested
+  @DisplayName("Object Exists")
+  class ObjectExists {
+
+    @Test
+    @DisplayName("should return true when object exists")
+    void shouldReturnTrueWhenExists() {
+      // Upload a file first
+      s3Client.putObject(
+          b -> b.bucket("media-bucket").key("uploads/media-exists/test.jpg").contentType("image/jpeg"),
+          software.amazon.awssdk.core.sync.RequestBody.fromBytes("test-content".getBytes()));
+
+      var exists = s3Service.objectExists("media-exists", "test.jpg");
+
+      assertThat(exists).isTrue();
+    }
+
+    @Test
+    @DisplayName("should return false when object does not exist")
+    void shouldReturnFalseWhenNotExists() {
+      var exists = s3Service.objectExists("nonexistent-media", "nonexistent.jpg");
+
+      assertThat(exists).isFalse();
     }
   }
 }

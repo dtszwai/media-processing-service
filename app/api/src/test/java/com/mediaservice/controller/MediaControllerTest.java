@@ -1,12 +1,15 @@
 package com.mediaservice.controller;
 
 import com.mediaservice.config.MediaProperties;
+import com.mediaservice.dto.InitUploadResponse;
 import com.mediaservice.dto.MediaResponse;
 import com.mediaservice.dto.StatusResponse;
 import com.mediaservice.mapper.MediaMapper;
 import com.mediaservice.model.Media;
 import com.mediaservice.model.MediaStatus;
 import com.mediaservice.service.MediaService;
+
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -266,6 +269,130 @@ class MediaControllerTest {
           .andExpect(status().isOk())
           .andExpect(jsonPath("$", hasSize(1)))
           .andExpect(jsonPath("$[0].mediaId").value("media-123"));
+    }
+  }
+
+  @Nested
+  @DisplayName("POST /v1/media/upload/init")
+  class InitPresignedUpload {
+
+    @Test
+    @DisplayName("should initialize presigned upload")
+    void shouldInitializePresignedUpload() throws Exception {
+      var uploadConfig = new MediaProperties.Upload();
+      uploadConfig.setMaxPresignedUploadSize(5L * 1024 * 1024 * 1024);
+
+      var response = InitUploadResponse.builder()
+          .mediaId("media-123")
+          .uploadUrl("https://s3.example.com/presigned-url")
+          .expiresIn(3600)
+          .method("PUT")
+          .headers(Map.of("Content-Type", "image/jpeg"))
+          .build();
+
+      when(mediaProperties.getUpload()).thenReturn(uploadConfig);
+      when(mediaService.initPresignedUpload(any())).thenReturn(response);
+
+      mockMvc.perform(post("/v1/media/upload/init")
+          .contentType(MediaType.APPLICATION_JSON)
+          .content("""
+              {
+                "fileName": "large-image.jpg",
+                "fileSize": 52428800,
+                "contentType": "image/jpeg",
+                "width": 800
+              }
+              """))
+          .andExpect(status().isCreated())
+          .andExpect(jsonPath("$.mediaId").value("media-123"))
+          .andExpect(jsonPath("$.uploadUrl").value("https://s3.example.com/presigned-url"))
+          .andExpect(jsonPath("$.expiresIn").value(3600))
+          .andExpect(jsonPath("$.method").value("PUT"));
+    }
+
+    @Test
+    @DisplayName("should reject file exceeding size limit")
+    void shouldRejectLargeFile() throws Exception {
+      var uploadConfig = new MediaProperties.Upload();
+      uploadConfig.setMaxPresignedUploadSize(5L * 1024 * 1024 * 1024);
+
+      when(mediaProperties.getUpload()).thenReturn(uploadConfig);
+
+      mockMvc.perform(post("/v1/media/upload/init")
+          .contentType(MediaType.APPLICATION_JSON)
+          .content("""
+              {
+                "fileName": "huge-file.jpg",
+                "fileSize": 6000000000000,
+                "contentType": "image/jpeg"
+              }
+              """))
+          .andExpect(status().isBadRequest())
+          .andExpect(jsonPath("$.message", containsString("exceeds maximum")));
+    }
+
+    @Test
+    @DisplayName("should reject non-image content type")
+    void shouldRejectNonImageContentType() throws Exception {
+      var uploadConfig = new MediaProperties.Upload();
+      uploadConfig.setMaxPresignedUploadSize(5L * 1024 * 1024 * 1024);
+
+      when(mediaProperties.getUpload()).thenReturn(uploadConfig);
+
+      mockMvc.perform(post("/v1/media/upload/init")
+          .contentType(MediaType.APPLICATION_JSON)
+          .content("""
+              {
+                "fileName": "document.pdf",
+                "fileSize": 1024,
+                "contentType": "application/pdf"
+              }
+              """))
+          .andExpect(status().isBadRequest())
+          .andExpect(jsonPath("$.message", containsString("Only images are supported")));
+    }
+
+    @Test
+    @DisplayName("should reject missing required fields")
+    void shouldRejectMissingFields() throws Exception {
+      var uploadConfig = new MediaProperties.Upload();
+      uploadConfig.setMaxPresignedUploadSize(5L * 1024 * 1024 * 1024);
+
+      when(mediaProperties.getUpload()).thenReturn(uploadConfig);
+
+      mockMvc.perform(post("/v1/media/upload/init")
+          .contentType(MediaType.APPLICATION_JSON)
+          .content("{}"))
+          .andExpect(status().isBadRequest());
+    }
+  }
+
+  @Nested
+  @DisplayName("POST /v1/media/{mediaId}/upload/complete")
+  class CompletePresignedUpload {
+
+    @Test
+    @DisplayName("should complete presigned upload")
+    void shouldCompletePresignedUpload() throws Exception {
+      var media = createMedia();
+      var response = MediaResponse.builder().mediaId("media-123").build();
+
+      when(mediaService.completePresignedUpload("media-123")).thenReturn(Optional.of(media));
+      when(mediaMapper.toIdResponse(media)).thenReturn(response);
+
+      mockMvc.perform(post("/v1/media/{mediaId}/upload/complete", "media-123"))
+          .andExpect(status().isAccepted())
+          .andExpect(jsonPath("$.mediaId").value("media-123"));
+    }
+
+    @Test
+    @DisplayName("should return 400 when upload not found or not ready")
+    void shouldReturn400WhenNotFound() throws Exception {
+      when(mediaService.completePresignedUpload("nonexistent")).thenReturn(Optional.empty());
+
+      mockMvc.perform(post("/v1/media/{mediaId}/upload/complete", "nonexistent"))
+          .andExpect(status().isBadRequest())
+          .andExpect(jsonPath("$.message", containsString("not in PENDING_UPLOAD status")));
     }
   }
 

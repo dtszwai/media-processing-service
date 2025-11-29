@@ -17,6 +17,7 @@ Thumbs.db
 .project
 .settings/
 .history/
+CLAUDE.md
 
 # Java / Maven
 target/

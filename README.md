@@ -61,8 +61,21 @@ make local-down
 ### Example
 
 ```bash
-# Upload image
+# Upload image (direct - for small files < 100MB)
 curl -X POST -F "file=@photo.jpg" http://localhost:9000/v1/media/upload
+
+# Upload image (presigned URL - for large files up to 5GB)
+# Step 1: Initialize upload
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"fileName": "photo.jpg", "fileSize": 52428800, "contentType": "image/jpeg"}' \
+  http://localhost:9000/v1/media/upload/init
+
+# Step 2: Upload directly to S3 using the returned uploadUrl
+curl -X PUT -H "Content-Type: image/jpeg" \
+  --data-binary @photo.jpg "{uploadUrl}"
+
+# Step 3: Confirm upload complete
+curl -X POST http://localhost:9000/v1/media/{id}/upload/complete
 
 # Check status (returns PENDING -> PROCESSING -> COMPLETE)
 curl http://localhost:9000/v1/media/{id}/status
@@ -80,12 +93,20 @@ curl -X DELETE http://localhost:9000/v1/media/{id}
 
 ## Processing Flow
 
-### Upload
+### Upload (Direct)
 
 1. Client uploads image → API stores in S3, metadata in DynamoDB (status: `PENDING`)
 2. API publishes `media.v1.process` event to SNS
 3. Lambda receives event, sets status to `PROCESSING`, processes image (resize + watermark)
 4. Lambda stores result in S3, updates status to `COMPLETE`
+5. Client polls status, downloads via presigned URL
+
+### Upload (Presigned URL - for large files)
+
+1. Client requests presigned URL → API creates metadata in DynamoDB (status: `PENDING_UPLOAD`), returns presigned S3 PUT URL
+2. Client uploads file directly to S3 using presigned URL (bypasses API server)
+3. Client confirms upload complete → API verifies file in S3, updates status to `PENDING`, publishes `media.v1.process` event
+4. Lambda receives event, processes image as above
 5. Client polls status, downloads via presigned URL
 
 ### Resize

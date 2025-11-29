@@ -1,6 +1,7 @@
 package com.mediaservice.service;
 
 import com.mediaservice.config.MediaProperties;
+import com.mediaservice.dto.InitUploadRequest;
 import com.mediaservice.model.Media;
 import com.mediaservice.model.MediaStatus;
 import io.opentelemetry.api.metrics.LongCounter;
@@ -27,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -64,6 +66,10 @@ class MediaServiceTest {
     width.setMin(100);
     width.setMax(1024);
     mediaProperties.setWidth(width);
+    var upload = new MediaProperties.Upload();
+    upload.setPresignedUrlExpirationSeconds(3600);
+    upload.setMaxPresignedUploadSize(5L * 1024 * 1024 * 1024);
+    mediaProperties.setUpload(upload);
 
     lenient().when(tracer.spanBuilder(anyString())).thenReturn(spanBuilder);
     lenient().when(spanBuilder.setSpanKind(any())).thenReturn(spanBuilder);
@@ -236,6 +242,127 @@ class MediaServiceTest {
       when(dynamoDbService.getAllMedia()).thenReturn(mediaList);
       var result = mediaService.getAllMedia();
       assertThat(result).hasSize(2);
+    }
+  }
+
+  @Nested
+  @DisplayName("initPresignedUpload")
+  class InitPresignedUpload {
+    @Test
+    @DisplayName("should initialize presigned upload and return response")
+    void shouldInitializePresignedUpload() {
+      var request = InitUploadRequest.builder()
+          .fileName("large-image.jpg")
+          .fileSize(50 * 1024 * 1024L)
+          .contentType("image/jpeg")
+          .width(800)
+          .build();
+
+      when(s3Service.generatePresignedUploadUrl(anyString(), eq("large-image.jpg"), eq("image/jpeg"), any()))
+          .thenReturn("https://s3.example.com/presigned-upload-url");
+
+      var response = mediaService.initPresignedUpload(request);
+
+      assertThat(response.getMediaId()).isNotBlank();
+      assertThat(response.getUploadUrl()).isEqualTo("https://s3.example.com/presigned-upload-url");
+      assertThat(response.getExpiresIn()).isEqualTo(3600);
+      assertThat(response.getMethod()).isEqualTo("PUT");
+      assertThat(response.getHeaders()).containsEntry("Content-Type", "image/jpeg");
+
+      verify(dynamoDbService).createMedia(argThat(media -> media.getStatus() == MediaStatus.PENDING_UPLOAD &&
+          media.getName().equals("large-image.jpg") &&
+          media.getMimetype().equals("image/jpeg") &&
+          media.getWidth() == 800));
+    }
+
+    @Test
+    @DisplayName("should use default width when not specified")
+    void shouldUseDefaultWidth() {
+      var request = InitUploadRequest.builder()
+          .fileName("image.jpg")
+          .fileSize(1024L)
+          .contentType("image/jpeg")
+          .build();
+
+      when(s3Service.generatePresignedUploadUrl(anyString(), anyString(), anyString(), any()))
+          .thenReturn("https://s3.example.com/url");
+
+      mediaService.initPresignedUpload(request);
+
+      verify(dynamoDbService).createMedia(argThat(media -> media.getWidth() == 500));
+    }
+  }
+
+  @Nested
+  @DisplayName("completePresignedUpload")
+  class CompletePresignedUpload {
+
+    @Test
+    @DisplayName("should complete upload when file exists in S3")
+    void shouldCompleteUploadWhenFileExists() {
+      var media = createMedia(MediaStatus.PENDING_UPLOAD);
+      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
+      when(s3Service.objectExists("media-123", "test.jpg")).thenReturn(true);
+      when(dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.PENDING_UPLOAD))
+          .thenReturn(true);
+
+      var result = mediaService.completePresignedUpload("media-123");
+
+      assertThat(result).isPresent();
+      verify(snsService).publishProcessMediaEvent("media-123", 500);
+    }
+
+    @Test
+    @DisplayName("should return empty when media not found")
+    void shouldReturnEmptyWhenNotFound() {
+      when(dynamoDbService.getMedia("nonexistent")).thenReturn(Optional.empty());
+
+      var result = mediaService.completePresignedUpload("nonexistent");
+
+      assertThat(result).isEmpty();
+      verify(s3Service, never()).objectExists(anyString(), anyString());
+      verify(snsService, never()).publishProcessMediaEvent(anyString(), any());
+    }
+
+    @Test
+    @DisplayName("should return empty when status is not PENDING_UPLOAD")
+    void shouldReturnEmptyWhenWrongStatus() {
+      var media = createMedia(MediaStatus.COMPLETE);
+      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
+
+      var result = mediaService.completePresignedUpload("media-123");
+
+      assertThat(result).isEmpty();
+      verify(s3Service, never()).objectExists(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("should return empty when file not found in S3")
+    void shouldReturnEmptyWhenFileNotInS3() {
+      var media = createMedia(MediaStatus.PENDING_UPLOAD);
+      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
+      when(s3Service.objectExists("media-123", "test.jpg")).thenReturn(false);
+
+      var result = mediaService.completePresignedUpload("media-123");
+
+      assertThat(result).isEmpty();
+      verify(dynamoDbService, never()).updateStatusConditionally(anyString(), any(), any());
+      verify(snsService, never()).publishProcessMediaEvent(anyString(), any());
+    }
+
+    @Test
+    @DisplayName("should return empty when status update fails")
+    void shouldReturnEmptyWhenStatusUpdateFails() {
+      var media = createMedia(MediaStatus.PENDING_UPLOAD);
+      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
+      when(s3Service.objectExists("media-123", "test.jpg")).thenReturn(true);
+      when(dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.PENDING_UPLOAD))
+          .thenReturn(false);
+
+      var result = mediaService.completePresignedUpload("media-123");
+
+      assertThat(result).isEmpty();
+      verify(snsService, never()).publishProcessMediaEvent(anyString(), any());
     }
   }
 
