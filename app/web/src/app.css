@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+:root {
+  --color-primary: #111827;
+  --color-primary-hover: #1f2937;
+}
+
+* { font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif; }
+body { background: #f9fafb; margin: 0; }
+#app { min-height: 100vh; }
+
+/* Upload Zone */
+.upload-zone {
+  border: 2px dashed #d1d5db;
+  transition: all 0.2s ease;
+}
+.upload-zone:hover, .upload-zone.dragover { border-color: #3b82f6; background: #eff6ff; }
+.upload-zone.has-file { border-color: #10b981; background: #f0fdf4; }
+
+/* Buttons */
+.btn-primary {
+  background: var(--color-primary);
+  color: white;
+  transition: background 0.2s;
+}
+.btn-primary:hover { background: var(--color-primary-hover); }
+.btn-primary:disabled { background: #9ca3af; cursor: not-allowed; }
+
+/* Status Badges */
+.status-badge {
+  padding: 2px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.status-pending_upload { background: #f3e8ff; color: #6b21a8; }
+.status-pending { background: #fef3c7; color: #92400e; }
+.status-processing { background: #dbeafe; color: #1e40af; }
+.status-complete { background: #d1fae5; color: #065f46; }
+.status-error { background: #fee2e2; color: #991b1b; }
+.status-uploading { background: #f3f4f6; color: #374151; }
+.status-deleting { background: #fecaca; color: #7f1d1d; }
+
+/* Cards & Images */
+.card { background: white; border: 1px solid #e5e7eb; }
+.image-box {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1rem;
+}
+.image-box img { width: 100%; height: 180px; object-fit: contain; border-radius: 4px; }
+
+/* Progress Bar */
+.progress-bar { background: #e5e7eb; border-radius: 4px; overflow: hidden; }
+.progress-bar-fill { background: #3b82f6; height: 100%; transition: width 0.3s ease; }
+
+/* Animations */
+.pulse { animation: pulse 1.5s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
