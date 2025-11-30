@@ -3,10 +3,18 @@ package com.mediaservice.controller;
 import com.mediaservice.config.MediaProperties;
 import com.mediaservice.dto.ErrorResponse;
 import com.mediaservice.dto.InitUploadRequest;
+import com.mediaservice.dto.InitUploadResponse;
 import com.mediaservice.dto.MediaResponse;
 import com.mediaservice.dto.ResizeRequest;
+import com.mediaservice.dto.StatusResponse;
+import com.mediaservice.exception.MediaConflictException;
 import com.mediaservice.mapper.MediaMapper;
 import com.mediaservice.service.MediaService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +34,6 @@ import java.util.List;
 @RequestMapping("/v1/media")
 @RequiredArgsConstructor
 public class MediaController {
-
   private final MediaService mediaService;
   private final MediaMapper mediaMapper;
   private final MediaProperties mediaProperties;
@@ -58,7 +65,7 @@ public class MediaController {
   }
 
   @PostMapping("/upload/init")
-  public ResponseEntity<?> initPresignedUpload(@Valid @RequestBody InitUploadRequest request) {
+  public ResponseEntity<InitUploadResponse> initPresignedUpload(@Valid @RequestBody InitUploadRequest request) {
     log.info("Init presigned upload request: fileName={}, size={}, contentType={}",
         request.getFileName(), request.getFileSize(), request.getContentType());
 
@@ -66,39 +73,48 @@ public class MediaController {
     return ResponseEntity.status(HttpStatus.CREATED).body(mediaService.initPresignedUpload(request));
   }
 
+  @Operation(summary = "Complete presigned upload")
+  @ApiResponses({
+      @ApiResponse(responseCode = "202", description = "Upload completed", content = @Content(schema = @Schema(implementation = MediaResponse.class))),
+      @ApiResponse(responseCode = "400", description = "Upload not found or invalid state", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+  })
   @PostMapping("/{mediaId}/upload/complete")
-  public ResponseEntity<?> completePresignedUpload(@PathVariable String mediaId) {
+  public ResponseEntity<MediaResponse> completePresignedUpload(@PathVariable String mediaId) {
     log.info("Complete presigned upload request: mediaId={}", mediaId);
-
     return mediaService.completePresignedUpload(mediaId)
-        .<ResponseEntity<?>>map(media -> ResponseEntity.accepted().body(mediaMapper.toIdResponse(media)))
-        .orElse(badRequest("Upload not found, not in PENDING_UPLOAD status, or file not uploaded to S3."));
+        .map(media -> ResponseEntity.accepted().body(mediaMapper.toIdResponse(media)))
+        .orElseThrow(() -> new IllegalArgumentException(
+            "Upload not found, not in PENDING_UPLOAD status, or file not uploaded to S3."));
   }
 
   @GetMapping("/{mediaId}")
-  public ResponseEntity<?> getMedia(@PathVariable String mediaId) {
+  public ResponseEntity<MediaResponse> getMedia(@PathVariable String mediaId) {
     log.info("Get media request: mediaId={}", mediaId);
     return mediaService.getMedia(mediaId)
-        .<ResponseEntity<?>>map(media -> ResponseEntity.ok(mediaMapper.toResponse(media)))
+        .<ResponseEntity<MediaResponse>>map(media -> ResponseEntity.ok(mediaMapper.toResponse(media)))
         .orElse(ResponseEntity.notFound().build());
   }
 
   @GetMapping("/{mediaId}/status")
-  public ResponseEntity<?> getMediaStatus(@PathVariable String mediaId) {
+  public ResponseEntity<StatusResponse> getMediaStatus(@PathVariable String mediaId) {
     log.info("Status request: mediaId={}", mediaId);
     return mediaService.getMediaStatus(mediaId)
-        .<ResponseEntity<?>>map(status -> ResponseEntity.ok(mediaMapper.toStatusResponse(status)))
+        .<ResponseEntity<StatusResponse>>map(status -> ResponseEntity.ok(mediaMapper.toStatusResponse(status)))
         .orElse(ResponseEntity.notFound().build());
   }
 
+  @Operation(summary = "Download processed media", description = "Redirects to presigned S3 URL")
+  @ApiResponses({
+      @ApiResponse(responseCode = "302", description = "Redirect to download URL"),
+      @ApiResponse(responseCode = "202", description = "Media still processing", content = @Content(schema = @Schema(implementation = MediaResponse.class))),
+      @ApiResponse(responseCode = "404", description = "Media not found")
+  })
   @GetMapping("/{mediaId}/download")
-  public ResponseEntity<?> downloadMedia(@PathVariable String mediaId, HttpServletRequest request) {
+  public ResponseEntity<MediaResponse> downloadMedia(@PathVariable String mediaId, HttpServletRequest request) {
     log.info("Download request: mediaId={}", mediaId);
-
     if (!mediaService.mediaExists(mediaId)) {
       return ResponseEntity.notFound().build();
     }
-
     if (mediaService.isMediaProcessing(mediaId)) {
       var headers = new HttpHeaders();
       headers.add("Retry-After", "60");
@@ -108,29 +124,35 @@ public class MediaController {
           .headers(headers)
           .body(mediaMapper.toMessageResponse("Media processing in progress."));
     }
-
     return mediaService.getDownloadUrl(mediaId)
-        .<ResponseEntity<?>>map(url -> ResponseEntity.status(HttpStatus.FOUND).location(URI.create(url)).build())
+        .<ResponseEntity<MediaResponse>>map(
+            url -> ResponseEntity.status(HttpStatus.FOUND).location(URI.create(url)).build())
         .orElse(ResponseEntity.notFound().build());
   }
 
+  @Operation(summary = "Resize media")
+  @ApiResponses({
+      @ApiResponse(responseCode = "202", description = "Resize request accepted", content = @Content(schema = @Schema(implementation = MediaResponse.class))),
+      @ApiResponse(responseCode = "404", description = "Media not found"),
+      @ApiResponse(responseCode = "409", description = "Media not in COMPLETE status", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+  })
   @PutMapping("/{mediaId}/resize")
-  public ResponseEntity<?> resizeMedia(@PathVariable String mediaId, @Valid @RequestBody ResizeRequest resizeRequest) {
+  public ResponseEntity<MediaResponse> resizeMedia(@PathVariable String mediaId,
+      @Valid @RequestBody ResizeRequest resizeRequest) {
     log.info("Resize request: mediaId={}", mediaId);
     if (!mediaService.mediaExists(mediaId)) {
       return ResponseEntity.notFound().build();
     }
     return mediaService.resizeMedia(mediaId, resizeRequest.getWidth(), resizeRequest.getOutputFormat())
-        .<ResponseEntity<?>>map(media -> ResponseEntity.accepted().body(mediaMapper.toIdResponse(media)))
-        .orElse(ResponseEntity.status(HttpStatus.CONFLICT).body(
-            ErrorResponse.builder().message("Cannot resize: media is not in COMPLETE status").status(409).build()));
+        .map(media -> ResponseEntity.accepted().body(mediaMapper.toIdResponse(media)))
+        .orElseThrow(() -> new MediaConflictException("Cannot resize: media is not in COMPLETE status"));
   }
 
   @DeleteMapping("/{mediaId}")
-  public ResponseEntity<?> deleteMedia(@PathVariable String mediaId) {
+  public ResponseEntity<MediaResponse> deleteMedia(@PathVariable String mediaId) {
     log.info("Delete request: mediaId={}", mediaId);
     return mediaService.deleteMedia(mediaId)
-        .<ResponseEntity<?>>map(media -> ResponseEntity.accepted().body(mediaMapper.toIdResponse(media)))
+        .<ResponseEntity<MediaResponse>>map(media -> ResponseEntity.accepted().body(mediaMapper.toIdResponse(media)))
         .orElse(ResponseEntity.notFound().build());
   }
 
@@ -154,9 +176,5 @@ public class MediaController {
     if (!request.getContentType().startsWith("image/")) {
       throw new IllegalArgumentException("Invalid content type. Only images are supported.");
     }
-  }
-
-  private ResponseEntity<ErrorResponse> badRequest(String message) {
-    return ResponseEntity.badRequest().body(ErrorResponse.builder().message(message).status(400).build());
   }
 }

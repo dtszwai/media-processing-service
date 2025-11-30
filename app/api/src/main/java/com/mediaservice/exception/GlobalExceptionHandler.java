@@ -1,7 +1,10 @@
 package com.mediaservice.exception;
 
 import com.mediaservice.dto.ErrorResponse;
+import com.mediaservice.filter.RequestIdFilter;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -16,6 +19,9 @@ import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedExce
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+  private String getRequestId() {
+    return MDC.get(RequestIdFilter.MDC_REQUEST_ID);
+  }
 
   @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
   public ResponseEntity<ErrorResponse> handleMediaTypeNotSupported(HttpMediaTypeNotSupportedException e) {
@@ -24,6 +30,7 @@ public class GlobalExceptionHandler {
         .body(ErrorResponse.builder()
             .message(message)
             .status(415)
+            .requestId(getRequestId())
             .build());
   }
 
@@ -33,6 +40,7 @@ public class GlobalExceptionHandler {
         .body(ErrorResponse.builder()
             .message("Invalid request body. Expected valid JSON.")
             .status(400)
+            .requestId(getRequestId())
             .build());
   }
 
@@ -43,6 +51,7 @@ public class GlobalExceptionHandler {
         .body(ErrorResponse.builder()
             .message("Failed to upload media. Check the file size. Max size is 100 MB.")
             .status(400)
+            .requestId(getRequestId())
             .build());
   }
 
@@ -57,6 +66,7 @@ public class GlobalExceptionHandler {
         .body(ErrorResponse.builder()
             .message(message)
             .status(400)
+            .requestId(getRequestId())
             .build());
   }
 
@@ -66,6 +76,7 @@ public class GlobalExceptionHandler {
         .body(ErrorResponse.builder()
             .message(e.getMessage())
             .status(400)
+            .requestId(getRequestId())
             .build());
   }
 
@@ -76,6 +87,7 @@ public class GlobalExceptionHandler {
         .body(ErrorResponse.builder()
             .message("Internal server error")
             .status(500)
+            .requestId(getRequestId())
             .build());
   }
 
@@ -86,6 +98,28 @@ public class GlobalExceptionHandler {
         .body(ErrorResponse.builder()
             .message("Resource state conflict")
             .status(409)
+            .requestId(getRequestId())
+            .build());
+  }
+
+  @ExceptionHandler(MediaConflictException.class)
+  public ResponseEntity<ErrorResponse> handleMediaConflict(MediaConflictException e) {
+    return ResponseEntity.status(HttpStatus.CONFLICT)
+        .body(ErrorResponse.builder()
+            .message(e.getMessage())
+            .status(409)
+            .requestId(getRequestId())
+            .build());
+  }
+
+  @ExceptionHandler(CallNotPermittedException.class)
+  public ResponseEntity<ErrorResponse> handleCircuitBreakerOpen(CallNotPermittedException e) {
+    log.warn("Circuit breaker is open: {}", e.getMessage());
+    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+        .body(ErrorResponse.builder()
+            .message("Service temporarily unavailable. Please try again later.")
+            .status(503)
+            .requestId(getRequestId())
             .build());
   }
 
@@ -95,6 +129,7 @@ public class GlobalExceptionHandler {
         .body(ErrorResponse.builder()
             .message("Not found")
             .status(404)
+            .requestId(getRequestId())
             .build());
   }
 
@@ -105,6 +140,7 @@ public class GlobalExceptionHandler {
         .body(ErrorResponse.builder()
             .message("Internal server error")
             .status(500)
+            .requestId(getRequestId())
             .build());
   }
 }

@@ -1,20 +1,29 @@
-import { writable } from 'svelte/store';
-import type { Media } from './types';
+import { writable } from "svelte/store";
+import type { Media, OutputFormat, ServiceHealth } from "./types";
 
 export const mediaList = writable<Media[]>([]);
 export const currentMediaId = writable<string | null>(null);
 export const isProcessing = writable(false);
 export const apiConnected = writable(false);
+export const serviceHealth = writable<ServiceHealth>({
+  overall: "UNKNOWN",
+  services: {
+    api: false,
+    s3: "UNKNOWN",
+    dynamoDb: "UNKNOWN",
+    sns: "UNKNOWN",
+  },
+});
 
 export function updateMediaStatus(mediaId: string, status: string) {
   mediaList.update((list) =>
-    list.map((m) => (m.mediaId === mediaId ? { ...m, status: status as Media['status'] } : m))
+    list.map((m) => (m.mediaId === mediaId ? { ...m, status: status as Media["status"] } : m)),
   );
 }
 
-export function updateMediaWidth(mediaId: string, width: number) {
+export function updateMediaWidth(mediaId: string, width: number, outputFormat?: OutputFormat) {
   mediaList.update((list) =>
-    list.map((m) => (m.mediaId === mediaId ? { ...m, width } : m))
+    list.map((m) => (m.mediaId === mediaId ? { ...m, width, ...(outputFormat && { outputFormat }) } : m)),
   );
 }
 

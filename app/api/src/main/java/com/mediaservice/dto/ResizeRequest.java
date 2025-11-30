@@ -11,10 +11,10 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ResizeRequest {
-    @Min(value = 100, message = "Width must be at least 100 pixels")
-    @Max(value = 1024, message = "Width must be at most 1024 pixels")
-    private Integer width;
+  @Min(value = 100, message = "Width must be at least 100 pixels")
+  @Max(value = 1024, message = "Width must be at most 1024 pixels")
+  private Integer width;
 
-    @Pattern(regexp = "^(jpeg|png|webp)?$", message = "outputFormat must be one of: jpeg, png, webp")
-    private String outputFormat;
+  @Pattern(regexp = "^(jpeg|png|webp)?$", message = "outputFormat must be one of: jpeg, png, webp")
+  private String outputFormat;
 }

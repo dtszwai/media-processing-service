@@ -1,19 +1,25 @@
 <script lang="ts">
-  import { formatFileSize, formatDateTime } from '../lib/utils';
-  import { getDownloadUrl, getOriginalUrl, resizeMedia, pollForStatus } from '../lib/api';
-  import { mediaList, currentMediaId, isProcessing, updateMediaStatus, updateMediaWidth } from '../lib/stores';
-  import type { Media } from '../lib/types';
+  import { formatFileSize, formatDateTime } from "../lib/utils";
+  import { getDownloadUrl, getOriginalUrl, resizeMedia, pollForStatus } from "../lib/api";
+  import { mediaList, currentMediaId, isProcessing, updateMediaStatus, updateMediaWidth } from "../lib/stores";
+  import type { Media, OutputFormat } from "../lib/types";
 
   let resizeWidth = $state(500);
+  let resizeFormat = $state<OutputFormat>("jpeg");
   let isResizing = $state(false);
 
-  let currentMedia = $derived(
-    $mediaList.find((m) => m.mediaId === $currentMediaId) || null
-  );
+  const formatOptions: { value: OutputFormat; label: string }[] = [
+    { value: "jpeg", label: "JPEG" },
+    { value: "png", label: "PNG" },
+    { value: "webp", label: "WebP" },
+  ];
+
+  let currentMedia = $derived($mediaList.find((m) => m.mediaId === $currentMediaId) || null);
 
   $effect(() => {
     if (currentMedia) {
       resizeWidth = currentMedia.width;
+      resizeFormat = currentMedia.outputFormat || "jpeg";
     }
   });
 
@@ -23,19 +29,17 @@
     isResizing = true;
 
     try {
-      await resizeMedia(currentMedia.mediaId, { width: resizeWidth });
-      updateMediaStatus(currentMedia.mediaId, 'PENDING');
+      await resizeMedia(currentMedia.mediaId, { width: resizeWidth, outputFormat: resizeFormat });
+      updateMediaStatus(currentMedia.mediaId, "PENDING");
 
-      await pollForStatus(
-        currentMedia.mediaId,
-        ['COMPLETE', 'ERROR'],
-        (status) => updateMediaStatus(currentMedia.mediaId, status)
+      await pollForStatus(currentMedia.mediaId, ["COMPLETE", "ERROR"], (status) =>
+        updateMediaStatus(currentMedia.mediaId, status),
       );
 
-      updateMediaWidth(currentMedia.mediaId, resizeWidth);
+      updateMediaWidth(currentMedia.mediaId, resizeWidth, resizeFormat);
     } catch (error) {
-      console.error('Resize error:', error);
-      alert('Resize failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      console.error("Resize error:", error);
+      alert("Resize failed: " + (error instanceof Error ? error.message : "Unknown error"));
     } finally {
       isResizing = false;
     }
@@ -51,7 +55,7 @@
         <p class="text-xs text-gray-500 mt-0.5">{currentMedia.name}</p>
       </div>
       <div class="flex items-center space-x-3">
-        {#if currentMedia.status === 'COMPLETE'}
+        {#if currentMedia.status === "COMPLETE"}
           <a
             href={getDownloadUrl(currentMedia.mediaId)}
             target="_blank"
@@ -73,7 +77,7 @@
     </div>
 
     <!-- Resize Controls -->
-    {#if currentMedia.status === 'COMPLETE'}
+    {#if currentMedia.status === "COMPLETE"}
       <div class="flex items-center gap-4 mb-4 p-3 bg-gray-50 rounded-lg">
         <label for="resizeSlider" class="text-xs font-medium text-gray-600">Resize to:</label>
         <input
@@ -86,15 +90,33 @@
           class="flex-1 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer disabled:opacity-50"
         />
         <span class="text-xs font-mono text-gray-600 bg-white px-2 py-1 rounded border">{resizeWidth}px</span>
+        <select
+          bind:value={resizeFormat}
+          disabled={isResizing}
+          class="text-xs bg-white border border-gray-300 rounded px-2 py-1.5 text-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+        >
+          {#each formatOptions as option}
+            <option value={option.value}>{option.label}</option>
+          {/each}
+        </select>
         <button
           onclick={handleResize}
           disabled={isResizing}
           class="btn-primary px-4 py-1.5 text-xs font-medium rounded-lg"
         >
           {#if isResizing}
-            <svg class="animate-spin -ml-1 mr-2 h-3 w-3 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <svg
+              class="animate-spin -ml-1 mr-2 h-3 w-3 text-white inline-block"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              <path
+                class="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              ></path>
             </svg>
             Resizing...
           {:else}
@@ -115,16 +137,19 @@
       </div>
       <div class="image-box">
         <p class="text-xs font-medium text-gray-500 mb-2">Processed</p>
-        {#if currentMedia.status === 'COMPLETE'}
+        {#if currentMedia.status === "COMPLETE"}
           <img src="{getDownloadUrl(currentMedia.mediaId)}?t={Date.now()}" alt="Processed" />
           <div class="mt-2 space-y-0.5">
             <p class="text-xs text-gray-500">Width: {currentMedia.width}px</p>
+            <p class="text-xs text-gray-500">
+              Format: <span class="uppercase">{currentMedia.outputFormat || "jpeg"}</span>
+            </p>
           </div>
         {:else}
           <div class="h-[180px] flex items-center justify-center text-gray-400 text-sm">
-            {#if currentMedia.status === 'PROCESSING'}
+            {#if currentMedia.status === "PROCESSING"}
               <span class="pulse">Processing...</span>
-            {:else if currentMedia.status === 'PENDING' || currentMedia.status === 'PENDING_UPLOAD'}
+            {:else if currentMedia.status === "PENDING" || currentMedia.status === "PENDING_UPLOAD"}
               <span>Pending...</span>
             {:else}
               <span>{currentMedia.status}</span>
@@ -156,6 +181,10 @@
         <div>
           <span class="text-gray-400">Width:</span>
           <p class="text-gray-600">{currentMedia.width}px</p>
+        </div>
+        <div>
+          <span class="text-gray-400">Output Format:</span>
+          <p class="text-gray-600 uppercase">{currentMedia.outputFormat || "jpeg"}</p>
         </div>
         <div>
           <span class="text-gray-400">Created:</span>

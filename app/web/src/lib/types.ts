@@ -1,12 +1,6 @@
-export type MediaStatus =
-  | 'PENDING_UPLOAD'
-  | 'PENDING'
-  | 'PROCESSING'
-  | 'COMPLETE'
-  | 'ERROR'
-  | 'DELETING';
+export type MediaStatus = "PENDING_UPLOAD" | "PENDING" | "PROCESSING" | "COMPLETE" | "ERROR" | "DELETING";
 
-export type OutputFormat = 'jpeg' | 'png' | 'webp';
+export type OutputFormat = "jpeg" | "png" | "webp";
 
 export interface Media {
   mediaId: string;
@@ -47,4 +41,62 @@ export interface UploadResponse {
 export interface ResizeRequest {
   width: number;
   outputFormat?: OutputFormat;
+}
+
+export interface ApiError {
+  message: string;
+  status: number;
+  requestId?: string;
+  timestamp?: string;
+}
+
+export class RateLimitError extends Error {
+  retryAfterSeconds: number;
+  requestId?: string;
+
+  constructor(retryAfterSeconds: number, requestId?: string) {
+    super(`Rate limit exceeded. Retry after ${retryAfterSeconds} seconds.`);
+    this.name = "RateLimitError";
+    this.retryAfterSeconds = retryAfterSeconds;
+    this.requestId = requestId;
+  }
+}
+
+export class ApiRequestError extends Error {
+  status: number;
+  requestId?: string;
+
+  constructor(message: string, status: number, requestId?: string) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = status;
+    this.requestId = requestId;
+  }
+}
+
+export type HealthStatus = "UP" | "DOWN" | "UNKNOWN";
+
+export interface ComponentHealth {
+  status: HealthStatus;
+  details?: Record<string, unknown>;
+}
+
+export interface HealthResponse {
+  status: HealthStatus;
+  components?: {
+    s3?: ComponentHealth;
+    dynamoDb?: ComponentHealth;
+    sns?: ComponentHealth;
+    [key: string]: ComponentHealth | undefined;
+  };
+}
+
+export interface ServiceHealth {
+  overall: HealthStatus;
+  services: {
+    api: boolean;
+    s3: HealthStatus;
+    dynamoDb: HealthStatus;
+    sns: HealthStatus;
+  };
 }

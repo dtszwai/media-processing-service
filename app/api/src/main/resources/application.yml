@@ -1,9 +1,23 @@
 server:
   port: ${APP_PORT:9000}
+  shutdown: graceful
+  tomcat:
+    connection-timeout: 20s
+    max-connections: 10000
+    accept-count: 100
+    threads:
+      max: 200
+      min-spare: 10
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain
+    min-response-size: 1024
 
 spring:
   application:
     name: media-service
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   servlet:
     multipart:
       enabled: true
@@ -35,6 +49,68 @@ media:
     presigned-url-expiration-seconds: 3600  # 1 hour
     max-presigned-upload-size: 5368709120   # 5GB
 
+# Rate Limiting Configuration
+rate-limiting:
+  enabled: ${RATE_LIMITING_ENABLED:true}
+  api:
+    requests-per-minute: ${RATE_LIMIT_API_RPM:100}
+    burst-capacity: ${RATE_LIMIT_API_BURST:20}
+  upload:
+    requests-per-minute: ${RATE_LIMIT_UPLOAD_RPM:10}
+    burst-capacity: ${RATE_LIMIT_UPLOAD_BURST:5}
+
+# Resilience4j Configuration
+resilience4j:
+  circuitbreaker:
+    instances:
+      s3CircuitBreaker:
+        register-health-indicator: true
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        permitted-number-of-calls-in-half-open-state: 3
+        wait-duration-in-open-state: 30s
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 80
+        slow-call-duration-threshold: 5s
+      dynamoDbCircuitBreaker:
+        register-health-indicator: true
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        permitted-number-of-calls-in-half-open-state: 3
+        wait-duration-in-open-state: 30s
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 80
+        slow-call-duration-threshold: 3s
+      snsCircuitBreaker:
+        register-health-indicator: true
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        permitted-number-of-calls-in-half-open-state: 3
+        wait-duration-in-open-state: 30s
+        failure-rate-threshold: 50
+  retry:
+    instances:
+      s3Retry:
+        max-attempts: 3
+        wait-duration: 500ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+      dynamoDbRetry:
+        max-attempts: 3
+        wait-duration: 500ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+      snsRetry:
+        max-attempts: 3
+        wait-duration: 500ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+  timelimiter:
+    instances:
+      s3TimeLimiter:
+        timeout-duration: 10s
+        cancel-running-future: true
+
 # OpenTelemetry Configuration
 otel:
   exporter:
@@ -43,19 +119,46 @@ otel:
   service:
     name: media-service
 
-# Actuator
+# Actuator & Health Checks
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,prometheus,circuitbreakers,circuitbreakerevents,ratelimiters
   endpoint:
     health:
       show-details: always
+      show-components: always
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,dynamoDb,s3,sns
+        liveness:
+          include: livenessState
+  health:
+    circuitbreakers:
+      enabled: true
+    ratelimiters:
+      enabled: true
 
+# SpringDoc OpenAPI Configuration
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: method
+  show-actuator: false
+
+# Logging Configuration
 logging:
   level:
     root: INFO
     com.mediaservice: DEBUG
+    io.github.resilience4j: INFO
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{requestId}] %-5level %logger{36} - %msg%n"

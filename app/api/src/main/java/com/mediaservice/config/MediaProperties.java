@@ -8,7 +8,6 @@ import org.springframework.stereotype.Component;
 @Component
 @ConfigurationProperties(prefix = "media")
 public class MediaProperties {
-
   private Width width = new Width();
   private long maxFileSize;
   private Upload upload = new Upload();

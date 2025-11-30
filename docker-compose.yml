@@ -41,8 +41,8 @@ services:
   api:
     container_name: media-service-api
     build:
-      context: ./app/api
-      dockerfile: Dockerfile
+      context: ./app
+      dockerfile: api/Dockerfile
     ports:
       - "9000:9000"
     environment:

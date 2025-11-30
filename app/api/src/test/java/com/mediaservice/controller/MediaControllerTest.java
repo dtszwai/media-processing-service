@@ -1,9 +1,13 @@
 package com.mediaservice.controller;
 
 import com.mediaservice.config.MediaProperties;
+import com.mediaservice.config.RateLimitingConfig;
 import com.mediaservice.dto.InitUploadResponse;
 import com.mediaservice.dto.MediaResponse;
 import com.mediaservice.dto.StatusResponse;
+import com.mediaservice.filter.RateLimitingFilter;
+import com.mediaservice.filter.RequestIdFilter;
+import com.mediaservice.filter.SecurityHeadersFilter;
 import com.mediaservice.mapper.MediaMapper;
 import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaStatus;
@@ -16,6 +20,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
@@ -31,7 +37,13 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(MediaController.class)
+@WebMvcTest(value = MediaController.class, excludeFilters = {
+    @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = {
+        RateLimitingFilter.class,
+        SecurityHeadersFilter.class,
+        RequestIdFilter.class
+    })
+})
 class MediaControllerTest {
 
   @Autowired
@@ -45,6 +57,9 @@ class MediaControllerTest {
 
   @MockBean
   private MediaProperties mediaProperties;
+
+  @MockBean
+  private RateLimitingConfig rateLimitingConfig;
 
   @Nested
   @DisplayName("GET /v1/media/health")

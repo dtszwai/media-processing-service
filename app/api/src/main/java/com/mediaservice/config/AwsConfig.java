@@ -17,7 +17,6 @@ import java.net.URI;
 
 @Configuration
 public class AwsConfig {
-
   @Value("${aws.region}")
   private String awsRegion;
 
@@ -46,11 +45,9 @@ public class AwsConfig {
     var builder = DynamoDbClient.builder()
         .region(Region.of(awsRegion))
         .credentialsProvider(credentialsProvider());
-
     if (dynamoDbEndpoint != null && !dynamoDbEndpoint.isEmpty()) {
       builder.endpointOverride(URI.create(dynamoDbEndpoint));
     }
-
     return builder.build();
   }
 
@@ -60,11 +57,9 @@ public class AwsConfig {
         .region(Region.of(awsRegion))
         .credentialsProvider(credentialsProvider())
         .forcePathStyle(true);
-
     if (s3Endpoint != null && !s3Endpoint.isEmpty()) {
       builder.endpointOverride(URI.create(s3Endpoint));
     }
-
     return builder.build();
   }
 
@@ -79,16 +74,13 @@ public class AwsConfig {
         .serviceConfiguration(S3Configuration.builder()
             .pathStyleAccessEnabled(true)
             .build());
-
     // Use presigner endpoint (external URL) if set, otherwise use s3Endpoint
     String endpoint = (s3PresignerEndpoint != null && !s3PresignerEndpoint.isEmpty())
         ? s3PresignerEndpoint
         : s3Endpoint;
-
     if (endpoint != null && !endpoint.isEmpty()) {
       builder.endpointOverride(URI.create(endpoint));
     }
-
     return builder.build();
   }
 
@@ -97,11 +89,9 @@ public class AwsConfig {
     var builder = SnsClient.builder()
         .region(Region.of(awsRegion))
         .credentialsProvider(credentialsProvider());
-
     if (snsEndpoint != null && !snsEndpoint.isEmpty()) {
       builder.endpointOverride(URI.create(snsEndpoint));
     }
-
     return builder.build();
   }
 }

@@ -12,9 +12,9 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class InitUploadResponse {
-    private String mediaId;
-    private String uploadUrl;
-    private int expiresIn;
-    private String method;
-    private Map<String, String> headers;
+  private String mediaId;
+  private String uploadUrl;
+  private int expiresIn;
+  private String method;
+  private Map<String, String> headers;
 }

@@ -27,6 +27,22 @@ This service handles image uploads asynchronously using an event-driven architec
 - LocalStack (local AWS emulation)
 - Terraform (infrastructure as code)
 
+## Production Infrastructure
+
+The API includes production-ready features:
+
+| Feature               | Description                                                                                    |
+| --------------------- | ---------------------------------------------------------------------------------------------- |
+| **Rate Limiting**     | Per-IP limits (100 req/min API, 10 req/min uploads) with `429` responses                       |
+| **Circuit Breaker**   | Resilience4j protects AWS calls; opens at 50% failure rate                                     |
+| **Security Headers**  | HSTS, CSP, X-Frame-Options, X-Content-Type-Options                                             |
+| **Request Tracking**  | UUID per request via `X-Request-ID` header, MDC log correlation                                |
+| **Health Checks**     | Kubernetes probes at `/actuator/health/liveness` and `/actuator/health/readiness`              |
+| **API Documentation** | OpenAPI/Swagger at `/swagger-ui.html`                                                          |
+| **Metrics**           | Actuator metrics at `/actuator/metrics`, circuit breaker status at `/actuator/circuitbreakers` |
+
+Configuration via environment variables or `application.yml`.
+
 ## Observability
 
 End-to-end distributed tracing with OpenTelemetry enables cross-service visibility from API to Lambda. Traces propagate through SNS/SQS messages, allowing bottleneck detection across the entire pipeline.
@@ -38,95 +54,3 @@ Grafana dashboards visualize:
 - Trace waterfall views for debugging
 
 Access Grafana at http://localhost:3000 when running locally.
-
-## Getting Started
-
-### Prerequisites
-
-- Java 21
-- Maven 3.9+
-- Docker & Docker Compose
-- tflocal
-
-### Quick Start
-
-```bash
-# Build and start everything (API, Lambda, LocalStack, Grafana)
-make local-up
-
-# Stop and clean up
-make local-down
-```
-
-### Example
-
-```bash
-# Upload image (direct - for small files < 100MB)
-# Supported output formats: jpeg (default), png, webp
-curl -X POST -F "file=@photo.jpg" -F "outputFormat=webp" http://localhost:9000/v1/media/upload
-
-# Upload image (presigned URL - for large files up to 5GB)
-# Step 1: Initialize upload with optional outputFormat
-curl -X POST -H "Content-Type: application/json" \
-  -d '{"fileName": "photo.jpg", "fileSize": 52428800, "contentType": "image/jpeg", "outputFormat": "png"}' \
-  http://localhost:9000/v1/media/upload/init
-
-# Step 2: Upload directly to S3 using the returned uploadUrl
-curl -X PUT -H "Content-Type: image/jpeg" \
-  --data-binary @photo.jpg "{uploadUrl}"
-
-# Step 3: Confirm upload complete
-curl -X POST http://localhost:9000/v1/media/{id}/upload/complete
-
-# Check status (returns PENDING -> PROCESSING -> COMPLETE)
-curl http://localhost:9000/v1/media/{id}/status
-
-# Download when complete (file extension matches output format)
-curl -L http://localhost:9000/v1/media/{id}/download -o result.webp
-
-# Resize existing media (can change output format)
-curl -X PUT -H "Content-Type: application/json" \
-  -d '{"width": 800, "outputFormat": "jpeg"}' http://localhost:9000/v1/media/{id}/resize
-
-# Delete media
-curl -X DELETE http://localhost:9000/v1/media/{id}
-```
-
-### Output Format Options
-
-| Format | Description |
-|--------|-------------|
-| `jpeg` | JPEG format (default) - best for photos, smaller file size |
-| `png`  | PNG format - lossless, supports transparency |
-| `webp` | WebP format - modern format, excellent compression |
-
-## Processing Flow
-
-### Upload (Direct)
-
-1. Client uploads image → API stores in S3, metadata in DynamoDB (status: `PENDING`)
-2. API publishes `media.v1.process` event to SNS
-3. Lambda receives event, sets status to `PROCESSING`, processes image (resize + watermark)
-4. Lambda stores result in S3, updates status to `COMPLETE`
-5. Client polls status, downloads via presigned URL
-
-### Upload (Presigned URL - for large files)
-
-1. Client requests presigned URL → API creates metadata in DynamoDB (status: `PENDING_UPLOAD`), returns presigned S3 PUT URL
-2. Client uploads file directly to S3 using presigned URL (bypasses API server)
-3. Client confirms upload complete → API verifies file in S3, updates status to `PENDING`, publishes `media.v1.process` event
-4. Lambda receives event, processes image as above
-5. Client polls status, downloads via presigned URL
-
-### Resize
-
-1. Client requests resize → API sets status to `PENDING`, publishes `media.v1.resize` event to SNS
-2. Lambda receives event, sets status to `PROCESSING`, resizes image to new width
-3. Lambda stores result in S3, updates status to `COMPLETE`
-4. Client polls status until complete
-
-### Delete
-
-1. Client requests delete → API sets status to `DELETING`, publishes `media.v1.delete` event to SNS
-2. Lambda receives event, deletes files from S3, removes metadata from DynamoDB
-3. Client polls status until 404 (media deleted)

@@ -9,6 +9,7 @@ help:
 	@echo "  local-down     - Stop all services and destroy resources"
 	@echo ""
 	@echo "Build:"
+	@echo "  build-common   - Build shared common module"
 	@echo "  build-api      - Build Spring Boot API"
 	@echo "  build-lambdas  - Build Lambda JAR"
 	@echo "  build-all      - Build everything"
@@ -58,18 +59,23 @@ local-down:
 # Build
 # =============================================================================
 
+.PHONY: build-common
+build-common:
+	@echo "Building Common module..."
+	@cd app/common && mvn clean install -DskipTests -q
+
 .PHONY: build-api
-build-api:
+build-api: build-common
 	@echo "Building API..."
 	@cd app/api && mvn clean package -DskipTests -q
 
 .PHONY: build-lambdas
-build-lambdas:
+build-lambdas: build-common
 	@echo "Building Lambdas..."
 	@cd app/lambdas && mvn clean package -DskipTests -q
 
 .PHONY: build-all
-build-all: build-api build-lambdas
+build-all: build-common build-api build-lambdas
 
 # =============================================================================
 # Docker
@@ -133,6 +139,7 @@ test-lambdas:
 
 .PHONY: clean
 clean:
+	@cd app/common && mvn clean
 	@cd app/api && mvn clean
 	@cd app/lambdas && mvn clean
 	@rm -rf terraform/local/.terraform

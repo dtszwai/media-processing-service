@@ -8,7 +8,6 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class MediaMapper {
-
   public MediaResponse toResponse(Media media) {
     return MediaResponse.builder()
         .mediaId(media.getMediaId())
@@ -17,26 +16,21 @@ public class MediaMapper {
         .mimetype(media.getMimetype())
         .status(media.getStatus())
         .width(media.getWidth())
+        .outputFormat(media.getOutputFormat())
         .createdAt(media.getCreatedAt())
         .updatedAt(media.getUpdatedAt())
         .build();
   }
 
   public MediaResponse toIdResponse(Media media) {
-    return MediaResponse.builder()
-        .mediaId(media.getMediaId())
-        .build();
+    return MediaResponse.builder().mediaId(media.getMediaId()).build();
   }
 
   public MediaResponse toMessageResponse(String message) {
-    return MediaResponse.builder()
-        .message(message)
-        .build();
+    return MediaResponse.builder().message(message).build();
   }
 
   public StatusResponse toStatusResponse(MediaStatus status) {
-    return StatusResponse.builder()
-        .status(status)
-        .build();
+    return StatusResponse.builder().status(status).build();
   }
 }

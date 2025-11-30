@@ -22,6 +22,9 @@
         <aws.sdk.version>2.25.27</aws.sdk.version>
         <opentelemetry.version>1.56.0</opentelemetry.version>
         <opentelemetry.instrumentation.version>2.22.0</opentelemetry.instrumentation.version>
+        <bucket4j.version>8.10.1</bucket4j.version>
+        <resilience4j.version>2.2.0</resilience4j.version>
+        <springdoc.version>2.5.0</springdoc.version>
     </properties>
 
     <dependencyManagement>
@@ -105,6 +108,35 @@
             <groupId>io.opentelemetry.instrumentation</groupId>
             <artifactId>opentelemetry-logback-appender-1.0</artifactId>
             <version>${opentelemetry.instrumentation.version}-alpha</version>
+        </dependency>
+
+        <!-- Rate Limiting - Bucket4j with Caffeine cache -->
+        <dependency>
+            <groupId>com.bucket4j</groupId>
+            <artifactId>bucket4j-core</artifactId>
+            <version>${bucket4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
+        <!-- Resilience4j - Circuit Breaker, Rate Limiter, Retry -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-spring-boot3</artifactId>
+            <version>${resilience4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+
+        <!-- API Documentation - SpringDoc OpenAPI -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>${springdoc.version}</version>
         </dependency>
 
         <!-- Lombok -->

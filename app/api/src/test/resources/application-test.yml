@@ -28,6 +28,27 @@ media:
     max: 1024
   max-file-size: 104857600
 
+# Disable Rate Limiting for tests
+rate-limiting:
+  enabled: false
+  api:
+    requests-per-minute: 10000
+    burst-capacity: 10000
+  upload:
+    requests-per-minute: 10000
+    burst-capacity: 10000
+
+# Disable Resilience4j circuit breakers for tests
+resilience4j:
+  circuitbreaker:
+    instances:
+      s3CircuitBreaker:
+        register-health-indicator: false
+      dynamoDbCircuitBreaker:
+        register-health-indicator: false
+      snsCircuitBreaker:
+        register-health-indicator: false
+
 # Disable OpenTelemetry for tests
 otel:
   sdk:

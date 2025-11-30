@@ -15,19 +15,19 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class InitUploadRequest {
-    @NotBlank(message = "fileName is required")
-    private String fileName;
+  @NotBlank(message = "fileName is required")
+  private String fileName;
 
-    @Positive(message = "fileSize must be positive")
-    private long fileSize;
+  @Positive(message = "fileSize must be positive")
+  private long fileSize;
 
-    @NotBlank(message = "contentType is required")
-    private String contentType;
+  @NotBlank(message = "contentType is required")
+  private String contentType;
 
-    @Min(value = 100, message = "width must be at least 100")
-    @Max(value = 1024, message = "width must be at most 1024")
-    private Integer width;
+  @Min(value = 100, message = "width must be at least 100")
+  @Max(value = 1024, message = "width must be at most 1024")
+  private Integer width;
 
-    @Pattern(regexp = "^(jpeg|png|webp)?$", message = "outputFormat must be one of: jpeg, png, webp")
-    private String outputFormat;
+  @Pattern(regexp = "^(jpeg|png|webp)?$", message = "outputFormat must be one of: jpeg, png, webp")
+  private String outputFormat;
 }
