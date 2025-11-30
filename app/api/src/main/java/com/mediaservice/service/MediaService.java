@@ -33,17 +33,20 @@ public class MediaService {
   private final SnsService snsService;
   private final MediaProperties mediaProperties;
   private final ImageValidationService imageValidationService;
+  private final CacheInvalidationService cacheInvalidationService;
   private final Tracer tracer;
   private final LongCounter uploadSuccessCounter;
   private final LongCounter uploadFailureCounter;
 
   public MediaService(DynamoDbService dynamoDbService, S3Service s3Service, SnsService snsService,
-      MediaProperties mediaProperties, ImageValidationService imageValidationService, Tracer tracer, Meter meter) {
+      MediaProperties mediaProperties, ImageValidationService imageValidationService,
+      CacheInvalidationService cacheInvalidationService, Tracer tracer, Meter meter) {
     this.dynamoDbService = dynamoDbService;
     this.s3Service = s3Service;
     this.snsService = snsService;
     this.mediaProperties = mediaProperties;
     this.imageValidationService = imageValidationService;
+    this.cacheInvalidationService = cacheInvalidationService;
     this.tracer = tracer;
     this.uploadSuccessCounter = meter.counterBuilder("media.upload.success")
         .setDescription("Count of successful media uploads")
@@ -134,14 +137,29 @@ public class MediaService {
     }
   }
 
+  /**
+   * Get media status.
+   * Note: Status is NOT cached because it changes frequently during processing
+   * and caching would cause stale status to be returned during polling.
+   */
   public Optional<MediaStatus> getMediaStatus(String mediaId) {
     return dynamoDbService.getMedia(mediaId).map(Media::getStatus);
   }
 
+  /**
+   * Get media details.
+   * Note: Not cached because Optional doesn't serialize well with Redis JSON.
+   * Consider using a wrapper DTO for caching if needed.
+   */
   public Optional<Media> getMedia(String mediaId) {
     return dynamoDbService.getMedia(mediaId);
   }
 
+  /**
+   * Get presigned download URL.
+   * Note: Not cached because Optional doesn't serialize well with Redis JSON.
+   * The URL generation is fast and S3 presigned URLs have built-in expiry.
+   */
   public Optional<String> getDownloadUrl(String mediaId) {
     return dynamoDbService.getMedia(mediaId)
         .filter(media -> media.getStatus() == MediaStatus.COMPLETE)
@@ -170,6 +188,10 @@ public class MediaService {
               ? OutputFormat.fromString(outputFormat)
               : (media.getOutputFormat() != null ? media.getOutputFormat() : OutputFormat.JPEG);
           snsService.publishResizeMediaEvent(mediaId, width, targetFormat.getFormat());
+
+          // Invalidate caches for this media
+          cacheInvalidationService.invalidateMedia(mediaId);
+
           log.info("Resize request submitted for mediaId: {} with outputFormat: {}", mediaId, targetFormat.getFormat());
           return Optional.of(media);
         });
@@ -180,6 +202,10 @@ public class MediaService {
         .map(media -> {
           dynamoDbService.updateStatus(mediaId, MediaStatus.DELETING);
           snsService.publishDeleteMediaEvent(mediaId);
+
+          // Invalidate caches for this media
+          cacheInvalidationService.invalidateMedia(mediaId);
+
           log.info("Delete request submitted for mediaId: {}", mediaId);
           return media;
         });

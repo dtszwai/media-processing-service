@@ -9,6 +9,7 @@ import com.mediaservice.dto.ResizeRequest;
 import com.mediaservice.dto.StatusResponse;
 import com.mediaservice.exception.MediaConflictException;
 import com.mediaservice.mapper.MediaMapper;
+import com.mediaservice.service.AnalyticsService;
 import com.mediaservice.service.MediaService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -37,6 +38,7 @@ public class MediaController {
   private final MediaService mediaService;
   private final MediaMapper mediaMapper;
   private final MediaProperties mediaProperties;
+  private final AnalyticsService analyticsService;
 
   @GetMapping("/health")
   public ResponseEntity<String> health() {
@@ -129,9 +131,19 @@ public class MediaController {
           .headers(headers)
           .body(mediaMapper.toMessageResponse("Media processing in progress."));
     }
+    // Get media details for analytics
+    var mediaOpt = mediaService.getMedia(mediaId);
+    if (mediaOpt.isEmpty()) {
+      return ResponseEntity.notFound().build();
+    }
+    var media = mediaOpt.get();
     return mediaService.getDownloadUrl(mediaId)
-        .<ResponseEntity<MediaResponse>>map(
-            url -> ResponseEntity.status(HttpStatus.FOUND).location(URI.create(url)).build())
+        .<ResponseEntity<MediaResponse>>map(url -> {
+          // Record analytics (async, non-blocking)
+          analyticsService.recordView(mediaId);
+          analyticsService.recordDownload(mediaId, media.getOutputFormat(), media.getWidth());
+          return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(url)).build();
+        })
         .orElse(ResponseEntity.notFound().build());
   }
 

@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { apiConnected, serviceHealth, versionInfo } from "../lib/stores";
+  import { apiConnected, serviceHealth, versionInfo, currentView } from "../lib/stores";
   import type { HealthStatus } from "../lib/types";
+  import type { AppView } from "../lib/stores";
 
   let showDetails = $state(false);
   let dropdownRef: HTMLDivElement;
@@ -51,7 +52,27 @@
         <span class="text-lg font-semibold text-gray-900">Media Processing Service</span>
       </div>
 
-      <div class="flex items-center space-x-4">
+      <div class="flex items-center space-x-6">
+        <!-- Navigation -->
+        <nav class="flex items-center space-x-4">
+          <button
+            class="text-sm font-medium transition-colors {$currentView === 'upload'
+              ? 'text-gray-900'
+              : 'text-gray-500 hover:text-gray-700'}"
+            onclick={() => currentView.set("upload")}
+          >
+            Upload
+          </button>
+          <button
+            class="text-sm font-medium transition-colors {$currentView === 'analytics'
+              ? 'text-gray-900'
+              : 'text-gray-500 hover:text-gray-700'}"
+            onclick={() => currentView.set("analytics")}
+          >
+            Analytics
+          </button>
+        </nav>
+
         {#if $versionInfo?.build?.version}
           <span class="text-xs text-gray-400">v{$versionInfo.build.version}</span>
         {/if}

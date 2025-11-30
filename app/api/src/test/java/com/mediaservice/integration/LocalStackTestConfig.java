@@ -1,6 +1,8 @@
 package com.mediaservice.integration;
 
+import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.localstack.LocalStackContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -30,6 +32,7 @@ import static org.testcontainers.containers.localstack.LocalStackContainer.Servi
  */
 public class LocalStackTestConfig {
   private static final LocalStackContainer localStack = createContainer();
+  private static final GenericContainer<?> redis = createRedisContainer();
 
   @SuppressWarnings("resource") // Lifecycle managed via JVM shutdown hook
   private static LocalStackContainer createContainer() {
@@ -39,6 +42,17 @@ public class LocalStackTestConfig {
         .withReuse(true);
     container.start();
     initializeResources(container);
+    Runtime.getRuntime().addShutdownHook(new Thread(container::stop));
+    return container;
+  }
+
+  @SuppressWarnings("resource") // Lifecycle managed via JVM shutdown hook
+  private static GenericContainer<?> createRedisContainer() {
+    GenericContainer<?> container = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
+        .withExposedPorts(6379)
+        .waitingFor(Wait.forLogMessage(".*Ready to accept connections.*", 1))
+        .withReuse(true);
+    container.start();
     Runtime.getRuntime().addShutdownHook(new Thread(container::stop));
     return container;
   }
@@ -69,6 +83,14 @@ public class LocalStackTestConfig {
 
   public static String getRegion() {
     return localStack.getRegion();
+  }
+
+  public static String getRedisHost() {
+    return redis.getHost();
+  }
+
+  public static Integer getRedisPort() {
+    return redis.getMappedPort(6379);
   }
 
   private static void initializeResources(LocalStackContainer container) {

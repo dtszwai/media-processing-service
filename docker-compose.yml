@@ -1,4 +1,21 @@
 services:
+  redis:
+    container_name: media-service-redis
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - default
+
   localstack:
     container_name: localstack
     image: localstack/localstack
@@ -57,11 +74,14 @@ services:
       - AWS_S3_ENDPOINT=http://localstack:4566
       - AWS_S3_PRESIGNER_ENDPOINT=http://127.0.0.1:4566
       - AWS_SNS_ENDPOINT=http://localstack:4566
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://grafana:4318
       - OTEL_SERVICE_NAME=media-service-api
     depends_on:
       - localstack
       - grafana
+      - redis
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/v1/media/health"]
       interval: 30s
@@ -70,6 +90,9 @@ services:
       start_period: 60s
     networks:
       - default
+
+volumes:
+  redis-data:
 
 networks:
   default:

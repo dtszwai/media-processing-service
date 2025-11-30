@@ -116,5 +116,47 @@ export interface ServiceHealth {
     s3: HealthStatus;
     dynamoDb: HealthStatus;
     sns: HealthStatus;
+    redis?: HealthStatus;
   };
+}
+
+// Analytics Types
+export type Period = "TODAY" | "THIS_WEEK" | "THIS_MONTH" | "ALL_TIME";
+
+export interface MediaViewCount {
+  mediaId: string;
+  name: string;
+  viewCount: number;
+  rank: number;
+}
+
+export interface ViewStats {
+  mediaId: string;
+  total: number;
+  today: number;
+  thisWeek: number;
+  thisMonth: number;
+}
+
+export interface FormatUsageStats {
+  period: Period;
+  usage: Record<string, number>;
+  total: number;
+}
+
+export interface DownloadStats {
+  period: Period;
+  totalDownloads: number;
+  byFormat: Record<string, number>;
+  byDay: Record<string, number>;
+}
+
+export interface AnalyticsSummary {
+  totalViews: number;
+  totalDownloads: number;
+  viewsToday: number;
+  downloadsToday: number;
+  topMediaToday: MediaViewCount[];
+  topMediaAllTime: MediaViewCount[];
+  formatUsage: Record<string, number>;
 }

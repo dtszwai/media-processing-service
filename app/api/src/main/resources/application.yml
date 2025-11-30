@@ -23,6 +23,23 @@ spring:
       enabled: true
       max-file-size: 100MB
       max-request-size: 100MB
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          enabled: true
+          max-active: 8
+          max-idle: 8
+          min-idle: 2
+          max-wait: 1000ms
+        shutdown-timeout: 2000ms
+  cache:
+    type: redis
+    redis:
+      time-to-live: 300000
 
 # AWS Configuration
 aws:
@@ -48,6 +65,23 @@ media:
   upload:
     presigned-url-expiration-seconds: 3600  # 1 hour
     max-presigned-upload-size: 5368709120   # 5GB
+
+# Cache TTL Configuration
+cache:
+  media:
+    ttl-seconds: 300
+  status:
+    ttl-seconds: 30
+  presigned-url:
+    ttl-seconds: 3500
+  pagination:
+    ttl-seconds: 120
+
+# Analytics Configuration
+analytics:
+  enabled: ${ANALYTICS_ENABLED:true}
+  top-media-limit: 10
+  retention-days: 90
 
 # Rate Limiting Configuration
 rate-limiting:
@@ -140,13 +174,15 @@ management:
         enabled: true
       group:
         readiness:
-          include: readinessState,dynamoDb,s3,sns
+          include: readinessState,dynamoDb,s3,sns,redis
         liveness:
           include: livenessState
   health:
     circuitbreakers:
       enabled: true
     ratelimiters:
+      enabled: true
+    redis:
       enabled: true
 
 # SpringDoc OpenAPI Configuration

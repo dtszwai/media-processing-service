@@ -4,8 +4,9 @@
   import UploadZone from "./components/UploadZone.svelte";
   import ResultSection from "./components/ResultSection.svelte";
   import MediaList from "./components/MediaList.svelte";
+  import AnalyticsDashboard from "./components/analytics/AnalyticsDashboard.svelte";
   import { getServiceHealth, getAllMedia, getVersionInfo } from "./lib/api";
-  import { mediaList, currentMediaId, apiConnected, serviceHealth, versionInfo } from "./lib/stores";
+  import { mediaList, currentMediaId, apiConnected, serviceHealth, versionInfo, currentView } from "./lib/stores";
 
   async function loadAllMedia() {
     try {
@@ -45,18 +46,22 @@
   <Header />
 
   <main class="max-w-5xl mx-auto px-6 py-8">
-    <div class="grid lg:grid-cols-3 gap-8">
-      <div class="lg:col-span-2 space-y-6">
-        <UploadZone />
-        {#if $currentMediaId}
-          <ResultSection />
-        {/if}
-      </div>
+    {#if $currentView === "upload"}
+      <div class="grid lg:grid-cols-3 gap-8">
+        <div class="lg:col-span-2 space-y-6">
+          <UploadZone />
+          {#if $currentMediaId}
+            <ResultSection />
+          {/if}
+        </div>
 
-      <!-- History Sidebar -->
-      <div class="lg:col-span-1">
-        <MediaList onRefresh={loadAllMedia} />
+        <!-- History Sidebar -->
+        <div class="lg:col-span-1">
+          <MediaList onRefresh={loadAllMedia} />
+        </div>
       </div>
-    </div>
+    {:else if $currentView === "analytics"}
+      <AnalyticsDashboard />
+    {/if}
   </main>
 </div>

@@ -5,7 +5,7 @@ help:
 	@echo "Media Processing Service"
 	@echo ""
 	@echo "Local Development (recommended):"
-	@echo "  local-up       - Full setup: build all, start everything (API, Lambda, LocalStack, Grafana)"
+	@echo "  local-up       - Full setup: build all, start everything (API, Lambda, LocalStack, Grafana, Redis)"
 	@echo "  local-down     - Stop all services and destroy resources"
 	@echo ""
 	@echo "Build:"
@@ -17,7 +17,11 @@ help:
 	@echo "Docker:"
 	@echo "  docker-run     - Start all containers"
 	@echo "  docker-stop    - Stop all containers"
-	@echo "  start-infra    - Start LocalStack + Grafana only"
+	@echo "  start-infra    - Start LocalStack + Grafana + Redis only"
+	@echo ""
+	@echo "Redis:"
+	@echo "  redis-cli      - Connect to Redis CLI"
+	@echo "  redis-flush    - Clear all Redis data"
 	@echo ""
 	@echo "Terraform (LocalStack):"
 	@echo "  tf-init        - Initialize Terraform for LocalStack"
@@ -91,10 +95,23 @@ docker-stop:
 
 .PHONY: start-infra
 start-infra:
-	@echo "Starting LocalStack and Grafana..."
-	@docker compose up -d localstack grafana
+	@echo "Starting LocalStack, Grafana, and Redis..."
+	@docker compose up -d localstack grafana redis
 	@echo "Waiting for LocalStack to be ready..."
 	@sleep 5
+
+# =============================================================================
+# Redis
+# =============================================================================
+
+.PHONY: redis-cli
+redis-cli:
+	@docker exec -it media-service-redis redis-cli
+
+.PHONY: redis-flush
+redis-flush:
+	@docker exec media-service-redis redis-cli FLUSHALL
+	@echo "Redis data cleared"
 
 # =============================================================================
 # Terraform (LocalStack)

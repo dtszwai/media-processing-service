@@ -3,6 +3,7 @@ package com.mediaservice.integration;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -16,6 +17,7 @@ import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 
 import java.util.Map;
+import java.util.Set;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
@@ -26,6 +28,9 @@ public abstract class BaseIntegrationTest {
 
   @Autowired
   protected S3Client s3Client;
+
+  @Autowired
+  protected StringRedisTemplate redisTemplate;
 
   @DynamicPropertySource
   static void configureProperties(DynamicPropertyRegistry registry) {
@@ -45,6 +50,10 @@ public abstract class BaseIntegrationTest {
     // Configure AWS credentials
     registry.add("aws.region", LocalStackTestConfig::getRegion);
 
+    // Configure Redis
+    registry.add("spring.data.redis.host", LocalStackTestConfig::getRedisHost);
+    registry.add("spring.data.redis.port", LocalStackTestConfig::getRedisPort);
+
     // Set system properties for AWS SDK
     System.setProperty("aws.accessKeyId", LocalStackTestConfig.getAccessKey());
     System.setProperty("aws.secretAccessKey", LocalStackTestConfig.getSecretKey());
@@ -54,6 +63,7 @@ public abstract class BaseIntegrationTest {
   void cleanUp() {
     cleanDynamoDbTable();
     cleanS3Bucket();
+    cleanRedis();
   }
 
   private void cleanDynamoDbTable() {
@@ -90,6 +100,17 @@ public abstract class BaseIntegrationTest {
       }
     } catch (Exception e) {
       // Bucket might be empty
+    }
+  }
+
+  private void cleanRedis() {
+    try {
+      Set<String> keys = redisTemplate.keys("*");
+      if (keys != null && !keys.isEmpty()) {
+        redisTemplate.delete(keys);
+      }
+    } catch (Exception e) {
+      // Redis might be empty or not yet available
     }
   }
 

@@ -11,6 +11,7 @@ import com.mediaservice.filter.SecurityHeadersFilter;
 import com.mediaservice.mapper.MediaMapper;
 import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaStatus;
+import com.mediaservice.service.AnalyticsService;
 import com.mediaservice.service.DynamoDbService;
 import com.mediaservice.service.MediaService;
 
@@ -61,6 +62,9 @@ class MediaControllerTest {
 
   @MockBean
   private RateLimitingConfig rateLimitingConfig;
+
+  @MockBean
+  private AnalyticsService analyticsService;
 
   @Nested
   @DisplayName("GET /v1/media/health")
@@ -171,8 +175,10 @@ class MediaControllerTest {
     @Test
     @DisplayName("should redirect when media is complete")
     void shouldRedirectWhenComplete() throws Exception {
+      var media = createMedia();
       when(mediaService.mediaExists("media-123")).thenReturn(true);
       when(mediaService.isMediaProcessing("media-123")).thenReturn(false);
+      when(mediaService.getMedia("media-123")).thenReturn(Optional.of(media));
       when(mediaService.getDownloadUrl("media-123")).thenReturn(Optional.of("https://s3.example.com/file"));
 
       mockMvc.perform(get("/v1/media/{mediaId}/download", "media-123"))

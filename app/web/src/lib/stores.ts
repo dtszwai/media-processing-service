@@ -1,11 +1,14 @@
 import { writable } from "svelte/store";
 import type { Media, OutputFormat, ServiceHealth, VersionInfo } from "./types";
 
+export type AppView = "upload" | "analytics";
+
 export const mediaList = writable<Media[]>([]);
 export const currentMediaId = writable<string | null>(null);
 export const isProcessing = writable(false);
 export const apiConnected = writable(false);
 export const versionInfo = writable<VersionInfo | null>(null);
+export const currentView = writable<AppView>("upload");
 export const serviceHealth = writable<ServiceHealth>({
   overall: "UNKNOWN",
   services: {

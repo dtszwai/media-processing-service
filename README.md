@@ -22,6 +22,7 @@ This service handles image uploads asynchronously using an event-driven architec
 - AWS Lambda (image processing)
 - AWS S3 (object storage), DynamoDB (metadata)
 - AWS SNS/SQS (event messaging)
+- Redis (caching, rate limiting, analytics)
 - OpenTelemetry (distributed tracing)
 - Grafana (visualization)
 - LocalStack (local AWS emulation)
@@ -33,7 +34,9 @@ The API includes production-ready features:
 
 | Feature               | Description                                                                                    |
 | --------------------- | ---------------------------------------------------------------------------------------------- |
-| **Rate Limiting**     | Per-IP limits (100 req/min API, 10 req/min uploads) with `429` responses                       |
+| **Rate Limiting**     | Redis-backed distributed per-IP limits (100 req/min API, 10 req/min uploads)                   |
+| **Caching**           | Redis-backed Spring Cache for media metadata, status, and presigned URLs                       |
+| **Analytics**         | View counts, leaderboards (day/week/month/all-time), format usage tracking                     |
 | **Circuit Breaker**   | Resilience4j protects AWS calls; opens at 50% failure rate                                     |
 | **Security Headers**  | HSTS, CSP, X-Frame-Options, X-Content-Type-Options                                             |
 | **Request Tracking**  | UUID per request via `X-Request-ID` header, MDC log correlation                                |

@@ -45,6 +45,8 @@ class MediaServiceTest {
   @Mock
   private ImageValidationService imageValidationService;
   @Mock
+  private CacheInvalidationService cacheInvalidationService;
+  @Mock
   private Tracer tracer;
   @Mock
   private Meter meter;
@@ -84,7 +86,7 @@ class MediaServiceTest {
         .thenReturn(mock(io.opentelemetry.api.metrics.LongCounterBuilder.class));
     lenient().when(meter.counterBuilder(anyString()).setDescription(anyString()).build()).thenReturn(counter);
 
-    mediaService = new MediaService(dynamoDbService, s3Service, snsService, mediaProperties, imageValidationService, tracer, meter);
+    mediaService = new MediaService(dynamoDbService, s3Service, snsService, mediaProperties, imageValidationService, cacheInvalidationService, tracer, meter);
   }
 
   @Nested

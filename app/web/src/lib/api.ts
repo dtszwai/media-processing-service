@@ -11,6 +11,12 @@ import type {
   ServiceHealth,
   PagedResponse,
   VersionInfo,
+  Period,
+  MediaViewCount,
+  ViewStats,
+  FormatUsageStats,
+  DownloadStats,
+  AnalyticsSummary,
 } from "./types";
 import { RateLimitError, ApiRequestError } from "./types";
 
@@ -259,4 +265,36 @@ export async function pollForStatus(
 
     await new Promise((resolve) => setTimeout(resolve, interval));
   }
+}
+
+// Analytics API functions
+const ANALYTICS_BASE = "/api/analytics";
+
+export async function getTopMedia(period: Period = "TODAY", limit = 10): Promise<MediaViewCount[]> {
+  const params = new URLSearchParams();
+  params.set("period", period);
+  params.set("limit", limit.toString());
+
+  const response = await fetch(`${ANALYTICS_BASE}/top-media?${params}`);
+  return handleResponse<MediaViewCount[]>(response);
+}
+
+export async function getMediaViews(mediaId: string): Promise<ViewStats> {
+  const response = await fetch(`${ANALYTICS_BASE}/media/${mediaId}/views`);
+  return handleResponse<ViewStats>(response);
+}
+
+export async function getFormatUsage(period: Period = "TODAY"): Promise<FormatUsageStats> {
+  const response = await fetch(`${ANALYTICS_BASE}/formats?period=${period}`);
+  return handleResponse<FormatUsageStats>(response);
+}
+
+export async function getDownloadStats(period: Period = "TODAY"): Promise<DownloadStats> {
+  const response = await fetch(`${ANALYTICS_BASE}/downloads?period=${period}`);
+  return handleResponse<DownloadStats>(response);
+}
+
+export async function getAnalyticsSummary(): Promise<AnalyticsSummary> {
+  const response = await fetch(`${ANALYTICS_BASE}/summary`);
+  return handleResponse<AnalyticsSummary>(response);
 }
