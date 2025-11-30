@@ -4,6 +4,7 @@ import com.mediaservice.lambda.config.AwsClientFactory;
 import com.mediaservice.lambda.config.LambdaConfig;
 import com.mediaservice.lambda.model.Media;
 import com.mediaservice.lambda.model.MediaStatus;
+import com.mediaservice.lambda.model.OutputFormat;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
@@ -92,6 +93,9 @@ public class DynamoDbService {
         .status(MediaStatus.valueOf(attrs.get("status").s()));
     if (attrs.containsKey("width")) {
       builder.width(Integer.parseInt(attrs.get("width").n()));
+    }
+    if (attrs.containsKey("outputFormat")) {
+      builder.outputFormat(OutputFormat.fromString(attrs.get("outputFormat").s()));
     }
     return Optional.of(builder.build());
   }

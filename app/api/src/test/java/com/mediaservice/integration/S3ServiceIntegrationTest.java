@@ -1,5 +1,6 @@
 package com.mediaservice.integration;
 
+import com.mediaservice.model.OutputFormat;
 import com.mediaservice.service.S3Service;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -65,13 +66,13 @@ class S3ServiceIntegrationTest extends BaseIntegrationTest {
       // Upload a file to the resized folder first
       new MockMultipartFile("file", "test.jpg", "image/jpeg", "test-content".getBytes());
       s3Client.putObject(
-          b -> b.bucket("media-bucket").key("resized/media-123/test.jpg").contentType("image/jpeg"),
+          b -> b.bucket("media-bucket").key("resized/media-123/test.jpeg").contentType("image/jpeg"),
           software.amazon.awssdk.core.sync.RequestBody.fromBytes("test-content".getBytes()));
-      var url = s3Service.getPresignedUrl("media-123", "test.jpg");
+      var url = s3Service.getPresignedUrl("media-123", "test.jpg", OutputFormat.JPEG);
       assertThat(url)
           .isNotBlank()
           .contains("media-bucket")
-          .contains("resized/media-123/test.jpg");
+          .contains("resized/media-123/test.jpeg");
     }
   }
 

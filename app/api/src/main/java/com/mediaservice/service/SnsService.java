@@ -22,9 +22,9 @@ public class SnsService {
   @Value("${aws.sns.topic-arn}")
   private String topicArn;
 
-  public void publishProcessMediaEvent(String mediaId, Integer width) {
-    publishEvent(MediaEvent.of(EventType.PROCESS_MEDIA, mediaId, width));
-    log.info("Published process media event for mediaId: {} with width: {}", mediaId, width);
+  public void publishProcessMediaEvent(String mediaId, Integer width, String outputFormat) {
+    publishEvent(MediaEvent.of(EventType.PROCESS_MEDIA, mediaId, width, outputFormat));
+    log.info("Published process media event for mediaId: {} with width: {}, outputFormat: {}", mediaId, width, outputFormat);
   }
 
   public void publishDeleteMediaEvent(String mediaId) {
@@ -32,9 +32,9 @@ public class SnsService {
     log.info("Published delete media event for mediaId: {}", mediaId);
   }
 
-  public void publishResizeMediaEvent(String mediaId, Integer width) {
-    publishEvent(MediaEvent.of(EventType.RESIZE_MEDIA, mediaId, width));
-    log.info("Published resize media event for mediaId: {} with width: {}", mediaId, width);
+  public void publishResizeMediaEvent(String mediaId, Integer width, String outputFormat) {
+    publishEvent(MediaEvent.of(EventType.RESIZE_MEDIA, mediaId, width, outputFormat));
+    log.info("Published resize media event for mediaId: {} with width: {}, outputFormat: {}", mediaId, width, outputFormat);
   }
 
   private void publishEvent(MediaEvent event) {

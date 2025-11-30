@@ -6,6 +6,8 @@ export type MediaStatus =
   | 'ERROR'
   | 'DELETING';
 
+export type OutputFormat = 'jpeg' | 'png' | 'webp';
+
 export interface Media {
   mediaId: string;
   name: string;
@@ -13,6 +15,7 @@ export interface Media {
   mimetype: string;
   status: MediaStatus;
   width: number;
+  outputFormat?: OutputFormat;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -22,6 +25,7 @@ export interface InitUploadRequest {
   fileSize: number;
   contentType: string;
   width?: number;
+  outputFormat?: OutputFormat;
 }
 
 export interface InitUploadResponse {
@@ -42,4 +46,5 @@ export interface UploadResponse {
 
 export interface ResizeRequest {
   width: number;
+  outputFormat?: OutputFormat;
 }

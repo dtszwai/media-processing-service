@@ -48,10 +48,11 @@ public class MediaController {
   @PostMapping("/upload")
   public ResponseEntity<?> uploadMedia(
       @RequestParam("file") MultipartFile file,
-      @RequestParam(value = "width", required = false) Integer width) {
+      @RequestParam(value = "width", required = false) Integer width,
+      @RequestParam(value = "outputFormat", required = false) String outputFormat) {
 
-    log.info("Upload request received: fileName={}, size={}",
-        file.getOriginalFilename(), file.getSize());
+    log.info("Upload request received: fileName={}, size={}, outputFormat={}",
+        file.getOriginalFilename(), file.getSize(), outputFormat);
 
     // Validate file size
     long maxFileSize = mediaProperties.getMaxFileSize();
@@ -74,7 +75,7 @@ public class MediaController {
     }
 
     try {
-      var response = mediaService.uploadMedia(file, width);
+      var response = mediaService.uploadMedia(file, width, outputFormat);
       return ResponseEntity.accepted().body(response);
     } catch (IllegalArgumentException e) {
       return ResponseEntity.badRequest()
@@ -196,7 +197,7 @@ public class MediaController {
       return ResponseEntity.notFound().build();
     }
 
-    return mediaService.resizeMedia(mediaId, resizeRequest.getWidth())
+    return mediaService.resizeMedia(mediaId, resizeRequest.getWidth(), resizeRequest.getOutputFormat())
         .<ResponseEntity<?>>map(media -> ResponseEntity.accepted().body(mediaMapper.toIdResponse(media)))
         .orElse(ResponseEntity.status(HttpStatus.CONFLICT)
             .body(ErrorResponse.builder()

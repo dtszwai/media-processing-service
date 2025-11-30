@@ -6,6 +6,7 @@ import com.mediaservice.dto.InitUploadResponse;
 import com.mediaservice.dto.MediaResponse;
 import com.mediaservice.model.Media;
 import com.mediaservice.model.MediaStatus;
+import com.mediaservice.model.OutputFormat;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.trace.Span;
@@ -50,7 +51,7 @@ public class MediaService {
         .build();
   }
 
-  public MediaResponse uploadMedia(MultipartFile file, Integer width) throws IOException {
+  public MediaResponse uploadMedia(MultipartFile file, Integer width, String outputFormat) throws IOException {
     String contentType = file.getContentType();
     if (contentType == null || !contentType.startsWith("image")) {
       throw new IllegalArgumentException("Invalid file type. Only images are supported.");
@@ -64,12 +65,14 @@ public class MediaService {
       span.setAttribute("media.id", mediaId);
 
       int targetWidth = mediaProperties.resolveWidth(width);
+      OutputFormat targetFormat = OutputFormat.fromString(outputFormat);
 
       String fileName = file.getOriginalFilename();
       if (fileName == null || fileName.isEmpty()) {
         fileName = "image.jpg";
       }
       span.setAttribute("file.name", fileName);
+      span.setAttribute("output.format", targetFormat.getFormat());
 
       // Upload original to S3
       s3Service.uploadMedia(mediaId, fileName, file);
@@ -82,13 +85,14 @@ public class MediaService {
           .mimetype(contentType)
           .status(MediaStatus.PENDING)
           .width(targetWidth)
+          .outputFormat(targetFormat)
           .build());
 
       // Publish event to SNS for async processing by Lambda
-      snsService.publishProcessMediaEvent(mediaId, targetWidth);
+      snsService.publishProcessMediaEvent(mediaId, targetWidth, targetFormat.getFormat());
       span.setStatus(StatusCode.OK);
       uploadSuccessCounter.add(1);
-      log.info("Media uploaded successfully: mediaId={}, fileName={}", mediaId, fileName);
+      log.info("Media uploaded successfully: mediaId={}, fileName={}, outputFormat={}", mediaId, fileName, targetFormat.getFormat());
       return MediaResponse.builder().mediaId(mediaId).build();
     } catch (Exception e) {
       uploadFailureCounter.add(1);
@@ -111,7 +115,8 @@ public class MediaService {
   public Optional<String> getDownloadUrl(String mediaId) {
     return dynamoDbService.getMedia(mediaId)
         .filter(media -> media.getStatus() == MediaStatus.COMPLETE)
-        .map(media -> s3Service.getPresignedUrl(mediaId, media.getName()));
+        .map(media -> s3Service.getPresignedUrl(mediaId, media.getName(),
+            media.getOutputFormat() != null ? media.getOutputFormat() : OutputFormat.JPEG));
   }
 
   public boolean isMediaProcessing(String mediaId) {
@@ -120,7 +125,7 @@ public class MediaService {
         .orElse(false);
   }
 
-  public Optional<Media> resizeMedia(String mediaId, Integer width) {
+  public Optional<Media> resizeMedia(String mediaId, Integer width, String outputFormat) {
     return dynamoDbService.getMedia(mediaId)
         .flatMap(media -> {
           var updated = dynamoDbService.updateStatusConditionally(mediaId, MediaStatus.PENDING, MediaStatus.COMPLETE);
@@ -128,8 +133,12 @@ public class MediaService {
             log.warn("Cannot resize mediaId: {}, not in COMPLETE status", mediaId);
             return Optional.empty();
           }
-          snsService.publishResizeMediaEvent(mediaId, width);
-          log.info("Resize request submitted for mediaId: {}", mediaId);
+          // Use provided outputFormat or fall back to media's existing format
+          OutputFormat targetFormat = outputFormat != null
+              ? OutputFormat.fromString(outputFormat)
+              : (media.getOutputFormat() != null ? media.getOutputFormat() : OutputFormat.JPEG);
+          snsService.publishResizeMediaEvent(mediaId, width, targetFormat.getFormat());
+          log.info("Resize request submitted for mediaId: {} with outputFormat: {}", mediaId, targetFormat.getFormat());
           return Optional.of(media);
         });
   }
@@ -161,7 +170,10 @@ public class MediaService {
       span.setAttribute("media.id", mediaId);
 
       int targetWidth = mediaProperties.resolveWidth(request.getWidth());
+      OutputFormat targetFormat = OutputFormat.fromString(request.getOutputFormat());
       int expirationSeconds = mediaProperties.getUpload().getPresignedUrlExpirationSeconds();
+
+      span.setAttribute("output.format", targetFormat.getFormat());
 
       // Generate presigned URL
       String uploadUrl = s3Service.generatePresignedUploadUrl(
@@ -178,13 +190,14 @@ public class MediaService {
           .mimetype(request.getContentType())
           .status(MediaStatus.PENDING_UPLOAD)
           .width(targetWidth)
+          .outputFormat(targetFormat)
           .build());
 
       var headers = new LinkedHashMap<String, String>();
       headers.put("Content-Type", request.getContentType());
 
       span.setStatus(StatusCode.OK);
-      log.info("Presigned upload initialized: mediaId={}, fileName={}", mediaId, request.getFileName());
+      log.info("Presigned upload initialized: mediaId={}, fileName={}, outputFormat={}", mediaId, request.getFileName(), targetFormat.getFormat());
 
       return InitUploadResponse.builder()
           .mediaId(mediaId)
@@ -227,7 +240,10 @@ public class MediaService {
             }
 
             // Publish event for async processing
-            snsService.publishProcessMediaEvent(mediaId, media.getWidth());
+            String outputFormat = media.getOutputFormat() != null
+                ? media.getOutputFormat().getFormat()
+                : OutputFormat.JPEG.getFormat();
+            snsService.publishProcessMediaEvent(mediaId, media.getWidth(), outputFormat);
             uploadSuccessCounter.add(1);
             span.setStatus(StatusCode.OK);
             log.info("Presigned upload completed: mediaId={}", mediaId);

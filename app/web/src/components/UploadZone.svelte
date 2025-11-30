@@ -14,16 +14,23 @@
     addMedia,
     updateMediaStatus,
   } from '../lib/stores';
-  import type { Media } from '../lib/types';
+  import type { Media, OutputFormat } from '../lib/types';
 
   let selectedFile: File | null = $state(null);
   let previewUrl: string | null = $state(null);
   let dragover = $state(false);
   let width = $state(500);
+  let outputFormat = $state<OutputFormat>('jpeg');
   let uploadProgress = $state(0);
   let uploadMethod = $state<'direct' | 'presigned' | null>(null);
 
   let fileInput: HTMLInputElement;
+
+  const formatOptions: { value: OutputFormat; label: string }[] = [
+    { value: 'jpeg', label: 'JPEG' },
+    { value: 'png', label: 'PNG' },
+    { value: 'webp', label: 'WebP' },
+  ];
 
   function handleDragOver(e: DragEvent) {
     e.preventDefault();
@@ -89,6 +96,7 @@
       mimetype: selectedFile!.type,
       status,
       width,
+      outputFormat,
     };
   }
 
@@ -115,7 +123,7 @@
   }
 
   async function uploadDirect(): Promise<string> {
-    const response = await uploadMedia(selectedFile!, width);
+    const response = await uploadMedia(selectedFile!, width, outputFormat);
     addMedia(createMediaEntry(response.mediaId, 'PENDING'));
     return response.mediaId;
   }
@@ -126,6 +134,7 @@
       fileSize: selectedFile!.size,
       contentType: selectedFile!.type,
       width,
+      outputFormat,
     });
 
     addMedia(createMediaEntry(initResponse.mediaId, 'PENDING_UPLOAD'));
@@ -216,6 +225,19 @@
         />
         <span class="text-xs font-mono text-gray-600 bg-gray-100 px-2 py-1 rounded">{width}px</span>
       </div>
+    </div>
+    <div class="min-w-32">
+      <label for="formatSelect" class="block text-xs font-medium text-gray-600 mb-2">Output Format</label>
+      <select
+        id="formatSelect"
+        bind:value={outputFormat}
+        disabled={$isProcessing}
+        class="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
+      >
+        {#each formatOptions as option}
+          <option value={option.value}>{option.label}</option>
+        {/each}
+      </select>
     </div>
     <button
       onclick={handleUpload}

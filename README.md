@@ -62,12 +62,13 @@ make local-down
 
 ```bash
 # Upload image (direct - for small files < 100MB)
-curl -X POST -F "file=@photo.jpg" http://localhost:9000/v1/media/upload
+# Supported output formats: jpeg (default), png, webp
+curl -X POST -F "file=@photo.jpg" -F "outputFormat=webp" http://localhost:9000/v1/media/upload
 
 # Upload image (presigned URL - for large files up to 5GB)
-# Step 1: Initialize upload
+# Step 1: Initialize upload with optional outputFormat
 curl -X POST -H "Content-Type: application/json" \
-  -d '{"fileName": "photo.jpg", "fileSize": 52428800, "contentType": "image/jpeg"}' \
+  -d '{"fileName": "photo.jpg", "fileSize": 52428800, "contentType": "image/jpeg", "outputFormat": "png"}' \
   http://localhost:9000/v1/media/upload/init
 
 # Step 2: Upload directly to S3 using the returned uploadUrl
@@ -80,16 +81,24 @@ curl -X POST http://localhost:9000/v1/media/{id}/upload/complete
 # Check status (returns PENDING -> PROCESSING -> COMPLETE)
 curl http://localhost:9000/v1/media/{id}/status
 
-# Download when complete
-curl -L http://localhost:9000/v1/media/{id}/download -o result.jpg
+# Download when complete (file extension matches output format)
+curl -L http://localhost:9000/v1/media/{id}/download -o result.webp
 
-# Resize existing media
+# Resize existing media (can change output format)
 curl -X PUT -H "Content-Type: application/json" \
-  -d '{"width": 800}' http://localhost:9000/v1/media/{id}/resize
+  -d '{"width": 800, "outputFormat": "jpeg"}' http://localhost:9000/v1/media/{id}/resize
 
 # Delete media
 curl -X DELETE http://localhost:9000/v1/media/{id}
 ```
+
+### Output Format Options
+
+| Format | Description |
+|--------|-------------|
+| `jpeg` | JPEG format (default) - best for photos, smaller file size |
+| `png`  | PNG format - lossless, supports transparency |
+| `webp` | WebP format - modern format, excellent compression |
 
 ## Processing Flow
 

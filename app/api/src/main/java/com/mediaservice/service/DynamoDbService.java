@@ -2,6 +2,7 @@ package com.mediaservice.service;
 
 import com.mediaservice.model.Media;
 import com.mediaservice.model.MediaStatus;
+import com.mediaservice.model.OutputFormat;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -38,7 +39,7 @@ public class DynamoDbService {
   }
 
   private Media mapToMedia(String mediaId, Map<String, AttributeValue> item) {
-    return Media.builder()
+    var builder = Media.builder()
         .mediaId(mediaId)
         .size(Long.parseLong(item.get("size").n()))
         .name(item.get("name").s())
@@ -46,8 +47,11 @@ public class DynamoDbService {
         .status(MediaStatus.valueOf(item.get("status").s()))
         .width(Integer.parseInt(item.get("width").n()))
         .createdAt(Instant.parse(item.get("createdAt").s()))
-        .updatedAt(Instant.parse(item.get("updatedAt").s()))
-        .build();
+        .updatedAt(Instant.parse(item.get("updatedAt").s()));
+    if (item.containsKey("outputFormat")) {
+      builder.outputFormat(OutputFormat.fromString(item.get("outputFormat").s()));
+    }
+    return builder.build();
   }
 
   public void createMedia(Media media) {
@@ -58,8 +62,9 @@ public class DynamoDbService {
     item.put("size", n(String.valueOf(media.getSize())));
     item.put("name", s(media.getName()));
     item.put("mimetype", s(media.getMimetype()));
-    item.put("status", s(MediaStatus.PENDING.name()));
+    item.put("status", s(media.getStatus() != null ? media.getStatus().name() : MediaStatus.PENDING.name()));
     item.put("width", n(String.valueOf(media.getWidth())));
+    item.put("outputFormat", s(media.getOutputFormat() != null ? media.getOutputFormat().getFormat() : OutputFormat.JPEG.getFormat()));
     item.put("createdAt", s(now));
     item.put("updatedAt", s(now));
 

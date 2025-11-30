@@ -14,4 +14,5 @@ public class Media {
   private String name;
   private MediaStatus status;
   private Integer width;
+  private OutputFormat outputFormat;
 }

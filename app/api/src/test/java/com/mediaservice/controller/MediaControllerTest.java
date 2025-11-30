@@ -70,7 +70,7 @@ class MediaControllerTest {
       var response = MediaResponse.builder().mediaId("media-123").build();
 
       when(mediaProperties.getMaxFileSize()).thenReturn(100L * 1024 * 1024);
-      when(mediaService.uploadMedia(any(), any())).thenReturn(response);
+      when(mediaService.uploadMedia(any(), any(), any())).thenReturn(response);
 
       mockMvc.perform(multipart("/v1/media/upload").file(file))
           .andExpect(status().isAccepted())
@@ -201,7 +201,7 @@ class MediaControllerTest {
       var response = MediaResponse.builder().mediaId("media-123").build();
 
       when(mediaService.mediaExists("media-123")).thenReturn(true);
-      when(mediaService.resizeMedia(eq("media-123"), eq(800))).thenReturn(Optional.of(media));
+      when(mediaService.resizeMedia(eq("media-123"), eq(800), any())).thenReturn(Optional.of(media));
       when(mediaMapper.toIdResponse(media)).thenReturn(response);
 
       mockMvc.perform(put("/v1/media/{mediaId}/resize", "media-123")
@@ -215,7 +215,7 @@ class MediaControllerTest {
     @DisplayName("should return 409 when resize not allowed")
     void shouldReturn409WhenNotAllowed() throws Exception {
       when(mediaService.mediaExists("media-123")).thenReturn(true);
-      when(mediaService.resizeMedia(eq("media-123"), eq(800))).thenReturn(Optional.empty());
+      when(mediaService.resizeMedia(eq("media-123"), eq(800), any())).thenReturn(Optional.empty());
 
       mockMvc.perform(put("/v1/media/{mediaId}/resize", "media-123")
           .contentType(MediaType.APPLICATION_JSON)

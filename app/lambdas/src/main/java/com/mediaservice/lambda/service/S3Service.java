@@ -2,6 +2,7 @@ package com.mediaservice.lambda.service;
 
 import com.mediaservice.lambda.config.AwsClientFactory;
 import com.mediaservice.lambda.config.LambdaConfig;
+import com.mediaservice.lambda.model.OutputFormat;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
@@ -26,12 +27,14 @@ public class S3Service {
     return client.getObjectAsBytes(request).asByteArray();
   }
 
-  public void uploadMedia(String mediaId, String mediaName, byte[] data, String keyPrefix) {
-    var key = String.join("/", keyPrefix, mediaId, mediaName);
+  public void uploadMedia(String mediaId, String mediaName, byte[] data, String keyPrefix, OutputFormat outputFormat) {
+    OutputFormat format = (outputFormat != null) ? outputFormat : OutputFormat.JPEG;
+    String outputFileName = getOutputFileName(mediaName, format);
+    var key = String.join("/", keyPrefix, mediaId, outputFileName);
     var request = PutObjectRequest.builder()
         .bucket(bucketName)
         .key(key)
-        .contentType("image/jpeg")
+        .contentType(format.getContentType())
         .build();
     client.putObject(request, RequestBody.fromBytes(data));
   }
@@ -43,5 +46,24 @@ public class S3Service {
         .key(key)
         .build();
     client.deleteObject(request);
+  }
+
+  public void deleteMediaFileWithFormat(String mediaId, String mediaName, String keyPrefix, OutputFormat outputFormat) {
+    String outputFileName = getOutputFileName(mediaName, outputFormat);
+    var key = String.join("/", keyPrefix, mediaId, outputFileName);
+    var request = DeleteObjectRequest.builder()
+        .bucket(bucketName)
+        .key(key)
+        .build();
+    client.deleteObject(request);
+  }
+
+  private String getOutputFileName(String originalName, OutputFormat outputFormat) {
+    if (outputFormat == null) {
+      return originalName;
+    }
+    int lastDot = originalName.lastIndexOf('.');
+    String baseName = (lastDot > 0) ? originalName.substring(0, lastDot) : originalName;
+    return baseName + outputFormat.getExtension();
   }
 }

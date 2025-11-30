@@ -17,6 +17,7 @@ public class Media {
   private String mimetype;
   private MediaStatus status;
   private Integer width;
+  private OutputFormat outputFormat;
   private Instant createdAt;
   private Instant updatedAt;
 }

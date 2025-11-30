@@ -5,6 +5,7 @@ import type {
   StatusResponse,
   UploadResponse,
   ResizeRequest,
+  OutputFormat,
 } from './types';
 
 const API_BASE = '/api';
@@ -38,11 +39,13 @@ export async function getMediaStatus(mediaId: string): Promise<StatusResponse> {
 
 export async function uploadMedia(
   file: File,
-  width: number
+  width: number,
+  outputFormat: OutputFormat = 'jpeg'
 ): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('width', width.toString());
+  formData.append('outputFormat', outputFormat);
 
   const response = await fetch(`${API_BASE}/upload`, {
     method: 'POST',

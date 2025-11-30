@@ -1,5 +1,6 @@
 package com.mediaservice.service;
 
+import com.mediaservice.model.OutputFormat;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -45,8 +46,9 @@ public class S3Service {
     log.info("Uploaded media to S3: {}", key);
   }
 
-  public String getPresignedUrl(String mediaId, String mediaName) {
-    String key = buildKey(KEY_PREFIX_RESIZED, mediaId, mediaName);
+  public String getPresignedUrl(String mediaId, String mediaName, OutputFormat outputFormat) {
+    String outputFileName = getOutputFileName(mediaName, outputFormat);
+    String key = buildKey(KEY_PREFIX_RESIZED, mediaId, outputFileName);
     var getObjectRequest = GetObjectRequest.builder()
         .bucket(bucketName)
         .key(key)
@@ -58,6 +60,15 @@ public class S3Service {
     var presignedRequest = s3Presigner.presignGetObject(presignRequest);
     log.info("Generated presigned URL for: {}", key);
     return presignedRequest.url().toString();
+  }
+
+  private String getOutputFileName(String originalName, OutputFormat outputFormat) {
+    if (outputFormat == null) {
+      return originalName;
+    }
+    int lastDot = originalName.lastIndexOf('.');
+    String baseName = (lastDot > 0) ? originalName.substring(0, lastDot) : originalName;
+    return baseName + outputFormat.getExtension();
   }
 
   public String generatePresignedUploadUrl(String mediaId, String fileName, String contentType, Duration expiration) {

@@ -4,6 +4,7 @@ import com.mediaservice.config.MediaProperties;
 import com.mediaservice.dto.InitUploadRequest;
 import com.mediaservice.model.Media;
 import com.mediaservice.model.MediaStatus;
+import com.mediaservice.model.OutputFormat;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.trace.Span;
@@ -91,18 +92,18 @@ class MediaServiceTest {
     @DisplayName("should upload valid image and return media ID")
     void shouldUploadValidImage() throws IOException {
       var file = new MockMultipartFile("file", "test.jpg", "image/jpeg", "test-content".getBytes());
-      var response = mediaService.uploadMedia(file, 500);
+      var response = mediaService.uploadMedia(file, 500, "jpeg");
       assertThat(response.getMediaId()).isNotBlank();
       verify(s3Service).uploadMedia(anyString(), eq("test.jpg"), eq(file));
       verify(dynamoDbService).createMedia(any(Media.class));
-      verify(snsService).publishProcessMediaEvent(anyString(), eq(500));
+      verify(snsService).publishProcessMediaEvent(anyString(), eq(500), eq("jpeg"));
     }
 
     @Test
     @DisplayName("should reject non-image content type")
     void shouldRejectNonImageContentType() {
       var file = new MockMultipartFile("file", "test.pdf", "application/pdf", "test".getBytes());
-      assertThatThrownBy(() -> mediaService.uploadMedia(file, null))
+      assertThatThrownBy(() -> mediaService.uploadMedia(file, null, null))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessage("Invalid file type. Only images are supported.");
     }
@@ -111,7 +112,7 @@ class MediaServiceTest {
     @DisplayName("should reject null content type")
     void shouldRejectNullContentType() {
       var file = new MockMultipartFile("file", "test.jpg", null, "test".getBytes());
-      assertThatThrownBy(() -> mediaService.uploadMedia(file, null))
+      assertThatThrownBy(() -> mediaService.uploadMedia(file, null, null))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessage("Invalid file type. Only images are supported.");
     }
@@ -120,7 +121,7 @@ class MediaServiceTest {
     @DisplayName("should use default filename when original is empty")
     void shouldUseDefaultFilenameWhenEmpty() throws IOException {
       var file = new MockMultipartFile("file", "", "image/jpeg", "test".getBytes());
-      mediaService.uploadMedia(file, null);
+      mediaService.uploadMedia(file, null, null);
       verify(s3Service).uploadMedia(anyString(), eq("image.jpg"), eq(file));
     }
 
@@ -128,8 +129,8 @@ class MediaServiceTest {
     @DisplayName("should use default width when not specified")
     void shouldUseDefaultWidth() throws IOException {
       var file = new MockMultipartFile("file", "test.jpg", "image/jpeg", "test".getBytes());
-      mediaService.uploadMedia(file, null);
-      verify(snsService).publishProcessMediaEvent(anyString(), eq(500));
+      mediaService.uploadMedia(file, null, null);
+      verify(snsService).publishProcessMediaEvent(anyString(), eq(500), eq("jpeg"));
     }
   }
 
@@ -163,7 +164,7 @@ class MediaServiceTest {
     void shouldReturnUrlWhenComplete() {
       var media = createMedia(MediaStatus.COMPLETE);
       when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
-      when(s3Service.getPresignedUrl("media-123", "test.jpg")).thenReturn("https://s3.example.com/signed-url");
+      when(s3Service.getPresignedUrl("media-123", "test.jpg", OutputFormat.JPEG)).thenReturn("https://s3.example.com/signed-url");
       var result = mediaService.getDownloadUrl("media-123");
       assertThat(result).contains("https://s3.example.com/signed-url");
     }
@@ -175,7 +176,7 @@ class MediaServiceTest {
       when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
       var result = mediaService.getDownloadUrl("media-123");
       assertThat(result).isEmpty();
-      verify(s3Service, never()).getPresignedUrl(anyString(), anyString());
+      verify(s3Service, never()).getPresignedUrl(anyString(), anyString(), any());
     }
   }
 
@@ -190,9 +191,9 @@ class MediaServiceTest {
       when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
       when(dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.COMPLETE))
           .thenReturn(true);
-      var result = mediaService.resizeMedia("media-123", 800);
+      var result = mediaService.resizeMedia("media-123", 800, "jpeg");
       assertThat(result).isPresent();
-      verify(snsService).publishResizeMediaEvent("media-123", 800);
+      verify(snsService).publishResizeMediaEvent("media-123", 800, "jpeg");
     }
 
     @Test
@@ -202,9 +203,9 @@ class MediaServiceTest {
       when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
       when(dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.COMPLETE))
           .thenReturn(false);
-      var result = mediaService.resizeMedia("media-123", 800);
+      var result = mediaService.resizeMedia("media-123", 800, null);
       assertThat(result).isEmpty();
-      verify(snsService, never()).publishResizeMediaEvent(anyString(), any());
+      verify(snsService, never()).publishResizeMediaEvent(anyString(), any(), any());
     }
   }
 
@@ -309,7 +310,7 @@ class MediaServiceTest {
       var result = mediaService.completePresignedUpload("media-123");
 
       assertThat(result).isPresent();
-      verify(snsService).publishProcessMediaEvent("media-123", 500);
+      verify(snsService).publishProcessMediaEvent("media-123", 500, "jpeg");
     }
 
     @Test
@@ -321,7 +322,7 @@ class MediaServiceTest {
 
       assertThat(result).isEmpty();
       verify(s3Service, never()).objectExists(anyString(), anyString());
-      verify(snsService, never()).publishProcessMediaEvent(anyString(), any());
+      verify(snsService, never()).publishProcessMediaEvent(anyString(), any(), any());
     }
 
     @Test
@@ -347,7 +348,7 @@ class MediaServiceTest {
 
       assertThat(result).isEmpty();
       verify(dynamoDbService, never()).updateStatusConditionally(anyString(), any(), any());
-      verify(snsService, never()).publishProcessMediaEvent(anyString(), any());
+      verify(snsService, never()).publishProcessMediaEvent(anyString(), any(), any());
     }
 
     @Test
@@ -362,7 +363,7 @@ class MediaServiceTest {
       var result = mediaService.completePresignedUpload("media-123");
 
       assertThat(result).isEmpty();
-      verify(snsService, never()).publishProcessMediaEvent(anyString(), any());
+      verify(snsService, never()).publishProcessMediaEvent(anyString(), any(), any());
     }
   }
 
@@ -374,6 +375,7 @@ class MediaServiceTest {
         .mimetype("image/jpeg")
         .status(status)
         .width(500)
+        .outputFormat(OutputFormat.JPEG)
         .createdAt(Instant.now())
         .updatedAt(Instant.now())
         .build();

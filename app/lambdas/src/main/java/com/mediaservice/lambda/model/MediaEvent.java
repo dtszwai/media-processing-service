@@ -20,5 +20,6 @@ public class MediaEvent {
   public static class MediaEventPayload {
     private String mediaId;
     private Integer width;
+    private String outputFormat;
   }
 }

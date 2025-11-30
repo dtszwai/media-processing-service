@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mediaservice.lambda.config.OpenTelemetryInitializer;
 import com.mediaservice.lambda.model.MediaEvent;
 import com.mediaservice.lambda.model.MediaStatus;
+import com.mediaservice.lambda.model.OutputFormat;
 import com.mediaservice.lambda.service.DynamoDbService;
 import com.mediaservice.lambda.service.ImageProcessingService;
 import com.mediaservice.lambda.service.S3Service;
@@ -119,12 +120,15 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
         return;
       }
       var width = payload.getWidth();
+      var outputFormatStr = payload.getOutputFormat();
+      var outputFormat = OutputFormat.fromString(outputFormatStr);
       span.setAttribute("media.id", mediaId);
       span.setAttribute("event.type", eventType);
       if (width != null) {
         span.setAttribute("width", width);
       }
-      logger.info("Processing event: type={}, mediaId={}", eventType, mediaId);
+      span.setAttribute("output.format", outputFormat.getFormat());
+      logger.info("Processing event: type={}, mediaId={}, outputFormat={}", eventType, mediaId, outputFormat.getFormat());
       switch (eventType) {
         case DELETE_EVENT_TYPE:
           handleDelete(mediaId, span);
@@ -134,10 +138,10 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
             logger.info("Skipping resize message with missing width");
             break;
           }
-          handleMediaProcessing(mediaId, width, MediaStatus.PENDING, imageProcessingService::resizeImage, span, true);
+          handleMediaProcessing(mediaId, width, outputFormat, MediaStatus.PENDING, true, span);
           break;
         case PROCESS_EVENT_TYPE:
-          handleMediaProcessing(mediaId, width, MediaStatus.PENDING, imageProcessingService::processImage, span, false);
+          handleMediaProcessing(mediaId, width, outputFormat, MediaStatus.PENDING, false, span);
           break;
         default:
           logger.info("Skipping message with unsupported type: {}", eventType);
@@ -162,12 +166,16 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
       var media = mediaOpt.get();
       var mediaName = media.getName();
       var status = media.getStatus();
+      var outputFormat = media.getOutputFormat() != null ? media.getOutputFormat() : OutputFormat.JPEG;
       // Delete uploaded file
       s3Service.deleteMediaFile(mediaId, mediaName, "uploads");
       // Delete resized file if processing was complete
       if (status != MediaStatus.PROCESSING) {
-        String keyPrefix = (status == MediaStatus.ERROR) ? "uploads" : "resized";
-        s3Service.deleteMediaFile(mediaId, mediaName, keyPrefix);
+        if (status == MediaStatus.ERROR) {
+          s3Service.deleteMediaFile(mediaId, mediaName, "uploads");
+        } else {
+          s3Service.deleteMediaFileWithFormat(mediaId, mediaName, "resized", outputFormat);
+        }
       }
       logger.info("Deleted media: {}", mediaId);
       span.setStatus(StatusCode.OK);
@@ -180,11 +188,11 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
     }
   }
 
-  private void handleMediaProcessing(String mediaId, Integer requestedWidth, MediaStatus expectedStatus,
-      ImageProcessor processor, Span span, boolean isResize) {
+  private void handleMediaProcessing(String mediaId, Integer requestedWidth, OutputFormat outputFormat,
+      MediaStatus expectedStatus, boolean isResize, Span span) {
     var successCounter = isResize ? resizeSuccessCounter : processSuccessCounter;
     var failureCounter = isResize ? resizeFailureCounter : processFailureCounter;
-    logger.info("Processing/Resizing media: {}", mediaId);
+    logger.info("Processing/Resizing media: {} with outputFormat: {}", mediaId, outputFormat.getFormat());
     try {
       // Set status to PROCESSING
       var mediaOpt = dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.PROCESSING, expectedStatus);
@@ -198,17 +206,21 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
       // Get the file from S3
       byte[] imageData = s3Service.getMediaFile(mediaId, mediaName);
       logger.info("Retrieved media file from S3");
-      // Determine target width
+      // Determine target width and output format
       var targetWidth = (requestedWidth != null) ? requestedWidth : media.getWidth();
+      var targetFormat = outputFormat != null ? outputFormat
+          : (media.getOutputFormat() != null ? media.getOutputFormat() : OutputFormat.JPEG);
       // Process the image
       long processingStart = System.currentTimeMillis();
-      byte[] processedImage = processor.process(imageData, targetWidth);
+      byte[] processedImage = isResize
+          ? imageProcessingService.resizeImage(imageData, targetWidth, targetFormat)
+          : imageProcessingService.processImage(imageData, targetWidth, targetFormat);
       long processingDuration = System.currentTimeMillis() - processingStart;
       span.addEvent("image.processing.done",
           Attributes.of(AttributeKey.longKey("media.processing.duration"), processingDuration));
-      logger.info("Processed/Resized media in {} ms", processingDuration);
+      logger.info("Processed/Resized media in {} ms with format: {}", processingDuration, targetFormat.getFormat());
       // Upload processed image to S3
-      s3Service.uploadMedia(mediaId, mediaName, processedImage, "resized");
+      s3Service.uploadMedia(mediaId, mediaName, processedImage, "resized", targetFormat);
       logger.info("Uploaded processed media to S3");
       // Set status to COMPLETE and update width
       dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.COMPLETE, MediaStatus.PROCESSING,
@@ -234,10 +246,5 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
       failureCounter.add(1);
       throw new RuntimeException("Failed to process media", e);
     }
-  }
-
-  @FunctionalInterface
-  private interface ImageProcessor {
-    byte[] process(byte[] data, Integer width) throws IOException;
   }
 }

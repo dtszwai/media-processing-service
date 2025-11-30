@@ -1,18 +1,35 @@
 package com.mediaservice.lambda.service;
 
+import com.mediaservice.lambda.model.OutputFormat;
 import net.coobird.thumbnailator.Thumbnails;
 import net.coobird.thumbnailator.geometry.Position;
 import net.coobird.thumbnailator.geometry.Positions;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.imageio.ImageIO;
+import javax.imageio.ImageWriter;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.Iterator;
 
 public class ImageProcessingService {
+  private static final Logger logger = LoggerFactory.getLogger(ImageProcessingService.class);
   private static final int DEFAULT_WIDTH = 500;
   private final BufferedImage watermarkImage;
+
+  static {
+    // Ensure ImageIO plugins are scanned (needed for webp-imageio in Lambda environment)
+    ImageIO.scanForPlugins();
+    logAvailableFormats();
+  }
+
+  private static void logAvailableFormats() {
+    String[] writerFormats = ImageIO.getWriterFormatNames();
+    logger.info("Available ImageIO writer formats: {}", String.join(", ", writerFormats));
+  }
 
   public ImageProcessingService() {
     this.watermarkImage = loadWatermark();
@@ -33,27 +50,51 @@ public class ImageProcessingService {
     }
   }
 
-  public byte[] processImage(byte[] imageData, Integer targetWidth) throws IOException {
-    return processImageInternal(imageData, targetWidth, Positions.BOTTOM_RIGHT);
+  public byte[] processImage(byte[] imageData, Integer targetWidth, OutputFormat outputFormat) throws IOException {
+    return processImageInternal(imageData, targetWidth, Positions.BOTTOM_RIGHT, outputFormat);
   }
 
-  public byte[] resizeImage(byte[] imageData, Integer targetWidth) throws IOException {
-    return processImageInternal(imageData, targetWidth, Positions.BOTTOM_LEFT);
+  public byte[] resizeImage(byte[] imageData, Integer targetWidth, OutputFormat outputFormat) throws IOException {
+    return processImageInternal(imageData, targetWidth, Positions.BOTTOM_LEFT, outputFormat);
   }
 
-  private byte[] processImageInternal(byte[] imageData, Integer targetWidth, Position watermarkPosition)
-      throws IOException {
+  private byte[] processImageInternal(byte[] imageData, Integer targetWidth, Position watermarkPosition,
+      OutputFormat outputFormat) throws IOException {
     int width = (targetWidth != null && targetWidth > 0) ? targetWidth : DEFAULT_WIDTH;
+    OutputFormat format = (outputFormat != null) ? outputFormat : OutputFormat.JPEG;
+
+    // Check if the format is supported
+    if (!isFormatSupported(format.getFormat())) {
+      logger.warn("Output format '{}' is not supported, falling back to JPEG", format.getFormat());
+      format = OutputFormat.JPEG;
+    }
+
+    logger.info("Processing image with format: {}, width: {}", format.getFormat(), width);
+
     var inputStream = new ByteArrayInputStream(imageData);
     var outputStream = new ByteArrayOutputStream();
     int watermarkWidth = Math.max(width / 7, 30);
     var resizedWatermark = Thumbnails.of(watermarkImage).width(watermarkWidth).asBufferedImage();
-    Thumbnails.of(inputStream)
+
+    var builder = Thumbnails.of(inputStream)
         .width(width)
-        .outputFormat("jpeg")
-        .outputQuality(0.9)
-        .watermark(watermarkPosition, resizedWatermark, 1.0f)
-        .toOutputStream(outputStream);
+        .outputFormat(format.getFormat())
+        .watermark(watermarkPosition, resizedWatermark, 1.0f);
+
+    // Set quality for formats that support it
+    if (format == OutputFormat.JPEG) {
+      builder.outputQuality(0.9);
+    } else if (format == OutputFormat.WEBP) {
+      builder.outputQuality(0.85);
+    }
+
+    builder.toOutputStream(outputStream);
+    logger.info("Image processed successfully, output size: {} bytes", outputStream.size());
     return outputStream.toByteArray();
+  }
+
+  private boolean isFormatSupported(String formatName) {
+    Iterator<ImageWriter> writers = ImageIO.getImageWritersByFormatName(formatName);
+    return writers.hasNext();
   }
 }

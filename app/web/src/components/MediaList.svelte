@@ -1,7 +1,7 @@
 <script lang="ts">
   import { formatFileSize, formatRelativeTime } from '../lib/utils';
   import { deleteMedia, pollForStatus } from '../lib/api';
-  import { mediaList, currentMediaId, isProcessing, updateMediaStatus, removeMedia } from '../lib/stores';
+  import { mediaList, currentMediaId, updateMediaStatus, removeMedia } from '../lib/stores';
 
   interface Props {
     onRefresh: () => void;
@@ -10,10 +10,10 @@
   let { onRefresh }: Props = $props();
 
   async function handleDelete(mediaId: string) {
-    if ($isProcessing) return;
-
     const item = $mediaList.find((m) => m.mediaId === mediaId);
     if (item?.status === 'DELETING') return;
+    // Don't allow deleting an item that is currently being processed
+    if (item?.status === 'PROCESSING' || item?.status === 'PENDING' || item?.status === 'PENDING_UPLOAD') return;
 
     if (!confirm('Are you sure you want to delete this media?')) return;
 

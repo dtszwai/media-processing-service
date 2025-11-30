@@ -20,6 +20,7 @@ public class MediaEvent {
   public static class MediaEventPayload {
     private String mediaId;
     private Integer width;
+    private String outputFormat;
   }
 
   public static MediaEvent of(String type, String mediaId) {
@@ -37,6 +38,17 @@ public class MediaEvent {
         .payload(MediaEventPayload.builder()
             .mediaId(mediaId)
             .width(width)
+            .build())
+        .build();
+  }
+
+  public static MediaEvent of(String type, String mediaId, Integer width, String outputFormat) {
+    return MediaEvent.builder()
+        .type(type)
+        .payload(MediaEventPayload.builder()
+            .mediaId(mediaId)
+            .width(width)
+            .outputFormat(outputFormat)
             .build())
         .build();
   }

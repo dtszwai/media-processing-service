@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mediaservice.lambda.model.Media;
 import com.mediaservice.lambda.model.MediaEvent;
 import com.mediaservice.lambda.model.MediaStatus;
+import com.mediaservice.lambda.model.OutputFormat;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -181,7 +182,7 @@ class ManageMediaHandlerTest {
   }
 
   private SQSEvent createSqsEvent(String eventType, String mediaId, Integer width) throws Exception {
-    var payload = new MediaEvent.MediaEventPayload(mediaId, width);
+    var payload = new MediaEvent.MediaEventPayload(mediaId, width, "jpeg");
     var event = new MediaEvent(eventType, payload);
     return createSqsEventFromMediaEvent(event);
   }
@@ -300,11 +301,11 @@ class ManageMediaHandlerTest {
       this.processedOutput = output;
     }
 
-    byte[] processImage(byte[] data, Integer width) throws IOException {
+    byte[] processImage(byte[] data, Integer width, OutputFormat outputFormat) throws IOException {
       return processedOutput;
     }
 
-    byte[] resizeImage(byte[] data, Integer width) throws IOException {
+    byte[] resizeImage(byte[] data, Integer width, OutputFormat outputFormat) throws IOException {
       return processedOutput;
     }
   }
@@ -385,8 +386,8 @@ class ManageMediaHandlerTest {
         var targetWidth = (requestedWidth != null) ? requestedWidth : media.getWidth();
 
         byte[] processedImage = isResize
-            ? imageProcessingService.resizeImage(imageData, targetWidth)
-            : imageProcessingService.processImage(imageData, targetWidth);
+            ? imageProcessingService.resizeImage(imageData, targetWidth, OutputFormat.JPEG)
+            : imageProcessingService.processImage(imageData, targetWidth, OutputFormat.JPEG);
 
         s3Service.uploadMedia(mediaId, media.getName(), processedImage, "resized");
         dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.COMPLETE, MediaStatus.PROCESSING,
