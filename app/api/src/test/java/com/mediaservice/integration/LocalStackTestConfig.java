@@ -16,16 +16,31 @@ import static org.testcontainers.containers.localstack.LocalStackContainer.Servi
 
 /**
  * Shared LocalStack container for integration tests.
- * Uses a singleton pattern to ensure only one container is started.
+ * Uses the singleton container pattern recommended by Testcontainers.
+ * <p>
+ * The container is intentionally kept alive for the entire test suite lifetime
+ * and cleaned up via JVM shutdown hook. The
+ * {@code @SuppressWarnings("resource")}
+ * annotation is required because static analysis tools cannot track lifecycle
+ * management through shutdown hooks.
+ *
+ * @see <a href=
+ *      "https://java.testcontainers.org/test_framework_integration/manual_lifecycle_control/#singleton-containers">Testcontainers
+ *      Singleton Pattern</a>
  */
 public class LocalStackTestConfig {
-  private static final LocalStackContainer localStack;
+  private static final LocalStackContainer localStack = createContainer();
 
-  static {
-    localStack = new LocalStackContainer(DockerImageName.parse("localstack/localstack:3.4"))
-        .withServices(S3, DYNAMODB, SNS);
-    localStack.start();
-    initializeResources();
+  @SuppressWarnings("resource") // Lifecycle managed via JVM shutdown hook
+  private static LocalStackContainer createContainer() {
+    LocalStackContainer container = new LocalStackContainer(
+        DockerImageName.parse("localstack/localstack:3.4"))
+        .withServices(S3, DYNAMODB, SNS)
+        .withReuse(true);
+    container.start();
+    initializeResources(container);
+    Runtime.getRuntime().addShutdownHook(new Thread(container::stop));
+    return container;
   }
 
   public static LocalStackContainer getLocalStack() {
@@ -56,24 +71,24 @@ public class LocalStackTestConfig {
     return localStack.getRegion();
   }
 
-  private static void initializeResources() {
+  private static void initializeResources(LocalStackContainer container) {
     var credentials = StaticCredentialsProvider.create(
-        AwsBasicCredentials.create(localStack.getAccessKey(), localStack.getSecretKey()));
-    var region = Region.of(localStack.getRegion());
+        AwsBasicCredentials.create(container.getAccessKey(), container.getSecretKey()));
+    var region = Region.of(container.getRegion());
 
     try (var dynamoClient = DynamoDbClient.builder()
-        .endpointOverride(localStack.getEndpointOverride(DYNAMODB))
+        .endpointOverride(container.getEndpointOverride(DYNAMODB))
         .credentialsProvider(credentials)
         .region(region)
         .build();
         var s3Client = S3Client.builder()
-            .endpointOverride(localStack.getEndpointOverride(S3))
+            .endpointOverride(container.getEndpointOverride(S3))
             .credentialsProvider(credentials)
             .region(region)
             .forcePathStyle(true)
             .build();
         var snsClient = SnsClient.builder()
-            .endpointOverride(localStack.getEndpointOverride(SNS))
+            .endpointOverride(container.getEndpointOverride(SNS))
             .credentialsProvider(credentials)
             .region(region)
             .build()) {

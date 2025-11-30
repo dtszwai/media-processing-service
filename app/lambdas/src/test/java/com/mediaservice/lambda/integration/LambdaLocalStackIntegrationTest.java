@@ -30,12 +30,24 @@ import static org.testcontainers.containers.localstack.LocalStackContainer.Servi
 /**
  * Integration tests for Lambda services using LocalStack.
  * Tests DynamoDB and S3 operations in isolation.
+ * <p>
+ * The container lifecycle is managed by the Testcontainers JUnit 5 extension
+ * via the {@code @Container} annotation. The
+ * {@code @SuppressWarnings("resource")}
+ * is required because static analysis tools cannot track the extension's
+ * automatic cleanup.
+ *
+ * @see <a href=
+ *      "https://java.testcontainers.org/test_framework_integration/junit_5/">Testcontainers
+ *      JUnit 5</a>
  */
 @Testcontainers
 class LambdaLocalStackIntegrationTest {
   @Container
+  @SuppressWarnings("resource") // Lifecycle managed by Testcontainers JUnit 5 extension
   static LocalStackContainer localStack = new LocalStackContainer(DockerImageName.parse("localstack/localstack:3.4"))
-      .withServices(S3, DYNAMODB);
+      .withServices(S3, DYNAMODB)
+      .withReuse(true);
 
   private static DynamoDbClient dynamoDbClient;
   private static S3Client s3Client;
