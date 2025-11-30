@@ -1,8 +1,8 @@
 package com.mediaservice.service;
 
-import com.mediaservice.model.Media;
-import com.mediaservice.model.MediaStatus;
-import com.mediaservice.model.OutputFormat;
+import com.mediaservice.common.model.Media;
+import com.mediaservice.common.model.MediaStatus;
+import com.mediaservice.common.model.OutputFormat;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;

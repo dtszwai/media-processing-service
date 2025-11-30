@@ -1,6 +1,6 @@
 package com.mediaservice.lambda.service;
 
-import com.mediaservice.lambda.model.OutputFormat;
+import com.mediaservice.common.model.OutputFormat;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

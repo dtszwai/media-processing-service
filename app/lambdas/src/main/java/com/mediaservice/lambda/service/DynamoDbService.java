@@ -2,9 +2,9 @@ package com.mediaservice.lambda.service;
 
 import com.mediaservice.lambda.config.AwsClientFactory;
 import com.mediaservice.lambda.config.LambdaConfig;
-import com.mediaservice.lambda.model.Media;
-import com.mediaservice.lambda.model.MediaStatus;
-import com.mediaservice.lambda.model.OutputFormat;
+import com.mediaservice.common.model.Media;
+import com.mediaservice.common.model.MediaStatus;
+import com.mediaservice.common.model.OutputFormat;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;

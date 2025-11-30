@@ -5,8 +5,8 @@ import com.mediaservice.dto.InitUploadResponse;
 import com.mediaservice.dto.MediaResponse;
 import com.mediaservice.dto.StatusResponse;
 import com.mediaservice.mapper.MediaMapper;
-import com.mediaservice.model.Media;
-import com.mediaservice.model.MediaStatus;
+import com.mediaservice.common.model.Media;
+import com.mediaservice.common.model.MediaStatus;
 import com.mediaservice.service.MediaService;
 
 import java.util.Map;

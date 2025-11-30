@@ -20,7 +20,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.net.URI;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
@@ -40,57 +39,22 @@ public class MediaController {
   @GetMapping
   public ResponseEntity<List<MediaResponse>> getAllMedia() {
     log.info("Get all media request");
-    return mediaService.getAllMedia().stream()
+    return ResponseEntity.ok(mediaService.getAllMedia().stream()
         .map(mediaMapper::toResponse)
-        .collect(Collectors.collectingAndThen(Collectors.toList(), list -> ResponseEntity.ok(list)));
+        .toList());
   }
 
   @PostMapping("/upload")
-  public ResponseEntity<?> uploadMedia(
+  public ResponseEntity<MediaResponse> uploadMedia(
       @RequestParam("file") MultipartFile file,
       @RequestParam(value = "width", required = false) Integer width,
-      @RequestParam(value = "outputFormat", required = false) String outputFormat) {
+      @RequestParam(value = "outputFormat", required = false) String outputFormat) throws IOException {
 
     log.info("Upload request received: fileName={}, size={}, outputFormat={}",
         file.getOriginalFilename(), file.getSize(), outputFormat);
 
-    // Validate file size
-    long maxFileSize = mediaProperties.getMaxFileSize();
-    if (file.getSize() > maxFileSize) {
-      long maxSizeMb = maxFileSize / (1024 * 1024);
-      return ResponseEntity.badRequest()
-          .body(ErrorResponse.builder()
-              .message("Failed to upload media. Check the file size. Max size is " + maxSizeMb + " MB.")
-              .status(400)
-              .build());
-    }
-
-    // Validate file is not empty
-    if (file.isEmpty()) {
-      return ResponseEntity.badRequest()
-          .body(ErrorResponse.builder()
-              .message("Malformed multipart form data.")
-              .status(400)
-              .build());
-    }
-
-    try {
-      var response = mediaService.uploadMedia(file, width, outputFormat);
-      return ResponseEntity.accepted().body(response);
-    } catch (IllegalArgumentException e) {
-      return ResponseEntity.badRequest()
-          .body(ErrorResponse.builder()
-              .message(e.getMessage())
-              .status(400)
-              .build());
-    } catch (IOException e) {
-      log.error("Failed to upload media: {}", e.getMessage());
-      return ResponseEntity.internalServerError()
-          .body(ErrorResponse.builder()
-              .message("Internal server error")
-              .status(500)
-              .build());
-    }
+    validateUploadFile(file);
+    return ResponseEntity.accepted().body(mediaService.uploadMedia(file, width, outputFormat));
   }
 
   @PostMapping("/upload/init")
@@ -98,37 +62,8 @@ public class MediaController {
     log.info("Init presigned upload request: fileName={}, size={}, contentType={}",
         request.getFileName(), request.getFileSize(), request.getContentType());
 
-    // Validate file size
-    long maxUploadSize = mediaProperties.getUpload().getMaxPresignedUploadSize();
-    if (request.getFileSize() > maxUploadSize) {
-      long maxSizeGb = maxUploadSize / (1024 * 1024 * 1024);
-      return ResponseEntity.badRequest()
-          .body(ErrorResponse.builder()
-              .message("File size exceeds maximum allowed size of " + maxSizeGb + " GB.")
-              .status(400)
-              .build());
-    }
-
-    // Validate content type (images only for now)
-    if (!request.getContentType().startsWith("image/")) {
-      return ResponseEntity.badRequest()
-          .body(ErrorResponse.builder()
-              .message("Invalid content type. Only images are supported.")
-              .status(400)
-              .build());
-    }
-
-    try {
-      var response = mediaService.initPresignedUpload(request);
-      return ResponseEntity.status(HttpStatus.CREATED).body(response);
-    } catch (Exception e) {
-      log.error("Failed to initialize presigned upload: {}", e.getMessage());
-      return ResponseEntity.internalServerError()
-          .body(ErrorResponse.builder()
-              .message("Internal server error")
-              .status(500)
-              .build());
-    }
+    validatePresignedUploadRequest(request);
+    return ResponseEntity.status(HttpStatus.CREATED).body(mediaService.initPresignedUpload(request));
   }
 
   @PostMapping("/{mediaId}/upload/complete")
@@ -136,13 +71,8 @@ public class MediaController {
     log.info("Complete presigned upload request: mediaId={}", mediaId);
 
     return mediaService.completePresignedUpload(mediaId)
-        .<ResponseEntity<?>>map(media -> ResponseEntity.accepted()
-            .body(mediaMapper.toIdResponse(media)))
-        .orElse(ResponseEntity.badRequest()
-            .body(ErrorResponse.builder()
-                .message("Upload not found, not in PENDING_UPLOAD status, or file not uploaded to S3.")
-                .status(400)
-                .build()));
+        .<ResponseEntity<?>>map(media -> ResponseEntity.accepted().body(mediaMapper.toIdResponse(media)))
+        .orElse(badRequest("Upload not found, not in PENDING_UPLOAD status, or file not uploaded to S3."));
   }
 
   @GetMapping("/{mediaId}")
@@ -163,18 +93,16 @@ public class MediaController {
 
   @GetMapping("/{mediaId}/download")
   public ResponseEntity<?> downloadMedia(@PathVariable String mediaId, HttpServletRequest request) {
-
     log.info("Download request: mediaId={}", mediaId);
 
     if (!mediaService.mediaExists(mediaId)) {
       return ResponseEntity.notFound().build();
     }
 
-    // Check if still processing
     if (mediaService.isMediaProcessing(mediaId)) {
       var headers = new HttpHeaders();
       headers.add("Retry-After", "60");
-      headers.add("Location", "{}://{}:{}/v1/media/{}/status"
+      headers.add("Location", "%s://%s:%d/v1/media/%s/status"
           .formatted(request.getScheme(), request.getServerName(), request.getServerPort(), mediaId));
       return ResponseEntity.accepted()
           .headers(headers)
@@ -182,28 +110,20 @@ public class MediaController {
     }
 
     return mediaService.getDownloadUrl(mediaId)
-        .<ResponseEntity<?>>map(url -> ResponseEntity
-            .status(HttpStatus.FOUND)
-            .location(URI.create(url))
-            .build())
+        .<ResponseEntity<?>>map(url -> ResponseEntity.status(HttpStatus.FOUND).location(URI.create(url)).build())
         .orElse(ResponseEntity.notFound().build());
   }
 
   @PutMapping("/{mediaId}/resize")
   public ResponseEntity<?> resizeMedia(@PathVariable String mediaId, @Valid @RequestBody ResizeRequest resizeRequest) {
     log.info("Resize request: mediaId={}", mediaId);
-
     if (!mediaService.mediaExists(mediaId)) {
       return ResponseEntity.notFound().build();
     }
-
     return mediaService.resizeMedia(mediaId, resizeRequest.getWidth(), resizeRequest.getOutputFormat())
         .<ResponseEntity<?>>map(media -> ResponseEntity.accepted().body(mediaMapper.toIdResponse(media)))
-        .orElse(ResponseEntity.status(HttpStatus.CONFLICT)
-            .body(ErrorResponse.builder()
-                .message("Cannot resize: media is not in COMPLETE status")
-                .status(409)
-                .build()));
+        .orElse(ResponseEntity.status(HttpStatus.CONFLICT).body(
+            ErrorResponse.builder().message("Cannot resize: media is not in COMPLETE status").status(409).build()));
   }
 
   @DeleteMapping("/{mediaId}")
@@ -212,5 +132,31 @@ public class MediaController {
     return mediaService.deleteMedia(mediaId)
         .<ResponseEntity<?>>map(media -> ResponseEntity.accepted().body(mediaMapper.toIdResponse(media)))
         .orElse(ResponseEntity.notFound().build());
+  }
+
+  private void validateUploadFile(MultipartFile file) {
+    long maxFileSize = mediaProperties.getMaxFileSize();
+    if (file.getSize() > maxFileSize) {
+      throw new IllegalArgumentException(
+          "Failed to upload media. Check the file size. Max size is " + (maxFileSize / (1024 * 1024)) + " MB.");
+    }
+    if (file.isEmpty()) {
+      throw new IllegalArgumentException("Malformed multipart form data.");
+    }
+  }
+
+  private void validatePresignedUploadRequest(InitUploadRequest request) {
+    long maxUploadSize = mediaProperties.getUpload().getMaxPresignedUploadSize();
+    if (request.getFileSize() > maxUploadSize) {
+      throw new IllegalArgumentException(
+          "File size exceeds maximum allowed size of " + (maxUploadSize / (1024 * 1024 * 1024)) + " GB.");
+    }
+    if (!request.getContentType().startsWith("image/")) {
+      throw new IllegalArgumentException("Invalid content type. Only images are supported.");
+    }
+  }
+
+  private ResponseEntity<ErrorResponse> badRequest(String message) {
+    return ResponseEntity.badRequest().body(ErrorResponse.builder().message(message).status(400).build());
   }
 }

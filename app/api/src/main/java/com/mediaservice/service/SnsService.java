@@ -2,8 +2,8 @@ package com.mediaservice.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mediaservice.dto.MediaEvent;
-import com.mediaservice.model.EventType;
+import com.mediaservice.common.event.MediaEvent;
+import com.mediaservice.common.model.EventType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;

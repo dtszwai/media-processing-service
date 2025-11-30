@@ -1,6 +1,7 @@
 package com.mediaservice.lambda.service;
 
-import com.mediaservice.lambda.model.OutputFormat;
+import com.mediaservice.lambda.config.LambdaConfig;
+import com.mediaservice.common.model.OutputFormat;
 import net.coobird.thumbnailator.Thumbnails;
 import net.coobird.thumbnailator.geometry.Position;
 import net.coobird.thumbnailator.geometry.Positions;
@@ -17,7 +18,8 @@ import java.util.Iterator;
 
 public class ImageProcessingService {
   private static final Logger logger = LoggerFactory.getLogger(ImageProcessingService.class);
-  private static final int DEFAULT_WIDTH = 500;
+
+  private final LambdaConfig config;
   private final BufferedImage watermarkImage;
 
   static {
@@ -32,6 +34,7 @@ public class ImageProcessingService {
   }
 
   public ImageProcessingService() {
+    this.config = LambdaConfig.getInstance();
     this.watermarkImage = loadWatermark();
   }
 
@@ -60,7 +63,7 @@ public class ImageProcessingService {
 
   private byte[] processImageInternal(byte[] imageData, Integer targetWidth, Position watermarkPosition,
       OutputFormat outputFormat) throws IOException {
-    int width = (targetWidth != null && targetWidth > 0) ? targetWidth : DEFAULT_WIDTH;
+    int width = (targetWidth != null && targetWidth > 0) ? targetWidth : config.getDefaultWidth();
     OutputFormat format = (outputFormat != null) ? outputFormat : OutputFormat.JPEG;
 
     // Check if the format is supported
@@ -73,7 +76,9 @@ public class ImageProcessingService {
 
     var inputStream = new ByteArrayInputStream(imageData);
     var outputStream = new ByteArrayOutputStream();
-    int watermarkWidth = Math.max(width / 7, 30);
+    int watermarkWidth = Math.max(
+        (int) (width * config.getWatermarkWidthRatio()),
+        config.getMinWatermarkWidth());
     var resizedWatermark = Thumbnails.of(watermarkImage).width(watermarkWidth).asBufferedImage();
 
     var builder = Thumbnails.of(inputStream)
@@ -83,9 +88,9 @@ public class ImageProcessingService {
 
     // Set quality for formats that support it
     if (format == OutputFormat.JPEG) {
-      builder.outputQuality(0.9);
+      builder.outputQuality(config.getJpegQuality());
     } else if (format == OutputFormat.WEBP) {
-      builder.outputQuality(0.85);
+      builder.outputQuality(config.getWebpQuality());
     }
 
     builder.toOutputStream(outputStream);

@@ -1,6 +1,6 @@
 package com.mediaservice.integration;
 
-import com.mediaservice.model.MediaStatus;
+import com.mediaservice.common.model.MediaStatus;
 import com.mediaservice.service.DynamoDbService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;

@@ -1,6 +1,6 @@
 package com.mediaservice.integration;
 
-import com.mediaservice.model.OutputFormat;
+import com.mediaservice.common.model.OutputFormat;
 import com.mediaservice.service.S3Service;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

@@ -1,5 +1,7 @@
-package com.mediaservice.dto;
+package com.mediaservice.common.event;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.mediaservice.common.model.EventType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -9,6 +11,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class MediaEvent {
   private String type;
   private MediaEventPayload payload;
@@ -17,34 +20,23 @@ public class MediaEvent {
   @Builder
   @NoArgsConstructor
   @AllArgsConstructor
+  @JsonIgnoreProperties(ignoreUnknown = true)
   public static class MediaEventPayload {
     private String mediaId;
     private Integer width;
     private String outputFormat;
   }
 
-  public static MediaEvent of(String type, String mediaId) {
+  public static MediaEvent of(EventType eventType, String mediaId) {
     return MediaEvent.builder()
-        .type(type)
-        .payload(MediaEventPayload.builder()
-            .mediaId(mediaId)
-            .build())
+        .type(eventType.getValue())
+        .payload(MediaEventPayload.builder().mediaId(mediaId).build())
         .build();
   }
 
-  public static MediaEvent of(String type, String mediaId, Integer width) {
+  public static MediaEvent of(EventType eventType, String mediaId, Integer width, String outputFormat) {
     return MediaEvent.builder()
-        .type(type)
-        .payload(MediaEventPayload.builder()
-            .mediaId(mediaId)
-            .width(width)
-            .build())
-        .build();
-  }
-
-  public static MediaEvent of(String type, String mediaId, Integer width, String outputFormat) {
-    return MediaEvent.builder()
-        .type(type)
+        .type(eventType.getValue())
         .payload(MediaEventPayload.builder()
             .mediaId(mediaId)
             .width(width)

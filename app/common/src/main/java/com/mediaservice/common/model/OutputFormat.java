@@ -1,11 +1,7 @@
-package com.mediaservice.lambda.model;
+package com.mediaservice.common.model;
 
 import com.fasterxml.jackson.annotation.JsonValue;
 
-/**
- * Supported output formats for processed images.
- * IMPORTANT: Keep in sync with api module's OutputFormat enum.
- */
 public enum OutputFormat {
   JPEG("jpeg", "image/jpeg"),
   PNG("png", "image/png"),
@@ -32,15 +28,24 @@ public enum OutputFormat {
     return "." + format;
   }
 
+  public String applyToFileName(String originalName) {
+    if (originalName == null || originalName.isEmpty()) {
+      return "image" + getExtension();
+    }
+    int lastDot = originalName.lastIndexOf('.');
+    String baseName = (lastDot > 0) ? originalName.substring(0, lastDot) : originalName;
+    return baseName + getExtension();
+  }
+
   public static OutputFormat fromString(String value) {
     if (value == null || value.isEmpty()) {
-      return JPEG; // default
+      return JPEG;
     }
     for (OutputFormat format : values()) {
       if (format.format.equalsIgnoreCase(value) || format.name().equalsIgnoreCase(value)) {
         return format;
       }
     }
-    return JPEG; // default fallback
+    return JPEG;
   }
 }

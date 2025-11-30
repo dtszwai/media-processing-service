@@ -69,6 +69,16 @@ public class GlobalExceptionHandler {
             .build());
   }
 
+  @ExceptionHandler(java.io.IOException.class)
+  public ResponseEntity<ErrorResponse> handleIOException(java.io.IOException e) {
+    log.error("IO error: {}", e.getMessage(), e);
+    return ResponseEntity.internalServerError()
+        .body(ErrorResponse.builder()
+            .message("Internal server error")
+            .status(500)
+            .build());
+  }
+
   @ExceptionHandler(ConditionalCheckFailedException.class)
   public ResponseEntity<ErrorResponse> handleConditionalCheckFailed(ConditionalCheckFailedException e) {
     log.warn("Conditional check failed: {}", e.getMessage());

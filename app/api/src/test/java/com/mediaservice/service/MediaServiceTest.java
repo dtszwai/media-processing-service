@@ -2,9 +2,9 @@ package com.mediaservice.service;
 
 import com.mediaservice.config.MediaProperties;
 import com.mediaservice.dto.InitUploadRequest;
-import com.mediaservice.model.Media;
-import com.mediaservice.model.MediaStatus;
-import com.mediaservice.model.OutputFormat;
+import com.mediaservice.common.model.Media;
+import com.mediaservice.common.model.MediaStatus;
+import com.mediaservice.common.model.OutputFormat;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.trace.Span;

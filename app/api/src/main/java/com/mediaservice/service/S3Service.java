@@ -1,14 +1,17 @@
 package com.mediaservice.service;
 
-import com.mediaservice.model.OutputFormat;
-import lombok.RequiredArgsConstructor;
+import com.mediaservice.config.MediaProperties;
+import com.mediaservice.common.model.OutputFormat;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.*;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
@@ -18,17 +21,22 @@ import java.time.Duration;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class S3Service {
   private static final String KEY_PREFIX_UPLOADS = "uploads";
   private static final String KEY_PREFIX_RESIZED = "resized";
-  private static final Duration PRESIGNED_URL_EXPIRATION = Duration.ofHours(1);
 
   private final S3Client s3Client;
   private final S3Presigner s3Presigner;
+  private final MediaProperties mediaProperties;
 
   @Value("${aws.s3.bucket-name}")
   private String bucketName;
+
+  public S3Service(S3Client s3Client, S3Presigner s3Presigner, MediaProperties mediaProperties) {
+    this.s3Client = s3Client;
+    this.s3Presigner = s3Presigner;
+    this.mediaProperties = mediaProperties;
+  }
 
   private String buildKey(String prefix, String mediaId, String fileName) {
     return String.join("/", prefix, mediaId, fileName);
@@ -47,28 +55,21 @@ public class S3Service {
   }
 
   public String getPresignedUrl(String mediaId, String mediaName, OutputFormat outputFormat) {
-    String outputFileName = getOutputFileName(mediaName, outputFormat);
+    OutputFormat format = outputFormat != null ? outputFormat : OutputFormat.JPEG;
+    String outputFileName = format.applyToFileName(mediaName);
     String key = buildKey(KEY_PREFIX_RESIZED, mediaId, outputFileName);
     var getObjectRequest = GetObjectRequest.builder()
         .bucket(bucketName)
         .key(key)
         .build();
+    Duration expiration = Duration.ofSeconds(mediaProperties.getDownload().getPresignedUrlExpirationSeconds());
     var presignRequest = GetObjectPresignRequest.builder()
-        .signatureDuration(PRESIGNED_URL_EXPIRATION)
+        .signatureDuration(expiration)
         .getObjectRequest(getObjectRequest)
         .build();
     var presignedRequest = s3Presigner.presignGetObject(presignRequest);
     log.info("Generated presigned URL for: {}", key);
     return presignedRequest.url().toString();
-  }
-
-  private String getOutputFileName(String originalName, OutputFormat outputFormat) {
-    if (outputFormat == null) {
-      return originalName;
-    }
-    int lastDot = originalName.lastIndexOf('.');
-    String baseName = (lastDot > 0) ? originalName.substring(0, lastDot) : originalName;
-    return baseName + outputFormat.getExtension();
   }
 
   public String generatePresignedUploadUrl(String mediaId, String fileName, String contentType, Duration expiration) {

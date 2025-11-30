@@ -2,7 +2,7 @@ package com.mediaservice.lambda.service;
 
 import com.mediaservice.lambda.config.AwsClientFactory;
 import com.mediaservice.lambda.config.LambdaConfig;
-import com.mediaservice.lambda.model.OutputFormat;
+import com.mediaservice.common.model.OutputFormat;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
@@ -29,7 +29,7 @@ public class S3Service {
 
   public void uploadMedia(String mediaId, String mediaName, byte[] data, String keyPrefix, OutputFormat outputFormat) {
     OutputFormat format = (outputFormat != null) ? outputFormat : OutputFormat.JPEG;
-    String outputFileName = getOutputFileName(mediaName, format);
+    String outputFileName = format.applyToFileName(mediaName);
     var key = String.join("/", keyPrefix, mediaId, outputFileName);
     var request = PutObjectRequest.builder()
         .bucket(bucketName)
@@ -49,21 +49,13 @@ public class S3Service {
   }
 
   public void deleteMediaFileWithFormat(String mediaId, String mediaName, String keyPrefix, OutputFormat outputFormat) {
-    String outputFileName = getOutputFileName(mediaName, outputFormat);
+    OutputFormat format = (outputFormat != null) ? outputFormat : OutputFormat.JPEG;
+    String outputFileName = format.applyToFileName(mediaName);
     var key = String.join("/", keyPrefix, mediaId, outputFileName);
     var request = DeleteObjectRequest.builder()
         .bucket(bucketName)
         .key(key)
         .build();
     client.deleteObject(request);
-  }
-
-  private String getOutputFileName(String originalName, OutputFormat outputFormat) {
-    if (outputFormat == null) {
-      return originalName;
-    }
-    int lastDot = originalName.lastIndexOf('.');
-    String baseName = (lastDot > 0) ? originalName.substring(0, lastDot) : originalName;
-    return baseName + outputFormat.getExtension();
   }
 }

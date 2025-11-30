@@ -1,4 +1,4 @@
-package com.mediaservice.lambda.model;
+package com.mediaservice.common.model;
 
 public enum MediaStatus {
   PENDING_UPLOAD,

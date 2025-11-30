@@ -2,8 +2,8 @@ package com.mediaservice.mapper;
 
 import com.mediaservice.dto.MediaResponse;
 import com.mediaservice.dto.StatusResponse;
-import com.mediaservice.model.Media;
-import com.mediaservice.model.MediaStatus;
+import com.mediaservice.common.model.Media;
+import com.mediaservice.common.model.MediaStatus;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -25,12 +25,6 @@ public class MediaMapper {
   public MediaResponse toIdResponse(Media media) {
     return MediaResponse.builder()
         .mediaId(media.getMediaId())
-        .build();
-  }
-
-  public MediaResponse toIdResponse(String mediaId) {
-    return MediaResponse.builder()
-        .mediaId(mediaId)
         .build();
   }
 

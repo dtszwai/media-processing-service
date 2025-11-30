@@ -1,6 +1,6 @@
 package com.mediaservice.lambda.integration;
 
-import com.mediaservice.lambda.model.MediaStatus;
+import com.mediaservice.common.model.MediaStatus;
 import org.junit.jupiter.api.*;
 import org.testcontainers.containers.localstack.LocalStackContainer;
 import org.testcontainers.junit.jupiter.Container;

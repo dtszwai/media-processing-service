@@ -1,7 +1,8 @@
 package com.mediaservice.integration;
 
-import com.mediaservice.model.Media;
-import com.mediaservice.model.MediaStatus;
+import com.mediaservice.common.model.Media;
+import com.mediaservice.common.model.MediaStatus;
+import com.mediaservice.common.model.OutputFormat;
 import com.mediaservice.service.DynamoDbService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -151,8 +152,9 @@ class MediaApiIntegrationTest extends BaseIntegrationTest {
     void shouldReturnPresignedUrlWhenComplete() {
       createAndSaveMedia("media-123", MediaStatus.COMPLETE);
       // Upload a file so presigned URL can be generated
+      // File name should match the output format extension (test.jpeg for JPEG format)
       s3Client.putObject(
-          b -> b.bucket("media-bucket").key("resized/media-123/test.jpg").contentType("image/jpeg"),
+          b -> b.bucket("media-bucket").key("resized/media-123/test.jpeg").contentType("image/jpeg"),
           software.amazon.awssdk.core.sync.RequestBody.fromBytes("test".getBytes()));
       // TestRestTemplate follows redirects, so we get the final response
       // The redirect to S3 presigned URL should work
@@ -358,6 +360,7 @@ class MediaApiIntegrationTest extends BaseIntegrationTest {
         .mimetype("image/jpeg")
         .status(status)
         .width(500)
+        .outputFormat(OutputFormat.JPEG)
         .build();
     dynamoDbService.createMedia(media);
     if (status != MediaStatus.PENDING) {

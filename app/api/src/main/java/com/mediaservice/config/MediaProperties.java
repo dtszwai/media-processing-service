@@ -34,6 +34,13 @@ public class MediaProperties {
     private long maxPresignedUploadSize = 5368709120L; // 5GB
   }
 
+  @Data
+  public static class Download {
+    private int presignedUrlExpirationSeconds = 3600; // 1 hour
+  }
+
+  private Download download = new Download();
+
   public boolean isWidthValid(Integer width) {
     return width != null && width >= this.width.min && width <= this.width.max;
   }

@@ -4,9 +4,9 @@ import com.mediaservice.config.MediaProperties;
 import com.mediaservice.dto.InitUploadRequest;
 import com.mediaservice.dto.InitUploadResponse;
 import com.mediaservice.dto.MediaResponse;
-import com.mediaservice.model.Media;
-import com.mediaservice.model.MediaStatus;
-import com.mediaservice.model.OutputFormat;
+import com.mediaservice.common.model.Media;
+import com.mediaservice.common.model.MediaStatus;
+import com.mediaservice.common.model.OutputFormat;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.trace.Span;
@@ -67,10 +67,8 @@ public class MediaService {
       int targetWidth = mediaProperties.resolveWidth(width);
       OutputFormat targetFormat = OutputFormat.fromString(outputFormat);
 
-      String fileName = file.getOriginalFilename();
-      if (fileName == null || fileName.isEmpty()) {
-        fileName = "image.jpg";
-      }
+      String originalName = file.getOriginalFilename();
+      String fileName = (originalName == null || originalName.isEmpty()) ? "image.jpg" : originalName;
       span.setAttribute("file.name", fileName);
       span.setAttribute("output.format", targetFormat.getFormat());
 
@@ -92,7 +90,8 @@ public class MediaService {
       snsService.publishProcessMediaEvent(mediaId, targetWidth, targetFormat.getFormat());
       span.setStatus(StatusCode.OK);
       uploadSuccessCounter.add(1);
-      log.info("Media uploaded successfully: mediaId={}, fileName={}, outputFormat={}", mediaId, fileName, targetFormat.getFormat());
+      log.info("Media uploaded successfully: mediaId={}, fileName={}, outputFormat={}", mediaId, fileName,
+          targetFormat.getFormat());
       return MediaResponse.builder().mediaId(mediaId).build();
     } catch (Exception e) {
       uploadFailureCounter.add(1);
@@ -115,8 +114,10 @@ public class MediaService {
   public Optional<String> getDownloadUrl(String mediaId) {
     return dynamoDbService.getMedia(mediaId)
         .filter(media -> media.getStatus() == MediaStatus.COMPLETE)
-        .map(media -> s3Service.getPresignedUrl(mediaId, media.getName(),
-            media.getOutputFormat() != null ? media.getOutputFormat() : OutputFormat.JPEG));
+        .map(media -> {
+          var format = media.getOutputFormat() != null ? media.getOutputFormat() : OutputFormat.JPEG;
+          return s3Service.getPresignedUrl(mediaId, media.getName(), format);
+        });
   }
 
   public boolean isMediaProcessing(String mediaId) {
@@ -197,7 +198,8 @@ public class MediaService {
       headers.put("Content-Type", request.getContentType());
 
       span.setStatus(StatusCode.OK);
-      log.info("Presigned upload initialized: mediaId={}, fileName={}, outputFormat={}", mediaId, request.getFileName(), targetFormat.getFormat());
+      log.info("Presigned upload initialized: mediaId={}, fileName={}, outputFormat={}", mediaId, request.getFileName(),
+          targetFormat.getFormat());
 
       return InitUploadResponse.builder()
           .mediaId(mediaId)

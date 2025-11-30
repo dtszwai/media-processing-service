@@ -1,7 +1,7 @@
 package com.mediaservice.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.mediaservice.model.MediaStatus;
+import com.mediaservice.common.model.MediaStatus;
 import java.time.Instant;
 import lombok.AllArgsConstructor;
 import lombok.Builder;

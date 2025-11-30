@@ -51,6 +51,13 @@
     </dependencyManagement>
 
     <dependencies>
+        <!-- Common Module -->
+        <dependency>
+            <groupId>com.mediaservice</groupId>
+            <artifactId>media-service-common</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+
         <!-- Spring Boot -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
