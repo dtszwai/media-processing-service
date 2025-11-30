@@ -1,32 +1,19 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import type { Period, AnalyticsSummary, MediaViewCount } from "../../lib/types";
-  import { getAnalyticsSummary, getTopMedia } from "../../lib/api";
+  import type { Period, MediaViewCount } from "../../lib/types";
+  import { getTopMedia } from "../../lib/api";
+  import { createAnalyticsSummaryQuery } from "../../lib/queries";
   import StatCard from "./StatCard.svelte";
   import PeriodSelector from "./PeriodSelector.svelte";
   import TopMediaTable from "./TopMediaTable.svelte";
   import FormatUsageChart from "./FormatUsageChart.svelte";
+  import MediaPreviewModal from "./MediaPreviewModal.svelte";
 
-  let loading = $state(true);
-  let error = $state<string | null>(null);
   let selectedPeriod = $state<Period>("TODAY");
-
-  let summary = $state<AnalyticsSummary | null>(null);
   let topMediaByPeriod = $state<MediaViewCount[]>([]);
   let topMediaLoading = $state(false);
+  let selectedMedia = $state<MediaViewCount | null>(null);
 
-  async function loadSummary() {
-    try {
-      loading = true;
-      error = null;
-      summary = await getAnalyticsSummary();
-    } catch (e) {
-      error = e instanceof Error ? e.message : "Failed to load analytics";
-      console.error("Failed to load analytics:", e);
-    } finally {
-      loading = false;
-    }
-  }
+  const summaryQuery = createAnalyticsSummaryQuery();
 
   async function loadTopMediaByPeriod(period: Period) {
     try {
@@ -45,17 +32,22 @@
     loadTopMediaByPeriod(period);
   }
 
-  onMount(() => {
-    loadSummary();
+  function handleRefresh() {
+    summaryQuery.refetch();
     loadTopMediaByPeriod(selectedPeriod);
+  }
 
-    // Refresh every 30 seconds
-    const interval = setInterval(() => {
-      loadSummary();
-      loadTopMediaByPeriod(selectedPeriod);
-    }, 30000);
+  function handleMediaClick(media: MediaViewCount) {
+    selectedMedia = media;
+  }
 
-    return () => clearInterval(interval);
+  function handleModalClose() {
+    selectedMedia = null;
+  }
+
+  // Load initial top media data
+  $effect(() => {
+    loadTopMediaByPeriod(selectedPeriod);
   });
 </script>
 
@@ -65,11 +57,11 @@
     <h2 class="text-lg font-semibold text-gray-900">Analytics Dashboard</h2>
     <button
       class="text-sm text-gray-500 hover:text-gray-700 flex items-center space-x-1"
-      onclick={loadSummary}
-      disabled={loading}
+      onclick={handleRefresh}
+      disabled={summaryQuery.isFetching}
     >
       <svg
-        class="w-4 h-4 {loading ? 'animate-spin' : ''}"
+        class="w-4 h-4 {summaryQuery.isFetching ? 'animate-spin' : ''}"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
@@ -85,17 +77,18 @@
     </button>
   </div>
 
-  {#if error}
+  {#if summaryQuery.isError}
     <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
-      {error}
+      {summaryQuery.error instanceof Error ? summaryQuery.error.message : "Failed to load analytics"}
     </div>
   {/if}
 
-  {#if loading && !summary}
+  {#if summaryQuery.isLoading && !summaryQuery.data}
     <div class="flex items-center justify-center py-12">
       <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-600"></div>
     </div>
-  {:else if summary}
+  {:else if summaryQuery.data}
+    {@const summary = summaryQuery.data}
     <!-- Stats Overview -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
       <StatCard title="Total Views" value={summary.totalViews} />
@@ -122,16 +115,20 @@
               : 'All Time'})"
         data={topMediaByPeriod}
         loading={topMediaLoading}
+        onitemclick={handleMediaClick}
       />
 
       <!-- Format Usage -->
-      <FormatUsageChart data={summary.formatUsage} loading={loading} />
+      <FormatUsageChart data={summary.formatUsage} loading={summaryQuery.isFetching} />
     </div>
 
     <!-- All Time Top Media -->
     <div class="grid md:grid-cols-2 gap-6">
-      <TopMediaTable title="Top Media Today" data={summary.topMediaToday} />
-      <TopMediaTable title="Top Media All Time" data={summary.topMediaAllTime} />
+      <TopMediaTable title="Top Media Today" data={summary.topMediaToday} onitemclick={handleMediaClick} />
+      <TopMediaTable title="Top Media All Time" data={summary.topMediaAllTime} onitemclick={handleMediaClick} />
     </div>
   {/if}
 </div>
+
+<!-- Media Preview Modal -->
+<MediaPreviewModal media={selectedMedia} onclose={handleModalClose} />

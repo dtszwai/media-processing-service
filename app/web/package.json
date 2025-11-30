@@ -31,5 +31,9 @@
     "overrides": {
       "vite": "npm:rolldown-vite@7.2.5"
     }
+  },
+  "dependencies": {
+    "@tanstack/svelte-query": "^6.0.9",
+    "zod": "^4.1.13"
   }
 }

@@ -1,12 +1,17 @@
 <script lang="ts">
   import { formatFileSize, formatDateTime } from "../lib/utils";
-  import { getDownloadUrl, getOriginalUrl, resizeMedia, pollForStatus } from "../lib/api";
-  import { mediaList, currentMediaId, isProcessing, updateMediaStatus, updateMediaWidth } from "../lib/stores";
-  import type { Media, OutputFormat } from "../lib/types";
+  import { getDownloadUrl, getOriginalUrl, pollForStatus } from "../lib/api";
+  import { createMediaListQuery, createResizeMutation } from "../lib/queries";
+  import { currentMediaId, isProcessing } from "../lib/stores";
+  import { invalidateMediaList } from "../lib/query";
+  import type { OutputFormat } from "../lib/types";
 
   let resizeWidth = $state(500);
   let resizeFormat = $state<OutputFormat>("jpeg");
   let isResizing = $state(false);
+
+  const mediaListQuery = createMediaListQuery();
+  const resizeMutation = createResizeMutation();
 
   const formatOptions: { value: OutputFormat; label: string }[] = [
     { value: "jpeg", label: "JPEG" },
@@ -14,7 +19,7 @@
     { value: "webp", label: "WebP" },
   ];
 
-  let currentMedia = $derived($mediaList.find((m) => m.mediaId === $currentMediaId) || null);
+  let currentMedia = $derived(mediaListQuery.data?.items.find((m) => m.mediaId === $currentMediaId) || null);
 
   $effect(() => {
     if (currentMedia) {
@@ -29,14 +34,15 @@
     isResizing = true;
 
     try {
-      await resizeMedia(currentMedia.mediaId, { width: resizeWidth, outputFormat: resizeFormat });
-      updateMediaStatus(currentMedia.mediaId, "PENDING");
+      await resizeMutation.mutateAsync({
+        mediaId: currentMedia.mediaId,
+        request: { width: resizeWidth, outputFormat: resizeFormat },
+      });
 
-      await pollForStatus(currentMedia.mediaId, ["COMPLETE", "ERROR"], (status) =>
-        updateMediaStatus(currentMedia.mediaId, status),
-      );
-
-      updateMediaWidth(currentMedia.mediaId, resizeWidth, resizeFormat);
+      // Poll for completion and invalidate cache
+      await pollForStatus(currentMedia.mediaId, ["COMPLETE", "ERROR"], () => {
+        invalidateMediaList();
+      });
     } catch (error) {
       console.error("Resize error:", error);
       alert("Resize failed: " + (error instanceof Error ? error.message : "Unknown error"));

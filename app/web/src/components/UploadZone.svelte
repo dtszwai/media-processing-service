@@ -1,35 +1,28 @@
 <script lang="ts">
-  import { formatFileSize } from '../lib/utils';
-  import {
-    uploadMedia,
-    initPresignedUpload,
-    uploadToPresignedUrl,
-    completePresignedUpload,
-    pollForStatus,
-    PRESIGNED_UPLOAD_THRESHOLD,
-  } from '../lib/api';
-  import {
-    isProcessing,
-    currentMediaId,
-    addMedia,
-    updateMediaStatus,
-  } from '../lib/stores';
-  import type { Media, OutputFormat } from '../lib/types';
+  import { formatFileSize } from "../lib/utils";
+  import { createUploadMutation, createPresignedUploadMutation, PRESIGNED_UPLOAD_THRESHOLD } from "../lib/queries";
+  import { pollForStatus } from "../lib/api";
+  import { isProcessing, currentMediaId } from "../lib/stores";
+  import { invalidateMediaList } from "../lib/query";
+  import type { OutputFormat } from "../lib/types";
 
   let selectedFile: File | null = $state(null);
   let previewUrl: string | null = $state(null);
   let dragover = $state(false);
   let width = $state(500);
-  let outputFormat = $state<OutputFormat>('jpeg');
+  let outputFormat = $state<OutputFormat>("jpeg");
   let uploadProgress = $state(0);
-  let uploadMethod = $state<'direct' | 'presigned' | null>(null);
+  let uploadMethod = $state<"direct" | "presigned" | null>(null);
 
   let fileInput: HTMLInputElement;
 
+  const uploadMutation = createUploadMutation();
+  const presignedUploadMutation = createPresignedUploadMutation();
+
   const formatOptions: { value: OutputFormat; label: string }[] = [
-    { value: 'jpeg', label: 'JPEG' },
-    { value: 'png', label: 'PNG' },
-    { value: 'webp', label: 'WebP' },
+    { value: "jpeg", label: "JPEG" },
+    { value: "png", label: "PNG" },
+    { value: "webp", label: "WebP" },
   ];
 
   function handleDragOver(e: DragEvent) {
@@ -63,8 +56,8 @@
 
   function handleFile(file: File) {
     if ($isProcessing) return;
-    if (!file.type.startsWith('image/')) {
-      alert('Please select an image file');
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file");
       return;
     }
 
@@ -77,7 +70,7 @@
     reader.readAsDataURL(file);
 
     // Determine upload method based on file size
-    uploadMethod = file.size > PRESIGNED_UPLOAD_THRESHOLD ? 'presigned' : 'direct';
+    uploadMethod = file.size > PRESIGNED_UPLOAD_THRESHOLD ? "presigned" : "direct";
   }
 
   function clearFile() {
@@ -85,19 +78,7 @@
     previewUrl = null;
     uploadProgress = 0;
     uploadMethod = null;
-    if (fileInput) fileInput.value = '';
-  }
-
-  function createMediaEntry(mediaId: string, status: Media['status']): Media {
-    return {
-      mediaId,
-      name: selectedFile!.name,
-      size: selectedFile!.size,
-      mimetype: selectedFile!.type,
-      status,
-      width,
-      outputFormat,
-    };
+    if (fileInput) fileInput.value = "";
   }
 
   async function handleUpload() {
@@ -107,45 +88,43 @@
     uploadProgress = 0;
 
     try {
-      const mediaId = selectedFile.size > PRESIGNED_UPLOAD_THRESHOLD
-        ? await uploadWithPresignedUrl()
-        : await uploadDirect();
+      let mediaId: string;
 
-      await pollForStatus(mediaId, ['COMPLETE', 'ERROR'], (status) => updateMediaStatus(mediaId, status));
+      if (selectedFile.size > PRESIGNED_UPLOAD_THRESHOLD) {
+        // Use presigned URL upload for large files
+        const result = await presignedUploadMutation.mutateAsync({
+          file: selectedFile,
+          width,
+          outputFormat,
+          onProgress: (progress: number) => {
+            uploadProgress = progress;
+          },
+        });
+        mediaId = result.mediaId;
+      } else {
+        // Use direct upload for smaller files
+        const result = await uploadMutation.mutateAsync({
+          file: selectedFile,
+          width,
+          outputFormat,
+        });
+        mediaId = result.mediaId;
+      }
+
+      // Poll for completion and invalidate cache
+      await pollForStatus(mediaId, ["COMPLETE", "ERROR"], () => {
+        // Invalidate media list on each status change to keep UI in sync
+        invalidateMediaList();
+      });
+
       currentMediaId.set(mediaId);
       clearFile();
     } catch (error) {
-      console.error('Upload error:', error);
-      alert('Upload failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      console.error("Upload error:", error);
+      alert("Upload failed: " + (error instanceof Error ? error.message : "Unknown error"));
     } finally {
       isProcessing.set(false);
     }
-  }
-
-  async function uploadDirect(): Promise<string> {
-    const response = await uploadMedia(selectedFile!, width, outputFormat);
-    addMedia(createMediaEntry(response.mediaId, 'PENDING'));
-    return response.mediaId;
-  }
-
-  async function uploadWithPresignedUrl(): Promise<string> {
-    const initResponse = await initPresignedUpload({
-      fileName: selectedFile!.name,
-      fileSize: selectedFile!.size,
-      contentType: selectedFile!.type,
-      width,
-      outputFormat,
-    });
-
-    addMedia(createMediaEntry(initResponse.mediaId, 'PENDING_UPLOAD'));
-
-    await uploadToPresignedUrl(initResponse.uploadUrl, selectedFile!, initResponse.headers, (progress) => {
-      uploadProgress = progress;
-    });
-
-    updateMediaStatus(initResponse.mediaId, 'PENDING');
-    await completePresignedUpload(initResponse.mediaId);
-    return initResponse.mediaId;
   }
 </script>
 
@@ -165,15 +144,9 @@
     ondragleave={handleDragLeave}
     ondrop={handleDrop}
     onclick={triggerFileSelect}
-    onkeydown={(e) => e.key === 'Enter' && triggerFileSelect()}
+    onkeydown={(e) => e.key === "Enter" && triggerFileSelect()}
   >
-    <input
-      type="file"
-      accept="image/*"
-      class="hidden"
-      bind:this={fileInput}
-      onchange={handleFileSelect}
-    />
+    <input type="file" accept="image/*" class="hidden" bind:this={fileInput} onchange={handleFileSelect} />
 
     {#if !selectedFile}
       <svg class="w-10 h-10 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -190,14 +163,14 @@
       <img src={previewUrl} alt="Preview" class="max-h-24 mx-auto rounded mb-2" />
       <p class="text-gray-800 text-sm font-medium">{selectedFile.name}</p>
       <p class="text-gray-400 text-xs">{formatFileSize(selectedFile.size)}</p>
-      {#if uploadMethod === 'presigned'}
+      {#if uploadMethod === "presigned"}
         <p class="text-blue-600 text-xs mt-1">Large file - will use direct S3 upload</p>
       {/if}
     {/if}
   </div>
 
   <!-- Progress Bar (for presigned uploads) -->
-  {#if $isProcessing && uploadMethod === 'presigned' && uploadProgress > 0}
+  {#if $isProcessing && uploadMethod === "presigned" && uploadProgress > 0}
     <div class="mt-4">
       <div class="flex justify-between text-xs text-gray-500 mb-1">
         <span>Uploading to S3...</span>
@@ -245,9 +218,18 @@
       class="btn-primary px-5 py-2 text-sm font-medium rounded-lg"
     >
       {#if $isProcessing}
-        <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <svg
+          class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline-block"
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+        >
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          <path
+            class="opacity-75"
+            fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+          ></path>
         </svg>
         Processing...
       {:else}

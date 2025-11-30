@@ -5,9 +5,10 @@
     title: string;
     data: MediaViewCount[];
     loading?: boolean;
+    onitemclick?: (item: MediaViewCount) => void;
   }
 
-  let { title, data, loading = false }: Props = $props();
+  let { title, data, loading = false, onitemclick }: Props = $props();
 
   function formatViewCount(count: number): string {
     if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
@@ -18,6 +19,17 @@
   function truncateName(name: string, maxLength = 25): string {
     if (name.length <= maxLength) return name;
     return name.substring(0, maxLength - 3) + "...";
+  }
+
+  function handleItemClick(item: MediaViewCount) {
+    onitemclick?.(item);
+  }
+
+  function handleKeydown(e: KeyboardEvent, item: MediaViewCount) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handleItemClick(item);
+    }
   }
 </script>
 
@@ -46,7 +58,13 @@
   {:else}
     <div class="divide-y divide-gray-100">
       {#each data as item}
-        <div class="px-4 py-3 flex items-center justify-between hover:bg-gray-50">
+        <div
+          class="px-4 py-3 flex items-center justify-between hover:bg-gray-50 cursor-pointer transition-colors"
+          onclick={() => handleItemClick(item)}
+          onkeydown={(e) => handleKeydown(e, item)}
+          role="button"
+          tabindex="0"
+        >
           <div class="flex items-center space-x-3">
             <span
               class="w-6 h-6 flex items-center justify-center rounded-full text-xs font-medium
@@ -62,7 +80,12 @@
             </span>
             <span class="text-sm text-gray-700" title={item.name}>{truncateName(item.name)}</span>
           </div>
-          <span class="text-sm font-medium text-gray-900">{formatViewCount(item.viewCount)}</span>
+          <div class="flex items-center space-x-2">
+            <span class="text-sm font-medium text-gray-900">{formatViewCount(item.viewCount)}</span>
+            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+          </div>
         </div>
       {/each}
     </div>

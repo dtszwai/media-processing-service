@@ -1,10 +1,14 @@
 <script lang="ts">
-  import { apiConnected, serviceHealth, versionInfo, currentView } from "../lib/stores";
+  import { currentView } from "../lib/stores";
+  import { createServiceHealthQuery, createVersionInfoQuery } from "../lib/queries";
   import type { HealthStatus } from "../lib/types";
   import type { AppView } from "../lib/stores";
 
   let showDetails = $state(false);
   let dropdownRef: HTMLDivElement;
+
+  const healthQuery = createServiceHealthQuery();
+  const versionQuery = createVersionInfoQuery();
 
   function handleClickOutside(event: MouseEvent) {
     if (showDetails && dropdownRef && !dropdownRef.contains(event.target as Node)) {
@@ -31,8 +35,20 @@
     return status;
   }
 
-  let overallStatus = $derived($serviceHealth.overall);
-  let hasIssues = $derived(overallStatus !== "UP" || !$serviceHealth.services.api);
+  let serviceHealth = $derived(
+    healthQuery.data ?? {
+      overall: "UNKNOWN" as const,
+      services: {
+        api: false,
+        s3: "UNKNOWN" as const,
+        dynamoDb: "UNKNOWN" as const,
+        sns: "UNKNOWN" as const,
+      },
+    },
+  );
+  let versionInfo = $derived(versionQuery.data);
+  let apiConnected = $derived(serviceHealth.services.api && serviceHealth.overall === "UP");
+  let overallStatus = $derived(serviceHealth.overall);
 </script>
 
 <svelte:window onclick={handleClickOutside} />
@@ -73,8 +89,8 @@
           </button>
         </nav>
 
-        {#if $versionInfo?.build?.version}
-          <span class="text-xs text-gray-400">v{$versionInfo.build.version}</span>
+        {#if versionInfo?.build?.version}
+          <span class="text-xs text-gray-400">v{versionInfo.build.version}</span>
         {/if}
 
         <div class="relative" bind:this={dropdownRef}>
@@ -82,12 +98,21 @@
             class="flex items-center space-x-2 text-sm text-gray-500 hover:text-gray-700 focus:outline-none"
             onclick={() => (showDetails = !showDetails)}
           >
-            <span class="w-2 h-2 rounded-full {getStatusColor($apiConnected && overallStatus === 'UP')}"></span>
-            {#if $apiConnected && overallStatus === "UP"}
+            {#if healthQuery.isLoading}
+              <!-- Loading state -->
+              <svg class="w-3 h-3 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+              </svg>
+              <span class="text-gray-400">Checking...</span>
+            {:else if apiConnected && overallStatus === "UP"}
+              <span class="w-2 h-2 rounded-full bg-green-500"></span>
               <span>All Systems Operational</span>
-            {:else if $serviceHealth.services.api}
+            {:else if serviceHealth.services.api}
+              <span class="w-2 h-2 rounded-full bg-yellow-500"></span>
               <span class="text-yellow-600">Degraded</span>
             {:else}
+              <span class="w-2 h-2 rounded-full bg-red-500"></span>
               <span class="text-red-600">Disconnected</span>
             {/if}
             <svg
@@ -109,29 +134,29 @@
                 <div class="flex items-center justify-between">
                   <span class="text-sm text-gray-600">API</span>
                   <div class="flex items-center space-x-1">
-                    <span class="w-2 h-2 rounded-full {getStatusColor($serviceHealth.services.api)}"></span>
-                    <span class="text-xs text-gray-500">{getStatusText($serviceHealth.services.api)}</span>
+                    <span class="w-2 h-2 rounded-full {getStatusColor(serviceHealth.services.api)}"></span>
+                    <span class="text-xs text-gray-500">{getStatusText(serviceHealth.services.api)}</span>
                   </div>
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="text-sm text-gray-600">S3 Storage</span>
                   <div class="flex items-center space-x-1">
-                    <span class="w-2 h-2 rounded-full {getStatusColor($serviceHealth.services.s3)}"></span>
-                    <span class="text-xs text-gray-500">{getStatusText($serviceHealth.services.s3)}</span>
+                    <span class="w-2 h-2 rounded-full {getStatusColor(serviceHealth.services.s3)}"></span>
+                    <span class="text-xs text-gray-500">{getStatusText(serviceHealth.services.s3)}</span>
                   </div>
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="text-sm text-gray-600">DynamoDB</span>
                   <div class="flex items-center space-x-1">
-                    <span class="w-2 h-2 rounded-full {getStatusColor($serviceHealth.services.dynamoDb)}"></span>
-                    <span class="text-xs text-gray-500">{getStatusText($serviceHealth.services.dynamoDb)}</span>
+                    <span class="w-2 h-2 rounded-full {getStatusColor(serviceHealth.services.dynamoDb)}"></span>
+                    <span class="text-xs text-gray-500">{getStatusText(serviceHealth.services.dynamoDb)}</span>
                   </div>
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="text-sm text-gray-600">SNS Events</span>
                   <div class="flex items-center space-x-1">
-                    <span class="w-2 h-2 rounded-full {getStatusColor($serviceHealth.services.sns)}"></span>
-                    <span class="text-xs text-gray-500">{getStatusText($serviceHealth.services.sns)}</span>
+                    <span class="w-2 h-2 rounded-full {getStatusColor(serviceHealth.services.sns)}"></span>
+                    <span class="text-xs text-gray-500">{getStatusText(serviceHealth.services.sns)}</span>
                   </div>
                 </div>
               </div>
