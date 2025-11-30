@@ -32,16 +32,18 @@ public class MediaService {
   private final S3Service s3Service;
   private final SnsService snsService;
   private final MediaProperties mediaProperties;
+  private final ImageValidationService imageValidationService;
   private final Tracer tracer;
   private final LongCounter uploadSuccessCounter;
   private final LongCounter uploadFailureCounter;
 
   public MediaService(DynamoDbService dynamoDbService, S3Service s3Service, SnsService snsService,
-      MediaProperties mediaProperties, Tracer tracer, Meter meter) {
+      MediaProperties mediaProperties, ImageValidationService imageValidationService, Tracer tracer, Meter meter) {
     this.dynamoDbService = dynamoDbService;
     this.s3Service = s3Service;
     this.snsService = snsService;
     this.mediaProperties = mediaProperties;
+    this.imageValidationService = imageValidationService;
     this.tracer = tracer;
     this.uploadSuccessCounter = meter.counterBuilder("media.upload.success")
         .setDescription("Count of successful media uploads")
@@ -57,6 +59,9 @@ public class MediaService {
       throw new IllegalArgumentException("Invalid file type. Only images are supported.");
     }
 
+    // Validate actual image content (magic bytes + parsing)
+    imageValidationService.validateImage(file);
+
     Span span = tracer.spanBuilder("upload-media-file")
         .setSpanKind(SpanKind.INTERNAL)
         .startSpan();
@@ -71,23 +76,33 @@ public class MediaService {
       String fileName = (originalName == null || originalName.isEmpty()) ? "image.jpg" : originalName;
       span.setAttribute("file.name", fileName);
       span.setAttribute("output.format", targetFormat.getFormat());
-
-      // Upload original to S3
+      // Step 1: Upload original to S3
       s3Service.uploadMedia(mediaId, fileName, file);
-
-      // Store metadata in DynamoDB with PENDING status
-      dynamoDbService.createMedia(Media.builder()
-          .mediaId(mediaId)
-          .size(file.getSize())
-          .name(fileName)
-          .mimetype(contentType)
-          .status(MediaStatus.PENDING)
-          .width(targetWidth)
-          .outputFormat(targetFormat)
-          .build());
-
-      // Publish event to SNS for async processing by Lambda
-      snsService.publishProcessMediaEvent(mediaId, targetWidth, targetFormat.getFormat());
+      // Step 2: Store metadata in DynamoDB with PENDING status
+      try {
+        dynamoDbService.createMedia(Media.builder()
+            .mediaId(mediaId)
+            .size(file.getSize())
+            .name(fileName)
+            .mimetype(contentType)
+            .status(MediaStatus.PENDING)
+            .width(targetWidth)
+            .outputFormat(targetFormat)
+            .build());
+      } catch (Exception e) {
+        // Compensate: delete S3 object
+        compensateS3Upload(mediaId, fileName);
+        throw e;
+      }
+      // Step 3: Publish event to SNS for async processing by Lambda
+      try {
+        snsService.publishProcessMediaEvent(mediaId, targetWidth, targetFormat.getFormat());
+      } catch (Exception e) {
+        // Compensate: delete DynamoDB record and S3 object
+        compensateDynamoDb(mediaId);
+        compensateS3Upload(mediaId, fileName);
+        throw e;
+      }
       span.setStatus(StatusCode.OK);
       uploadSuccessCounter.add(1);
       log.info("Media uploaded successfully: mediaId={}, fileName={}, outputFormat={}", mediaId, fileName,
@@ -100,6 +115,22 @@ public class MediaService {
       throw e;
     } finally {
       span.end();
+    }
+  }
+
+  private void compensateS3Upload(String mediaId, String fileName) {
+    try {
+      s3Service.deleteUpload(mediaId, fileName);
+    } catch (Exception e) {
+      log.error("Failed to compensate S3 upload for mediaId={}: {}", mediaId, e.getMessage());
+    }
+  }
+
+  private void compensateDynamoDb(String mediaId) {
+    try {
+      dynamoDbService.deleteMedia(mediaId);
+    } catch (Exception e) {
+      log.error("Failed to compensate DynamoDB record for mediaId={}: {}", mediaId, e.getMessage());
     }
   }
 
@@ -158,6 +189,11 @@ public class MediaService {
     return dynamoDbService.getMedia(mediaId).isPresent();
   }
 
+  public DynamoDbService.PagedResult getMediaPaginated(String cursor, Integer limit) {
+    return dynamoDbService.getMediaPaginated(cursor, limit);
+  }
+
+  @Deprecated
   public List<Media> getAllMedia() {
     return dynamoDbService.getAllMedia();
   }
@@ -183,7 +219,10 @@ public class MediaService {
           request.getContentType(),
           Duration.ofSeconds(expirationSeconds));
 
-      // Store metadata in DynamoDB with PENDING_UPLOAD status
+      // Store metadata in DynamoDB with PENDING_UPLOAD status and TTL
+      // TTL ensures stale records are automatically cleaned up if client never calls
+      // complete
+      Duration ttl = Duration.ofHours(mediaProperties.getUpload().getPendingUploadTtlHours());
       dynamoDbService.createMedia(Media.builder()
           .mediaId(mediaId)
           .size(request.getFileSize())
@@ -192,7 +231,7 @@ public class MediaService {
           .status(MediaStatus.PENDING_UPLOAD)
           .width(targetWidth)
           .outputFormat(targetFormat)
-          .build());
+          .build(), ttl);
 
       var headers = new LinkedHashMap<String, String>();
       headers.put("Content-Type", request.getContentType());
@@ -233,9 +272,9 @@ public class MediaService {
               return Optional.empty();
             }
 
-            // Update status to PENDING and trigger processing
+            // Update status to PENDING and clear TTL (record is now permanent)
             boolean updated = dynamoDbService.updateStatusConditionally(
-                mediaId, MediaStatus.PENDING, MediaStatus.PENDING_UPLOAD);
+                mediaId, MediaStatus.PENDING, MediaStatus.PENDING_UPLOAD, true);
             if (!updated) {
               log.warn("Failed to update status for mediaId: {}", mediaId);
               return Optional.empty();

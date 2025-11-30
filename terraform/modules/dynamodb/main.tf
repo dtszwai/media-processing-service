@@ -44,6 +44,23 @@ resource "aws_dynamodb_table" "media_dynamo_table" {
     type = "S"
   }
 
+  attribute {
+    name = "createdAt"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "SK-createdAt-index"
+    hash_key        = "SK"
+    range_key       = "createdAt"
+    projection_type = "ALL"
+  }
+
+  ttl {
+    attribute_name = "expiresAt"
+    enabled        = true
+  }
+
   tags = merge(var.additional_tags, {
     Name = var.dynamodb_table_name
   })

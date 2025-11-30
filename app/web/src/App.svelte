@@ -4,16 +4,21 @@
   import UploadZone from "./components/UploadZone.svelte";
   import ResultSection from "./components/ResultSection.svelte";
   import MediaList from "./components/MediaList.svelte";
-  import { getServiceHealth, getAllMedia } from "./lib/api";
-  import { mediaList, currentMediaId, apiConnected, serviceHealth } from "./lib/stores";
+  import { getServiceHealth, getAllMedia, getVersionInfo } from "./lib/api";
+  import { mediaList, currentMediaId, apiConnected, serviceHealth, versionInfo } from "./lib/stores";
 
   async function loadAllMedia() {
     try {
-      const data = await getAllMedia();
-      mediaList.set(data);
+      const response = await getAllMedia();
+      mediaList.set(response.items);
     } catch (error) {
       console.error("Failed to load media:", error);
     }
+  }
+
+  async function fetchVersionInfo() {
+    const info = await getVersionInfo();
+    versionInfo.set(info);
   }
 
   async function checkServices(): Promise<boolean> {
@@ -26,7 +31,10 @@
 
   onMount(() => {
     checkServices().then((isHealthy) => {
-      if (isHealthy) loadAllMedia();
+      if (isHealthy) {
+        loadAllMedia();
+        fetchVersionInfo();
+      }
     });
     const interval = setInterval(checkServices, 30000);
     return () => clearInterval(interval);

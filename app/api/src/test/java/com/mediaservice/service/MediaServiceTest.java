@@ -43,6 +43,8 @@ class MediaServiceTest {
   @Mock
   private SnsService snsService;
   @Mock
+  private ImageValidationService imageValidationService;
+  @Mock
   private Tracer tracer;
   @Mock
   private Meter meter;
@@ -82,7 +84,7 @@ class MediaServiceTest {
         .thenReturn(mock(io.opentelemetry.api.metrics.LongCounterBuilder.class));
     lenient().when(meter.counterBuilder(anyString()).setDescription(anyString()).build()).thenReturn(counter);
 
-    mediaService = new MediaService(dynamoDbService, s3Service, snsService, mediaProperties, tracer, meter);
+    mediaService = new MediaService(dynamoDbService, s3Service, snsService, mediaProperties, imageValidationService, tracer, meter);
   }
 
   @Nested
@@ -164,7 +166,8 @@ class MediaServiceTest {
     void shouldReturnUrlWhenComplete() {
       var media = createMedia(MediaStatus.COMPLETE);
       when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
-      when(s3Service.getPresignedUrl("media-123", "test.jpg", OutputFormat.JPEG)).thenReturn("https://s3.example.com/signed-url");
+      when(s3Service.getPresignedUrl("media-123", "test.jpg", OutputFormat.JPEG))
+          .thenReturn("https://s3.example.com/signed-url");
       var result = mediaService.getDownloadUrl("media-123");
       assertThat(result).contains("https://s3.example.com/signed-url");
     }
@@ -234,15 +237,31 @@ class MediaServiceTest {
   }
 
   @Nested
-  @DisplayName("getAllMedia")
-  class GetAllMedia {
+  @DisplayName("getMediaPaginated")
+  class GetMediaPaginated {
     @Test
-    @DisplayName("should return all media from database")
-    void shouldReturnAllMedia() {
+    @DisplayName("should return paginated media from database")
+    void shouldReturnPaginatedMedia() {
       var mediaList = List.of(createMedia(MediaStatus.COMPLETE), createMedia(MediaStatus.PROCESSING));
-      when(dynamoDbService.getAllMedia()).thenReturn(mediaList);
-      var result = mediaService.getAllMedia();
-      assertThat(result).hasSize(2);
+      var pagedResult = new DynamoDbService.PagedResult(mediaList, "nextCursor", true);
+      when(dynamoDbService.getMediaPaginated(null, null)).thenReturn(pagedResult);
+
+      var result = mediaService.getMediaPaginated(null, null);
+
+      assertThat(result.items()).hasSize(2);
+      assertThat(result.nextCursor()).isEqualTo("nextCursor");
+      assertThat(result.hasMore()).isTrue();
+    }
+
+    @Test
+    @DisplayName("should pass cursor and limit to dynamodb service")
+    void shouldPassCursorAndLimit() {
+      var pagedResult = new DynamoDbService.PagedResult(List.of(), null, false);
+      when(dynamoDbService.getMediaPaginated("someCursor", 10)).thenReturn(pagedResult);
+
+      mediaService.getMediaPaginated("someCursor", 10);
+
+      verify(dynamoDbService).getMediaPaginated("someCursor", 10);
     }
   }
 
@@ -273,7 +292,7 @@ class MediaServiceTest {
       verify(dynamoDbService).createMedia(argThat(media -> media.getStatus() == MediaStatus.PENDING_UPLOAD &&
           media.getName().equals("large-image.jpg") &&
           media.getMimetype().equals("image/jpeg") &&
-          media.getWidth() == 800));
+          media.getWidth() == 800), any());
     }
 
     @Test
@@ -290,7 +309,7 @@ class MediaServiceTest {
 
       mediaService.initPresignedUpload(request);
 
-      verify(dynamoDbService).createMedia(argThat(media -> media.getWidth() == 500));
+      verify(dynamoDbService).createMedia(argThat(media -> media.getWidth() == 500), any());
     }
   }
 
@@ -304,7 +323,7 @@ class MediaServiceTest {
       var media = createMedia(MediaStatus.PENDING_UPLOAD);
       when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
       when(s3Service.objectExists("media-123", "test.jpg")).thenReturn(true);
-      when(dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.PENDING_UPLOAD))
+      when(dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.PENDING_UPLOAD, true))
           .thenReturn(true);
 
       var result = mediaService.completePresignedUpload("media-123");
@@ -357,7 +376,7 @@ class MediaServiceTest {
       var media = createMedia(MediaStatus.PENDING_UPLOAD);
       when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
       when(s3Service.objectExists("media-123", "test.jpg")).thenReturn(true);
-      when(dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.PENDING_UPLOAD))
+      when(dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.PENDING_UPLOAD, true))
           .thenReturn(false);
 
       var result = mediaService.completePresignedUpload("media-123");

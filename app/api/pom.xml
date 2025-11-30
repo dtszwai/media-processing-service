@@ -13,7 +13,7 @@
 
     <groupId>com.mediaservice</groupId>
     <artifactId>media-service-api</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>1.0.0</version>
     <name>media-service-api</name>
     <description>REST API providing file upload and media management - Spring Boot</description>
 
@@ -206,6 +206,13 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>build-info</goal>
+                        </goals>
+                    </execution>
+                </executions>
                 <configuration>
                     <excludes>
                         <exclude>

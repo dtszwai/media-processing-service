@@ -9,6 +9,8 @@ import type {
   ApiError,
   HealthResponse,
   ServiceHealth,
+  PagedResponse,
+  VersionInfo,
 } from "./types";
 import { RateLimitError, ApiRequestError } from "./types";
 
@@ -45,6 +47,16 @@ export async function checkHealth(): Promise<boolean> {
     return response.ok;
   } catch {
     return false;
+  }
+}
+
+export async function getVersionInfo(): Promise<VersionInfo | null> {
+  try {
+    const response = await fetch(`${ACTUATOR_BASE}/info`);
+    if (!response.ok) return null;
+    return response.json();
+  } catch {
+    return null;
   }
 }
 
@@ -91,9 +103,14 @@ export async function getServiceHealth(): Promise<ServiceHealth> {
   }
 }
 
-export async function getAllMedia(): Promise<Media[]> {
-  const response = await fetch(API_BASE);
-  return handleResponse<Media[]>(response);
+export async function getAllMedia(cursor?: string, limit?: number): Promise<PagedResponse<Media>> {
+  const params = new URLSearchParams();
+  if (cursor) params.set("cursor", cursor);
+  if (limit) params.set("limit", limit.toString());
+
+  const url = params.toString() ? `${API_BASE}?${params}` : API_BASE;
+  const response = await fetch(url);
+  return handleResponse<PagedResponse<Media>>(response);
 }
 
 export async function getMediaStatus(mediaId: string): Promise<StatusResponse> {

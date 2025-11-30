@@ -204,8 +204,8 @@ class EndToEndTest extends BaseIntegrationTest {
     assertThat(successCount.get()).isEqualTo(uploadCount);
 
     // Verify all media entries were created
-    var allMedia = dynamoDbService.getAllMedia();
-    assertThat(allMedia).hasSize(uploadCount);
+    var result = dynamoDbService.getMediaPaginated(null, uploadCount + 1);
+    assertThat(result.items()).hasSize(uploadCount);
   }
 
   @Test
@@ -231,12 +231,13 @@ class EndToEndTest extends BaseIntegrationTest {
           String.class);
     }
 
-    // Get all media
+    // Get all media (paginated response)
     var response = restTemplate.getForEntity(baseUrl(), String.class);
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-    // Should contain all 3 uploads
+    // Should contain all 3 uploads in paginated format
     assertThat(response.getBody())
+        .contains("items")
         .contains("list-test-0.jpg")
         .contains("list-test-1.jpg")
         .contains("list-test-2.jpg");

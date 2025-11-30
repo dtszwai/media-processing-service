@@ -6,8 +6,10 @@ import io.swagger.v3.oas.models.servers.Server;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.info.BuildProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.lang.Nullable;
 
 import java.util.List;
 
@@ -16,12 +18,19 @@ public class OpenApiConfig {
   @Value("${server.port:9000}")
   private int serverPort;
 
+  private final BuildProperties buildProperties;
+
+  public OpenApiConfig(@Nullable BuildProperties buildProperties) {
+    this.buildProperties = buildProperties;
+  }
+
   @Bean
   public OpenAPI customOpenAPI() {
+    String version = buildProperties != null ? buildProperties.getVersion() : "1.0.0";
     return new OpenAPI()
         .info(new Info()
             .title("Media Processing Service API")
-            .version("1.0.0")
+            .version(version)
             .description("""
                 REST API for media upload, processing, and management.
 

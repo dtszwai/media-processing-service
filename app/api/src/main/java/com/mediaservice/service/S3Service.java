@@ -1,6 +1,7 @@
 package com.mediaservice.service;
 
 import com.mediaservice.config.MediaProperties;
+import com.mediaservice.common.constants.StorageConstants;
 import com.mediaservice.common.model.OutputFormat;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,8 +23,6 @@ import java.time.Duration;
 @Slf4j
 @Service
 public class S3Service {
-  private static final String KEY_PREFIX_UPLOADS = "uploads";
-  private static final String KEY_PREFIX_RESIZED = "resized";
 
   private final S3Client s3Client;
   private final S3Presigner s3Presigner;
@@ -43,7 +42,7 @@ public class S3Service {
   }
 
   public void uploadMedia(String mediaId, String mediaName, MultipartFile file) throws IOException {
-    String key = buildKey(KEY_PREFIX_UPLOADS, mediaId, mediaName);
+    String key = buildKey(StorageConstants.S3_PREFIX_UPLOADS, mediaId, mediaName);
     var request = PutObjectRequest.builder()
         .bucket(bucketName)
         .key(key)
@@ -57,7 +56,7 @@ public class S3Service {
   public String getPresignedUrl(String mediaId, String mediaName, OutputFormat outputFormat) {
     OutputFormat format = outputFormat != null ? outputFormat : OutputFormat.JPEG;
     String outputFileName = format.applyToFileName(mediaName);
-    String key = buildKey(KEY_PREFIX_RESIZED, mediaId, outputFileName);
+    String key = buildKey(StorageConstants.S3_PREFIX_RESIZED, mediaId, outputFileName);
     var getObjectRequest = GetObjectRequest.builder()
         .bucket(bucketName)
         .key(key)
@@ -73,7 +72,7 @@ public class S3Service {
   }
 
   public String generatePresignedUploadUrl(String mediaId, String fileName, String contentType, Duration expiration) {
-    String key = buildKey(KEY_PREFIX_UPLOADS, mediaId, fileName);
+    String key = buildKey(StorageConstants.S3_PREFIX_UPLOADS, mediaId, fileName);
     var putObjectRequest = PutObjectRequest.builder()
         .bucket(bucketName)
         .key(key)
@@ -89,7 +88,7 @@ public class S3Service {
   }
 
   public boolean objectExists(String mediaId, String fileName) {
-    String key = buildKey(KEY_PREFIX_UPLOADS, mediaId, fileName);
+    String key = buildKey(StorageConstants.S3_PREFIX_UPLOADS, mediaId, fileName);
     try {
       s3Client.headObject(HeadObjectRequest.builder()
           .bucket(bucketName)
@@ -99,5 +98,11 @@ public class S3Service {
     } catch (NoSuchKeyException e) {
       return false;
     }
+  }
+
+  public void deleteUpload(String mediaId, String fileName) {
+    var key = buildKey(StorageConstants.S3_PREFIX_UPLOADS, mediaId, fileName);
+    s3Client.deleteObject(builder -> builder.bucket(bucketName).key(key));
+    log.info("Deleted upload from S3: {}", key);
   }
 }

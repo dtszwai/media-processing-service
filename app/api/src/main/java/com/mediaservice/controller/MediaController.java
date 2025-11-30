@@ -25,9 +25,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.mediaservice.dto.PagedResponse;
 import java.io.IOException;
 import java.net.URI;
-import java.util.List;
 
 @Slf4j
 @RestController
@@ -43,23 +43,29 @@ public class MediaController {
     return ResponseEntity.ok("OK");
   }
 
+  @Operation(summary = "List all media with pagination")
+  @ApiResponses({ @ApiResponse(responseCode = "200", description = "List of media items") })
   @GetMapping
-  public ResponseEntity<List<MediaResponse>> getAllMedia() {
-    log.info("Get all media request");
-    return ResponseEntity.ok(mediaService.getAllMedia().stream()
-        .map(mediaMapper::toResponse)
-        .toList());
+  public ResponseEntity<PagedResponse<MediaResponse>> getAllMedia(
+      @RequestParam(required = false) String cursor,
+      @RequestParam(required = false) Integer limit) {
+    log.info("Get all media request: cursor={}, limit={}", cursor, limit);
+    var result = mediaService.getMediaPaginated(cursor, limit);
+    var items = result.items().stream().map(mediaMapper::toResponse).toList();
+    return ResponseEntity.ok(PagedResponse.<MediaResponse>builder()
+        .items(items)
+        .nextCursor(result.nextCursor())
+        .hasMore(result.hasMore())
+        .build());
   }
 
   @PostMapping("/upload")
   public ResponseEntity<MediaResponse> uploadMedia(
       @RequestParam("file") MultipartFile file,
-      @RequestParam(value = "width", required = false) Integer width,
-      @RequestParam(value = "outputFormat", required = false) String outputFormat) throws IOException {
-
+      @RequestParam(required = false) Integer width,
+      @RequestParam(required = false) String outputFormat) throws IOException {
     log.info("Upload request received: fileName={}, size={}, outputFormat={}",
         file.getOriginalFilename(), file.getSize(), outputFormat);
-
     validateUploadFile(file);
     return ResponseEntity.accepted().body(mediaService.uploadMedia(file, width, outputFormat));
   }
@@ -68,7 +74,6 @@ public class MediaController {
   public ResponseEntity<InitUploadResponse> initPresignedUpload(@Valid @RequestBody InitUploadRequest request) {
     log.info("Init presigned upload request: fileName={}, size={}, contentType={}",
         request.getFileName(), request.getFileSize(), request.getContentType());
-
     validatePresignedUploadRequest(request);
     return ResponseEntity.status(HttpStatus.CREATED).body(mediaService.initPresignedUpload(request));
   }

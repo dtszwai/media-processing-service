@@ -2,6 +2,7 @@ package com.mediaservice.lambda.service;
 
 import com.mediaservice.lambda.config.AwsClientFactory;
 import com.mediaservice.lambda.config.LambdaConfig;
+import com.mediaservice.common.constants.StorageConstants;
 import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaStatus;
 import com.mediaservice.common.model.OutputFormat;
@@ -80,7 +81,7 @@ public class DynamoDbService {
   }
 
   private Map<String, AttributeValue> keyFor(String mediaId) {
-    return Map.of("PK", s("MEDIA#" + mediaId), "SK", s("METADATA"));
+    return Map.of("PK", s(StorageConstants.DYNAMO_PK_PREFIX + mediaId), "SK", s(StorageConstants.DYNAMO_SK_METADATA));
   }
 
   private Optional<Media> toMedia(String mediaId, Map<String, AttributeValue> attrs) {

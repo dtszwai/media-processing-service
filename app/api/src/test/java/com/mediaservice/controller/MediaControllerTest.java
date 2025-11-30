@@ -11,6 +11,7 @@ import com.mediaservice.filter.SecurityHeadersFilter;
 import com.mediaservice.mapper.MediaMapper;
 import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaStatus;
+import com.mediaservice.service.DynamoDbService;
 import com.mediaservice.service.MediaService;
 
 import java.util.Map;
@@ -272,18 +273,53 @@ class MediaControllerTest {
   class GetAll {
 
     @Test
-    @DisplayName("should return all media")
-    void shouldReturnAllMedia() throws Exception {
+    @DisplayName("should return paginated media")
+    void shouldReturnPaginatedMedia() throws Exception {
       var media = createMedia();
       var response = MediaResponse.builder().mediaId("media-123").build();
+      var pagedResult = new DynamoDbService.PagedResult(List.of(media), null, false);
 
-      when(mediaService.getAllMedia()).thenReturn(List.of(media));
+      when(mediaService.getMediaPaginated(null, null)).thenReturn(pagedResult);
       when(mediaMapper.toResponse(media)).thenReturn(response);
 
       mockMvc.perform(get("/v1/media"))
           .andExpect(status().isOk())
-          .andExpect(jsonPath("$", hasSize(1)))
-          .andExpect(jsonPath("$[0].mediaId").value("media-123"));
+          .andExpect(jsonPath("$.items", hasSize(1)))
+          .andExpect(jsonPath("$.items[0].mediaId").value("media-123"))
+          .andExpect(jsonPath("$.hasMore").value(false));
+    }
+
+    @Test
+    @DisplayName("should return next cursor when has more")
+    void shouldReturnNextCursorWhenHasMore() throws Exception {
+      var media = createMedia();
+      var response = MediaResponse.builder().mediaId("media-123").build();
+      var pagedResult = new DynamoDbService.PagedResult(List.of(media), "nextCursor123", true);
+
+      when(mediaService.getMediaPaginated(null, null)).thenReturn(pagedResult);
+      when(mediaMapper.toResponse(media)).thenReturn(response);
+
+      mockMvc.perform(get("/v1/media"))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.items", hasSize(1)))
+          .andExpect(jsonPath("$.nextCursor").value("nextCursor123"))
+          .andExpect(jsonPath("$.hasMore").value(true));
+    }
+
+    @Test
+    @DisplayName("should pass cursor and limit parameters")
+    void shouldPassCursorAndLimit() throws Exception {
+      var pagedResult = new DynamoDbService.PagedResult(List.of(), null, false);
+
+      when(mediaService.getMediaPaginated("someCursor", 10)).thenReturn(pagedResult);
+
+      mockMvc.perform(get("/v1/media")
+          .param("cursor", "someCursor")
+          .param("limit", "10"))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.items", hasSize(0)));
+
+      verify(mediaService).getMediaPaginated("someCursor", 10);
     }
   }
 

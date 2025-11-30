@@ -43,6 +43,12 @@ export interface ResizeRequest {
   outputFormat?: OutputFormat;
 }
 
+export interface PagedResponse<T> {
+  items: T[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
 export interface ApiError {
   message: string;
   status: number;
@@ -75,6 +81,18 @@ export class ApiRequestError extends Error {
 }
 
 export type HealthStatus = "UP" | "DOWN" | "UNKNOWN";
+
+export interface BuildInfo {
+  artifact: string;
+  name: string;
+  version: string;
+  time: string;
+  group: string;
+}
+
+export interface VersionInfo {
+  build?: BuildInfo;
+}
 
 export interface ComponentHealth {
   status: HealthStatus;

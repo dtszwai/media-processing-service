@@ -112,6 +112,17 @@ public class GlobalExceptionHandler {
             .build());
   }
 
+  @ExceptionHandler(InvalidImageException.class)
+  public ResponseEntity<ErrorResponse> handleInvalidImage(InvalidImageException e) {
+    log.warn("Invalid image upload: {}", e.getMessage());
+    return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+        .body(ErrorResponse.builder()
+            .message(e.getMessage())
+            .status(422)
+            .requestId(getRequestId())
+            .build());
+  }
+
   @ExceptionHandler(CallNotPermittedException.class)
   public ResponseEntity<ErrorResponse> handleCircuitBreakerOpen(CallNotPermittedException e) {
     log.warn("Circuit breaker is open: {}", e.getMessage());

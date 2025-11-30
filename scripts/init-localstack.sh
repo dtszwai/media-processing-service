@@ -30,9 +30,12 @@ create_dynamodb_table() {
         --attribute-definitions \
             AttributeName=PK,AttributeType=S \
             AttributeName=SK,AttributeType=S \
+            AttributeName=createdAt,AttributeType=S \
         --key-schema \
             AttributeName=PK,KeyType=HASH \
             AttributeName=SK,KeyType=RANGE \
+        --global-secondary-indexes \
+            'IndexName=SK-createdAt-index,KeySchema=[{AttributeName=SK,KeyType=HASH},{AttributeName=createdAt,KeyType=RANGE}],Projection={ProjectionType=ALL}' \
         --billing-mode PAY_PER_REQUEST \
         --region "${AWS_REGION}"
     log "DynamoDB table created: ${TABLE_NAME}"

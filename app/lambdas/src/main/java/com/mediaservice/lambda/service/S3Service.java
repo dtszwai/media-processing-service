@@ -2,6 +2,7 @@ package com.mediaservice.lambda.service;
 
 import com.mediaservice.lambda.config.AwsClientFactory;
 import com.mediaservice.lambda.config.LambdaConfig;
+import com.mediaservice.common.constants.StorageConstants;
 import com.mediaservice.common.model.OutputFormat;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -19,7 +20,7 @@ public class S3Service {
   }
 
   public byte[] getMediaFile(String mediaId, String mediaName) {
-    var key = String.join("/", "uploads", mediaId, mediaName);
+    var key = String.join("/", StorageConstants.S3_PREFIX_UPLOADS, mediaId, mediaName);
     var request = GetObjectRequest.builder()
         .bucket(bucketName)
         .key(key)

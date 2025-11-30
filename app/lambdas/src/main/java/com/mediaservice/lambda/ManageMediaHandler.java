@@ -5,7 +5,9 @@ import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.SQSEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mediaservice.lambda.config.OpenTelemetryInitializer;
+import com.mediaservice.common.constants.StorageConstants;
 import com.mediaservice.common.event.MediaEvent;
+import com.mediaservice.common.model.EventType;
 import com.mediaservice.common.model.MediaStatus;
 import com.mediaservice.common.model.OutputFormat;
 import com.mediaservice.lambda.service.DynamoDbService;
@@ -29,20 +31,34 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
   }
 
   private static final Logger logger = LoggerFactory.getLogger(ManageMediaHandler.class);
-  private static final String DELETE_EVENT = "media.v1.delete";
-  private static final String RESIZE_EVENT = "media.v1.resize";
-  private static final String PROCESS_EVENT = "media.v1.process";
 
-  private final DynamoDbService dynamoDbService = new DynamoDbService();
-  private final S3Service s3Service = new S3Service();
-  private final ImageProcessingService imageProcessingService = new ImageProcessingService();
-  private final ObjectMapper objectMapper = new ObjectMapper();
+  private final DynamoDbService dynamoDbService;
+  private final S3Service s3Service;
+  private final ImageProcessingService imageProcessingService;
+  private final ObjectMapper objectMapper;
   private final Tracer tracer;
   private final LongCounter deleteSuccessCounter, deleteFailureCounter;
   private final LongCounter resizeSuccessCounter, resizeFailureCounter;
   private final LongCounter processSuccessCounter, processFailureCounter;
 
+  /**
+   * Default constructor for AWS Lambda runtime.
+   * Creates all dependencies with default implementations.
+   */
   public ManageMediaHandler() {
+    this(new DynamoDbService(), new S3Service(), new ImageProcessingService(), new ObjectMapper());
+  }
+
+  /**
+   * Constructor for testing - allows injection of mock/stub dependencies.
+   */
+  ManageMediaHandler(DynamoDbService dynamoDbService, S3Service s3Service,
+      ImageProcessingService imageProcessingService, ObjectMapper objectMapper) {
+    this.dynamoDbService = dynamoDbService;
+    this.s3Service = s3Service;
+    this.imageProcessingService = imageProcessingService;
+    this.objectMapper = objectMapper;
+
     var otel = OpenTelemetryInitializer.initialize();
     this.tracer = otel.getTracer("media-service-manage-media-lambda");
     var meter = otel.getMeter("media-service-manage-media-lambda");
@@ -89,21 +105,25 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
       span.setAttribute("media.id", mediaId);
       span.setAttribute("event.type", event.getType());
       span.setAttribute("output.format", outputFormat.getFormat());
-      if (width != null) span.setAttribute("width", width);
-
-      logger.info("Processing event: type={}, mediaId={}, outputFormat={}", event.getType(), mediaId, outputFormat.getFormat());
-
-      switch (event.getType()) {
-        case DELETE_EVENT -> handleDelete(mediaId, span);
-        case RESIZE_EVENT -> {
+      if (width != null)
+        span.setAttribute("width", width);
+      logger.info("Processing event: type={}, mediaId={}, outputFormat={}", event.getType(), mediaId,
+          outputFormat.getFormat());
+      var eventType = EventType.fromString(event.getType());
+      if (eventType == null) {
+        logger.info("Skipping message with unsupported type: {}", event.getType());
+        return;
+      }
+      switch (eventType) {
+        case DELETE_MEDIA -> handleDelete(mediaId, span);
+        case RESIZE_MEDIA -> {
           if (width == null) {
             logger.info("Skipping resize message with missing width");
           } else {
             handleMediaProcessing(mediaId, width, outputFormat, true, span);
           }
         }
-        case PROCESS_EVENT -> handleMediaProcessing(mediaId, width, outputFormat, false, span);
-        default -> logger.info("Skipping message with unsupported type: {}", event.getType());
+        case PROCESS_MEDIA -> handleMediaProcessing(mediaId, width, outputFormat, false, span);
       }
     } catch (Exception e) {
       span.setStatus(StatusCode.ERROR, e.getMessage());
@@ -125,12 +145,13 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
       var media = mediaOpt.get();
       var outputFormat = media.getOutputFormat() != null ? media.getOutputFormat() : OutputFormat.JPEG;
 
-      s3Service.deleteMediaFile(mediaId, media.getName(), "uploads");
+      s3Service.deleteMediaFile(mediaId, media.getName(), StorageConstants.S3_PREFIX_UPLOADS);
       if (media.getStatus() != MediaStatus.PROCESSING) {
         if (media.getStatus() == MediaStatus.ERROR) {
-          s3Service.deleteMediaFile(mediaId, media.getName(), "uploads");
+          s3Service.deleteMediaFile(mediaId, media.getName(), StorageConstants.S3_PREFIX_UPLOADS);
         } else {
-          s3Service.deleteMediaFileWithFormat(mediaId, media.getName(), "resized", outputFormat);
+          s3Service.deleteMediaFileWithFormat(mediaId, media.getName(), StorageConstants.S3_PREFIX_RESIZED,
+              outputFormat);
         }
       }
 
@@ -146,7 +167,7 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
   }
 
   private void handleMediaProcessing(String mediaId, Integer requestedWidth, OutputFormat outputFormat,
-                                     boolean isResize, Span span) {
+      boolean isResize, Span span) {
     var successCounter = isResize ? resizeSuccessCounter : processSuccessCounter;
     var failureCounter = isResize ? resizeFailureCounter : processFailureCounter;
 
@@ -171,10 +192,11 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
           : imageProcessingService.processImage(imageData, targetWidth, targetFormat);
       long duration = System.currentTimeMillis() - start;
 
-      span.addEvent("image.processing.done", Attributes.of(AttributeKey.longKey("media.processing.duration"), duration));
+      span.addEvent("image.processing.done",
+          Attributes.of(AttributeKey.longKey("media.processing.duration"), duration));
       logger.info("Processed media in {} ms with format: {}", duration, targetFormat.getFormat());
 
-      s3Service.uploadMedia(mediaId, media.getName(), processed, "resized", targetFormat);
+      s3Service.uploadMedia(mediaId, media.getName(), processed, StorageConstants.S3_PREFIX_RESIZED, targetFormat);
       dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.COMPLETE, MediaStatus.PROCESSING, targetWidth);
 
       logger.info("Media operation complete for: {}", mediaId);

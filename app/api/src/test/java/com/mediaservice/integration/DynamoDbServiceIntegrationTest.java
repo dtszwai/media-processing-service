@@ -55,9 +55,35 @@ class DynamoDbServiceIntegrationTest extends BaseIntegrationTest {
       dynamoDbService.createMedia(createTestMedia("media-2"));
       dynamoDbService.createMedia(createTestMedia("media-3"));
 
-      var allMedia = dynamoDbService.getAllMedia();
+      var result = dynamoDbService.getMediaPaginated(null, null);
 
-      assertThat(allMedia).hasSize(3);
+      assertThat(result.items()).hasSize(3);
+    }
+
+    @Test
+    @DisplayName("should paginate results with cursor")
+    void shouldPaginateWithCursor() {
+      // Create 5 media items
+      for (int i = 1; i <= 5; i++) {
+        dynamoDbService.createMedia(createTestMedia("media-" + i));
+      }
+
+      // Get first page with limit 2
+      var page1 = dynamoDbService.getMediaPaginated(null, 2);
+      assertThat(page1.items()).hasSize(2);
+      assertThat(page1.hasMore()).isTrue();
+      assertThat(page1.nextCursor()).isNotNull();
+
+      // Get second page using cursor
+      var page2 = dynamoDbService.getMediaPaginated(page1.nextCursor(), 2);
+      assertThat(page2.items()).hasSize(2);
+      assertThat(page2.hasMore()).isTrue();
+
+      // Get third page
+      var page3 = dynamoDbService.getMediaPaginated(page2.nextCursor(), 2);
+      assertThat(page3.items()).hasSize(1);
+      assertThat(page3.hasMore()).isFalse();
+      assertThat(page3.nextCursor()).isNull();
     }
   }
 

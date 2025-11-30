@@ -99,7 +99,15 @@ public class LocalStackTestConfig {
               KeySchemaElement.builder().attributeName("SK").keyType(KeyType.RANGE).build())
           .attributeDefinitions(
               AttributeDefinition.builder().attributeName("PK").attributeType(ScalarAttributeType.S).build(),
-              AttributeDefinition.builder().attributeName("SK").attributeType(ScalarAttributeType.S).build())
+              AttributeDefinition.builder().attributeName("SK").attributeType(ScalarAttributeType.S).build(),
+              AttributeDefinition.builder().attributeName("createdAt").attributeType(ScalarAttributeType.S).build())
+          .globalSecondaryIndexes(GlobalSecondaryIndex.builder()
+              .indexName("SK-createdAt-index")
+              .keySchema(
+                  KeySchemaElement.builder().attributeName("SK").keyType(KeyType.HASH).build(),
+                  KeySchemaElement.builder().attributeName("createdAt").keyType(KeyType.RANGE).build())
+              .projection(Projection.builder().projectionType(ProjectionType.ALL).build())
+              .build())
           .billingMode(BillingMode.PAY_PER_REQUEST)
           .build());
       s3Client.createBucket(CreateBucketRequest.builder().bucket("media-bucket").build());

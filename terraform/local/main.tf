@@ -64,6 +64,23 @@ resource "aws_dynamodb_table" "media_table" {
     name = "SK"
     type = "S"
   }
+
+  attribute {
+    name = "createdAt"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "SK-createdAt-index"
+    hash_key        = "SK"
+    range_key       = "createdAt"
+    projection_type = "ALL"
+  }
+
+  ttl {
+    attribute_name = "expiresAt"
+    enabled        = true
+  }
 }
 
 # =============================================================================

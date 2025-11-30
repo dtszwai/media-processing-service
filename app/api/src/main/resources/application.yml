@@ -125,7 +125,14 @@ management:
     web:
       exposure:
         include: health,info,metrics,prometheus,circuitbreakers,circuitbreakerevents,ratelimiters
+  info:
+    build:
+      enabled: true
+    env:
+      enabled: true
   endpoint:
+    info:
+      enabled: true
     health:
       show-details: always
       show-components: always

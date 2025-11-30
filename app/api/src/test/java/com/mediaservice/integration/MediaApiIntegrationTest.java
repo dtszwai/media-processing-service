@@ -15,6 +15,11 @@ import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.*;
 import org.springframework.util.LinkedMultiValueMap;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Tag("integration")
@@ -52,12 +57,13 @@ class MediaApiIntegrationTest extends BaseIntegrationTest {
 
     @Test
     @DisplayName("should upload image and return media ID")
-    void shouldUploadImage() {
+    void shouldUploadImage() throws IOException {
       var headers = new HttpHeaders();
       headers.setContentType(MediaType.MULTIPART_FORM_DATA);
 
+      byte[] imageBytes = createTestImage("jpg");
       var body = new LinkedMultiValueMap<String, Object>();
-      body.add("file", new ByteArrayResource("test-image-content".getBytes()) {
+      body.add("file", new ByteArrayResource(imageBytes) {
         @Override
         public String getFilename() {
           return "test.jpg";
@@ -152,7 +158,8 @@ class MediaApiIntegrationTest extends BaseIntegrationTest {
     void shouldReturnPresignedUrlWhenComplete() {
       createAndSaveMedia("media-123", MediaStatus.COMPLETE);
       // Upload a file so presigned URL can be generated
-      // File name should match the output format extension (test.jpeg for JPEG format)
+      // File name should match the output format extension (test.jpeg for JPEG
+      // format)
       s3Client.putObject(
           b -> b.bucket("media-bucket").key("resized/media-123/test.jpeg").contentType("image/jpeg"),
           software.amazon.awssdk.core.sync.RequestBody.fromBytes("test".getBytes()));
@@ -236,15 +243,35 @@ class MediaApiIntegrationTest extends BaseIntegrationTest {
   class GetAllMedia {
 
     @Test
-    @DisplayName("should return all media")
-    void shouldReturnAllMedia() {
+    @DisplayName("should return paginated media")
+    void shouldReturnPaginatedMedia() {
       createAndSaveMedia("media-1", MediaStatus.COMPLETE);
       createAndSaveMedia("media-2", MediaStatus.PROCESSING);
 
       var response = restTemplate.getForEntity(baseUrl(), String.class);
 
       assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-      assertThat(response.getBody()).contains("media-1").contains("media-2");
+      assertThat(response.getBody())
+          .contains("items")
+          .contains("media-1")
+          .contains("media-2")
+          .contains("hasMore");
+    }
+
+    @Test
+    @DisplayName("should paginate with limit parameter")
+    void shouldPaginateWithLimit() {
+      createAndSaveMedia("media-a", MediaStatus.COMPLETE);
+      createAndSaveMedia("media-b", MediaStatus.COMPLETE);
+      createAndSaveMedia("media-c", MediaStatus.COMPLETE);
+
+      var response = restTemplate.getForEntity(baseUrl() + "?limit=2", String.class);
+
+      assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+      assertThat(response.getBody())
+          .contains("items")
+          .contains("hasMore")
+          .contains("nextCursor");
     }
   }
 
@@ -367,5 +394,19 @@ class MediaApiIntegrationTest extends BaseIntegrationTest {
       dynamoDbService.updateStatus(mediaId, status);
     }
     return media;
+  }
+
+  /**
+   * Creates a small test image in the specified format.
+   */
+  private byte[] createTestImage(String format) throws IOException {
+    BufferedImage image = new BufferedImage(100, 100, BufferedImage.TYPE_INT_RGB);
+    var g = image.getGraphics();
+    g.fillRect(0, 0, 100, 100);
+    g.dispose();
+
+    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    ImageIO.write(image, format, baos);
+    return baos.toByteArray();
   }
 }
