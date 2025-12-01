@@ -32,11 +32,11 @@ class S3StorageServiceIntegrationTest extends BaseIntegrationTest {
       s3Service.uploadMedia("media-123", "test.jpg", file);
       var objects = s3Client.listObjectsV2(ListObjectsV2Request.builder()
           .bucket("media-bucket")
-          .prefix("uploads/media-123/")
+          .prefix("media-123/")
           .build());
 
       assertThat(objects.contents()).hasSize(1);
-      assertThat(objects.contents().get(0).key()).isEqualTo("uploads/media-123/test.jpg");
+      assertThat(objects.contents().get(0).key()).isEqualTo("media-123/original.jpg");
     }
 
     @Test
@@ -49,7 +49,7 @@ class S3StorageServiceIntegrationTest extends BaseIntegrationTest {
 
       try (var response = s3Client.getObject(GetObjectRequest.builder()
           .bucket("media-bucket")
-          .key("uploads/media-123/test.png")
+          .key("media-123/original.png")
           .build())) {
         assertThat(response.response().contentType()).isEqualTo("image/png");
       }
@@ -61,18 +61,18 @@ class S3StorageServiceIntegrationTest extends BaseIntegrationTest {
   class PresignedUrl {
 
     @Test
-    @DisplayName("should generate presigned URL for resized file")
+    @DisplayName("should generate presigned URL for processed file")
     void shouldGeneratePresignedUrl() throws Exception {
-      // Upload a file to the resized folder first
+      // Upload a file to the processed location first
       new MockMultipartFile("file", "test.jpg", "image/jpeg", "test-content".getBytes());
       s3Client.putObject(
-          b -> b.bucket("media-bucket").key("resized/media-123/test.jpeg").contentType("image/jpeg"),
+          b -> b.bucket("media-bucket").key("media-123/processed.jpeg").contentType("image/jpeg"),
           software.amazon.awssdk.core.sync.RequestBody.fromBytes("test-content".getBytes()));
       var url = s3Service.getPresignedUrl("media-123", "test.jpg", OutputFormat.JPEG);
       assertThat(url)
           .isNotBlank()
           .contains("media-bucket")
-          .contains("resized/media-123/test.jpeg");
+          .contains("media-123/processed.jpeg");
     }
   }
 
@@ -89,7 +89,7 @@ class S3StorageServiceIntegrationTest extends BaseIntegrationTest {
       assertThat(url)
           .isNotBlank()
           .contains("media-bucket")
-          .contains("uploads/media-456/large-image.jpg");
+          .contains("media-456/original.jpg");
     }
 
     @Test
@@ -101,8 +101,8 @@ class S3StorageServiceIntegrationTest extends BaseIntegrationTest {
           "media-2", "file2.jpg", "image/jpeg", Duration.ofHours(1));
 
       assertThat(url1).isNotEqualTo(url2);
-      assertThat(url1).contains("media-1");
-      assertThat(url2).contains("media-2");
+      assertThat(url1).contains("media-1/original.jpg");
+      assertThat(url2).contains("media-2/original.jpg");
     }
   }
 
@@ -115,7 +115,7 @@ class S3StorageServiceIntegrationTest extends BaseIntegrationTest {
     void shouldReturnTrueWhenExists() {
       // Upload a file first
       s3Client.putObject(
-          b -> b.bucket("media-bucket").key("uploads/media-exists/test.jpg").contentType("image/jpeg"),
+          b -> b.bucket("media-bucket").key("media-exists/original.jpg").contentType("image/jpeg"),
           software.amazon.awssdk.core.sync.RequestBody.fromBytes("test-content".getBytes()));
 
       var exists = s3Service.objectExists("media-exists", "test.jpg");

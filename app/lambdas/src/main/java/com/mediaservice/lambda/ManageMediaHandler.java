@@ -5,7 +5,6 @@ import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.SQSEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mediaservice.lambda.config.OpenTelemetryInitializer;
-import com.mediaservice.common.constants.StorageConstants;
 import com.mediaservice.common.event.MediaEvent;
 import com.mediaservice.common.model.EventType;
 import com.mediaservice.common.model.MediaStatus;
@@ -146,14 +145,12 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
       var media = mediaOpt.get();
       var outputFormat = media.getOutputFormat() != null ? media.getOutputFormat() : OutputFormat.JPEG;
 
-      s3Service.deleteMediaFile(mediaId, media.getName(), StorageConstants.S3_PREFIX_UPLOADS);
-      if (media.getStatus() != MediaStatus.PROCESSING) {
-        if (media.getStatus() == MediaStatus.ERROR) {
-          s3Service.deleteMediaFile(mediaId, media.getName(), StorageConstants.S3_PREFIX_UPLOADS);
-        } else {
-          s3Service.deleteMediaFileWithFormat(mediaId, media.getName(), StorageConstants.S3_PREFIX_RESIZED,
-              outputFormat);
-        }
+      // Always delete original file
+      s3Service.deleteOriginalFile(mediaId, media.getName());
+
+      // Delete processed file if processing was completed (not still in progress or error state)
+      if (media.getStatus() != MediaStatus.PROCESSING && media.getStatus() != MediaStatus.ERROR) {
+        s3Service.deleteProcessedFile(mediaId, outputFormat);
       }
 
       logger.info("Deleted media: {}", mediaId);
@@ -197,7 +194,7 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
           Attributes.of(AttributeKey.longKey("media.processing.duration"), duration));
       logger.info("Processed media in {} ms with format: {}", duration, targetFormat.getFormat());
 
-      s3Service.uploadMedia(mediaId, media.getName(), processed, StorageConstants.S3_PREFIX_RESIZED, targetFormat);
+      s3Service.uploadProcessedMedia(mediaId, media.getName(), processed, targetFormat);
       dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.COMPLETE, MediaStatus.PROCESSING, targetWidth);
 
       logger.info("Media operation complete for: {}", mediaId);

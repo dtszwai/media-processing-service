@@ -235,7 +235,9 @@ export function getDownloadUrl(mediaId: string): string {
 }
 
 export function getOriginalUrl(mediaId: string, fileName: string): string {
-  return `http://127.0.0.1:4566/media-bucket/uploads/${mediaId}/${fileName}`;
+  // S3 key format: {mediaId}/original.{ext}
+  const extension = fileName.includes(".") ? fileName.substring(fileName.lastIndexOf(".")) : "";
+  return `http://127.0.0.1:4566/media-bucket/${mediaId}/original${extension}`;
 }
 
 export async function pollForStatus(

@@ -6,7 +6,7 @@
 
     <groupId>com.mediaservice</groupId>
     <artifactId>media-service-lambdas</artifactId>
-    <version>1.2.0</version>
+    <version>1.2.1</version>
     <packaging>jar</packaging>
 
     <name>Media Service Lambda Functions</name>
@@ -47,7 +47,7 @@
         <dependency>
             <groupId>com.mediaservice</groupId>
             <artifactId>media-service-common</artifactId>
-            <version>1.2.0</version>
+            <version>1.2.1</version>
         </dependency>
 
         <!-- AWS Lambda -->

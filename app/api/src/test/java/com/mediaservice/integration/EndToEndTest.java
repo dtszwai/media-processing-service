@@ -75,10 +75,10 @@ class EndToEndTest extends BaseIntegrationTest {
     assertThat(mediaOpt.get().getMimetype()).isEqualTo("image/jpeg");
     assertThat(mediaOpt.get().getStatus()).isEqualTo(MediaStatus.PENDING);
 
-    // Step 3: Verify file was uploaded to S3
+    // Step 3: Verify file was uploaded to S3 - key format: {mediaId}/original.{ext}
     var objects = s3Client.listObjectsV2(b -> b
         .bucket("media-bucket")
-        .prefix("uploads/" + mediaId + "/"));
+        .prefix(mediaId + "/"));
     assertThat(objects.contents()).hasSize(1);
 
     // Step 4: Check status via API

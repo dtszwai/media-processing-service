@@ -17,17 +17,17 @@ import java.time.Duration;
 /**
  * S3 storage service for Media files.
  *
- * <p>
- * Extends {@link AbstractS3StorageRepository} to inherit common S3 operations
- * while providing media-specific functionality like presigned URLs and format
- * handling.
+ * <p>Extends {@link AbstractS3StorageRepository} to inherit common S3 operations
+ * while providing media-specific functionality like presigned URLs and format handling.
  *
- * <p>
- * Key prefixes:
- * <ul>
- * <li>{@code uploads/} - Original uploaded files</li>
- * <li>{@code resized/} - Processed/resized files</li>
- * </ul>
+ * <p>S3 Key Structure (flat, mediaId-first):
+ * <pre>
+ * {mediaId}/
+ *   original.{ext}   - Original uploaded file
+ *   processed.{ext}  - Processed/resized output
+ * </pre>
+ *
+ * @see StorageConstants
  */
 @Slf4j
 @Service
@@ -46,21 +46,31 @@ public class S3StorageService extends AbstractS3StorageRepository {
   // ==================== Media-Specific Operations ====================
 
   /**
-   * Build the S3 key for a media file.
+   * Build the S3 key for an original media file.
+   * Format: {mediaId}/original.{ext}
    */
-  private String buildMediaKey(String prefix, String mediaId, String fileName) {
-    return buildKey(prefix, mediaId, fileName);
+  private String buildOriginalKey(String mediaId, String fileName) {
+    String extension = StorageConstants.getFileExtension(fileName);
+    return StorageConstants.buildS3Key(mediaId, StorageConstants.S3_VARIANT_ORIGINAL, extension);
+  }
+
+  /**
+   * Build the S3 key for a processed media file.
+   * Format: {mediaId}/processed.{ext}
+   */
+  private String buildProcessedKey(String mediaId, OutputFormat format) {
+    return StorageConstants.buildS3Key(mediaId, StorageConstants.S3_VARIANT_PROCESSED, format.getExtension());
   }
 
   /**
    * Upload a media file from a MultipartFile.
    *
    * @param mediaId   The media ID
-   * @param mediaName The file name
+   * @param mediaName The original file name (used to determine extension)
    * @param file      The uploaded file
    */
   public void uploadMedia(String mediaId, String mediaName, MultipartFile file) throws IOException {
-    String key = buildMediaKey(StorageConstants.S3_PREFIX_UPLOADS, mediaId, mediaName);
+    String key = buildOriginalKey(mediaId, mediaName);
     upload(key, file.getInputStream(), file.getContentType(), file.getSize());
     log.info("Uploaded media to S3: {}", key);
   }
@@ -69,14 +79,13 @@ public class S3StorageService extends AbstractS3StorageRepository {
    * Get a presigned download URL for a processed media file.
    *
    * @param mediaId      The media ID
-   * @param mediaName    The original file name
+   * @param mediaName    The original file name (unused, kept for API compatibility)
    * @param outputFormat The output format (determines file extension)
    * @return The presigned download URL
    */
   public String getPresignedUrl(String mediaId, String mediaName, OutputFormat outputFormat) {
     OutputFormat format = outputFormat != null ? outputFormat : OutputFormat.JPEG;
-    String outputFileName = format.applyToFileName(mediaName);
-    String key = buildMediaKey(StorageConstants.S3_PREFIX_RESIZED, mediaId, outputFileName);
+    String key = buildProcessedKey(mediaId, format);
     Duration expiration = Duration.ofSeconds(mediaProperties.getDownload().getPresignedUrlExpirationSeconds());
     String url = generatePresignedDownloadUrl(key, expiration);
     log.info("Generated presigned URL for: {}", key);
@@ -87,38 +96,38 @@ public class S3StorageService extends AbstractS3StorageRepository {
    * Generate a presigned URL for uploading a media file directly to S3.
    *
    * @param mediaId     The media ID
-   * @param fileName    The file name
+   * @param fileName    The file name (used to determine extension)
    * @param contentType The expected MIME type
    * @param expiration  How long the URL should be valid
    * @return The presigned upload URL
    */
   public String generatePresignedUploadUrl(String mediaId, String fileName, String contentType, Duration expiration) {
-    String key = buildMediaKey(StorageConstants.S3_PREFIX_UPLOADS, mediaId, fileName);
+    String key = buildOriginalKey(mediaId, fileName);
     String url = generatePresignedUploadUrl(key, contentType, expiration);
     log.info("Generated presigned upload URL for: {}", key);
     return url;
   }
 
   /**
-   * Check if an uploaded media file exists.
+   * Check if an uploaded (original) media file exists.
    *
    * @param mediaId  The media ID
-   * @param fileName The file name
+   * @param fileName The file name (used to determine extension)
    * @return true if the file exists
    */
   public boolean objectExists(String mediaId, String fileName) {
-    String key = buildMediaKey(StorageConstants.S3_PREFIX_UPLOADS, mediaId, fileName);
+    String key = buildOriginalKey(mediaId, fileName);
     return exists(key);
   }
 
   /**
-   * Delete an uploaded media file.
+   * Delete an uploaded (original) media file.
    *
    * @param mediaId  The media ID
-   * @param fileName The file name
+   * @param fileName The file name (used to determine extension)
    */
   public void deleteUpload(String mediaId, String fileName) {
-    String key = buildMediaKey(StorageConstants.S3_PREFIX_UPLOADS, mediaId, fileName);
+    String key = buildOriginalKey(mediaId, fileName);
     delete(key);
     log.info("Deleted upload from S3: {}", key);
   }

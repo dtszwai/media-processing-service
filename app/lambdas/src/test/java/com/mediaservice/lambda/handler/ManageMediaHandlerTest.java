@@ -124,7 +124,7 @@ class ManageMediaHandlerTest {
       var sqsEvent = createSqsEvent("media.v1.delete", "media-123", null);
       String result = handler.handleRequest(sqsEvent, null);
       assertThat(result).isEqualTo("OK");
-      assertThat(s3Service.getDeletedKeys()).contains("uploads", "resized");
+      assertThat(s3Service.getDeletedKeys()).contains("original", "processed");
     }
 
     @Test
@@ -138,13 +138,13 @@ class ManageMediaHandlerTest {
     }
 
     @Test
-    @DisplayName("should not delete resized file when still processing")
-    void shouldNotDeleteResizedWhenProcessing() throws Exception {
+    @DisplayName("should not delete processed file when still processing")
+    void shouldNotDeleteProcessedWhenProcessing() throws Exception {
       var media = Media.builder().mediaId("media-123").name("test.jpg").status(MediaStatus.PROCESSING).build();
       dynamoDbService.setDeletedMedia(media);
       var sqsEvent = createSqsEvent("media.v1.delete", "media-123", null);
       handler.handleRequest(sqsEvent, null);
-      assertThat(s3Service.getDeletedKeys()).containsExactly("uploads");
+      assertThat(s3Service.getDeletedKeys()).containsExactly("original");
     }
   }
 
@@ -273,12 +273,16 @@ class ManageMediaHandlerTest {
       return fileContent;
     }
 
-    void uploadMedia(String mediaId, String mediaName, byte[] data, String keyPrefix) {
+    void uploadProcessedMedia(String mediaId, String mediaName, byte[] data, OutputFormat outputFormat) {
       uploadCalled = true;
     }
 
-    void deleteMediaFile(String mediaId, String mediaName, String keyPrefix) {
-      deletedKeys.add(keyPrefix);
+    void deleteOriginalFile(String mediaId, String mediaName) {
+      deletedKeys.add("original");
+    }
+
+    void deleteProcessedFile(String mediaId, OutputFormat outputFormat) {
+      deletedKeys.add("processed");
     }
 
     boolean wasGetFileCalled() {
@@ -365,10 +369,11 @@ class ManageMediaHandlerTest {
 
     private void handleDelete(String mediaId) {
       dynamoDbService.deleteMedia(mediaId).ifPresent(media -> {
-        s3Service.deleteMediaFile(mediaId, media.getName(), "uploads");
-        if (media.getStatus() != MediaStatus.PROCESSING) {
-          String keyPrefix = (media.getStatus() == MediaStatus.ERROR) ? "uploads" : "resized";
-          s3Service.deleteMediaFile(mediaId, media.getName(), keyPrefix);
+        // Always delete original file
+        s3Service.deleteOriginalFile(mediaId, media.getName());
+        // Delete processed file only if processing completed (not still processing or errored)
+        if (media.getStatus() != MediaStatus.PROCESSING && media.getStatus() != MediaStatus.ERROR) {
+          s3Service.deleteProcessedFile(mediaId, media.getOutputFormat());
         }
       });
     }
@@ -389,7 +394,7 @@ class ManageMediaHandlerTest {
             ? imageProcessingService.resizeImage(imageData, targetWidth, OutputFormat.JPEG)
             : imageProcessingService.processImage(imageData, targetWidth, OutputFormat.JPEG);
 
-        s3Service.uploadMedia(mediaId, media.getName(), processedImage, "resized");
+        s3Service.uploadProcessedMedia(mediaId, media.getName(), processedImage, OutputFormat.JPEG);
         dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.COMPLETE, MediaStatus.PROCESSING,
             targetWidth);
       } catch (Exception e) {

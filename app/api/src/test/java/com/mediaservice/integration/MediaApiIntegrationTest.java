@@ -158,10 +158,9 @@ class MediaApiIntegrationTest extends BaseIntegrationTest {
     void shouldReturnPresignedUrlWhenComplete() {
       createAndSaveMedia("media-123", MediaStatus.COMPLETE);
       // Upload a file so presigned URL can be generated
-      // File name should match the output format extension (test.jpeg for JPEG
-      // format)
+      // Key format: {mediaId}/processed.{ext}
       s3Client.putObject(
-          b -> b.bucket("media-bucket").key("resized/media-123/test.jpeg").contentType("image/jpeg"),
+          b -> b.bucket("media-bucket").key("media-123/processed.jpeg").contentType("image/jpeg"),
           software.amazon.awssdk.core.sync.RequestBody.fromBytes("test".getBytes()));
       // TestRestTemplate follows redirects, so we get the final response
       // The redirect to S3 presigned URL should work
@@ -332,9 +331,9 @@ class MediaApiIntegrationTest extends BaseIntegrationTest {
       // Create media in PENDING_UPLOAD status
       createAndSaveMedia("media-upload-123", MediaStatus.PENDING_UPLOAD);
 
-      // Upload file to S3
+      // Upload file to S3 - key format: {mediaId}/original.{ext}
       s3Client.putObject(
-          b -> b.bucket("media-bucket").key("uploads/media-upload-123/test.jpg").contentType("image/jpeg"),
+          b -> b.bucket("media-bucket").key("media-upload-123/original.jpg").contentType("image/jpeg"),
           software.amazon.awssdk.core.sync.RequestBody.fromBytes("test-content".getBytes()));
 
       var response = restTemplate.postForEntity(

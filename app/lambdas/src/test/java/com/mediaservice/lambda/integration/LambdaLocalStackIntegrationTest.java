@@ -173,61 +173,63 @@ class LambdaLocalStackIntegrationTest {
     void shouldUploadAndRetrieveFile() throws Exception {
       var mediaId = "test-media-123";
       byte[] imageData = createTestImage();
+      // New key format: {mediaId}/original.{ext}
       s3Client.putObject(
           PutObjectRequest.builder()
               .bucket(BUCKET_NAME)
-              .key("uploads/" + mediaId + "/test.jpg")
+              .key(mediaId + "/original.jpg")
               .contentType("image/jpeg")
               .build(),
           RequestBody.fromBytes(imageData));
       var retrieved = s3Client.getObjectAsBytes(GetObjectRequest.builder()
           .bucket(BUCKET_NAME)
-          .key("uploads/" + mediaId + "/test.jpg")
+          .key(mediaId + "/original.jpg")
           .build());
       assertThat(retrieved.asByteArray()).isEqualTo(imageData);
     }
 
     @Test
-    @DisplayName("should handle upload to resized folder")
-    void shouldUploadToResizedFolder() throws Exception {
+    @DisplayName("should handle upload to processed location")
+    void shouldUploadToProcessedLocation() throws Exception {
       var mediaId = "test-media-123";
       byte[] processedData = createTestImage();
+      // New key format: {mediaId}/processed.{ext}
       s3Client.putObject(
           PutObjectRequest.builder()
               .bucket(BUCKET_NAME)
-              .key("resized/" + mediaId + "/test.jpg")
+              .key(mediaId + "/processed.jpg")
               .contentType("image/jpeg")
               .build(),
           RequestBody.fromBytes(processedData));
       var objects = s3Client.listObjectsV2(b -> b
           .bucket(BUCKET_NAME)
-          .prefix("resized/" + mediaId + "/"));
+          .prefix(mediaId + "/"));
       assertThat(objects.contents()).hasSize(1);
-      assertThat(objects.contents().get(0).key()).isEqualTo("resized/" + mediaId + "/test.jpg");
+      assertThat(objects.contents().get(0).key()).isEqualTo(mediaId + "/processed.jpg");
     }
 
     @Test
-    @DisplayName("should delete files from both folders")
+    @DisplayName("should delete original and processed files")
     void shouldDeleteFiles() throws Exception {
       var mediaId = "test-media-123";
       byte[] data = createTestImage();
-      // Upload to both folders
+      // Upload both original and processed
       s3Client.putObject(
           PutObjectRequest.builder()
               .bucket(BUCKET_NAME)
-              .key("uploads/" + mediaId + "/test.jpg")
+              .key(mediaId + "/original.jpg")
               .build(),
           RequestBody.fromBytes(data));
 
       s3Client.putObject(
           PutObjectRequest.builder()
               .bucket(BUCKET_NAME)
-              .key("resized/" + mediaId + "/test.jpg")
+              .key(mediaId + "/processed.jpg")
               .build(),
           RequestBody.fromBytes(data));
       // Delete both
-      s3Client.deleteObject(b -> b.bucket(BUCKET_NAME).key("uploads/" + mediaId + "/test.jpg"));
-      s3Client.deleteObject(b -> b.bucket(BUCKET_NAME).key("resized/" + mediaId + "/test.jpg"));
+      s3Client.deleteObject(b -> b.bucket(BUCKET_NAME).key(mediaId + "/original.jpg"));
+      s3Client.deleteObject(b -> b.bucket(BUCKET_NAME).key(mediaId + "/processed.jpg"));
       var remaining = s3Client.listObjectsV2(b -> b.bucket(BUCKET_NAME));
       assertThat(remaining.contents()).isEmpty();
     }
@@ -243,11 +245,12 @@ class LambdaLocalStackIntegrationTest {
       byte[] originalImage = createTestImage();
 
       // Step 1: API creates record with PENDING status and uploads original
+      // New key format: {mediaId}/original.{ext}
       createMediaRecord(mediaId, "workflow.jpg", MediaStatus.PENDING);
       s3Client.putObject(
           PutObjectRequest.builder()
               .bucket(BUCKET_NAME)
-              .key("uploads/" + mediaId + "/workflow.jpg")
+              .key(mediaId + "/original.jpg")
               .build(),
           RequestBody.fromBytes(originalImage));
 
@@ -258,16 +261,17 @@ class LambdaLocalStackIntegrationTest {
       // Step 3: Lambda retrieves original, processes, and uploads processed
       var retrievedData = s3Client.getObjectAsBytes(GetObjectRequest.builder()
           .bucket(BUCKET_NAME)
-          .key("uploads/" + mediaId + "/workflow.jpg")
+          .key(mediaId + "/original.jpg")
           .build());
 
       // Simulate processing (in real code, this would resize/watermark)
       byte[] processedImage = retrievedData.asByteArray();
 
+      // New key format: {mediaId}/processed.{ext}
       s3Client.putObject(
           PutObjectRequest.builder()
               .bucket(BUCKET_NAME)
-              .key("resized/" + mediaId + "/workflow.jpg")
+              .key(mediaId + "/processed.jpg")
               .build(),
           RequestBody.fromBytes(processedImage));
 
@@ -279,10 +283,10 @@ class LambdaLocalStackIntegrationTest {
       var finalRecord = getMediaRecord(mediaId);
       assertThat(finalRecord.get("status").s()).isEqualTo("COMPLETE");
 
-      var resizedExists = s3Client.listObjectsV2(b -> b
+      var processedExists = s3Client.listObjectsV2(b -> b
           .bucket(BUCKET_NAME)
-          .prefix("resized/" + mediaId + "/"));
-      assertThat(resizedExists.contents()).hasSize(1);
+          .prefix(mediaId + "/"));
+      assertThat(processedExists.contents()).hasSize(2); // original + processed
     }
   }
 
