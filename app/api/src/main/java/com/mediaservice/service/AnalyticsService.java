@@ -20,15 +20,19 @@ import java.util.concurrent.TimeUnit;
  * Service for tracking and querying analytics data using Redis.
  *
  * <p>
- * Provides view counting, leaderboards, and format usage analytics.
- * Uses Redis Sorted Sets for efficient ranking operations.
+ * Implements the "Roll-Up Pattern" for scalable analytics:
+ * <ul>
+ * <li>Write: Only increment daily bucket + all-time total (2 writes per
+ * view)</li>
+ * <li>Read: TODAY/ALL_TIME from Redis; WEEK/MONTH/YEAR aggregated from
+ * DynamoDB</li>
+ * <li>Persist: Write-behind every 5 minutes for durability (not 1 AM cron)</li>
+ * </ul>
  *
  * <p>
  * Redis Key Design:
  * <ul>
  * <li>{@code views:daily:{YYYY-MM-DD}} - Daily view counts (Sorted Set)</li>
- * <li>{@code views:weekly:{YYYY-Www}} - Weekly view counts (Sorted Set)</li>
- * <li>{@code views:monthly:{YYYY-MM}} - Monthly view counts (Sorted Set)</li>
  * <li>{@code views:total} - All-time view counts (Sorted Set)</li>
  * <li>{@code media:{mediaId}:views} - Total views per media (String
  * counter)</li>
@@ -36,6 +40,10 @@ import java.util.concurrent.TimeUnit;
  * <li>{@code analytics:downloads:{YYYY-MM-DD}} - Daily download counts
  * (Hash)</li>
  * </ul>
+ *
+ * <p>
+ * Weekly/Monthly/Yearly views are calculated at read-time by summing daily
+ * snapshots from DynamoDB, not stored as separate Redis keys.
  */
 @Service
 @RequiredArgsConstructor
@@ -44,28 +52,29 @@ public class AnalyticsService {
   private final StringRedisTemplate redisTemplate;
   private final AnalyticsProperties analyticsProperties;
   private final DynamoDbService dynamoDbService;
+  private final AnalyticsPersistenceService persistenceService;
 
+  // Redis key prefixes - only daily + total (Roll-Up Pattern)
   private static final String VIEWS_DAILY_PREFIX = "views:daily:";
-  private static final String VIEWS_WEEKLY_PREFIX = "views:weekly:";
-  private static final String VIEWS_MONTHLY_PREFIX = "views:monthly:";
   private static final String VIEWS_TOTAL_KEY = "views:total";
   private static final String MEDIA_VIEWS_PREFIX = "media:views:";
   private static final String FORMAT_USAGE_PREFIX = "analytics:formats:";
   private static final String DOWNLOADS_PREFIX = "analytics:downloads:";
 
   private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
-  private static final DateTimeFormatter WEEK_FORMATTER = DateTimeFormatter.ofPattern("yyyy-'W'ww");
-  private static final DateTimeFormatter MONTH_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM");
 
-  // TTL constants
-  private static final long DAILY_TTL_DAYS = 90;
-  private static final long WEEKLY_TTL_DAYS = 365;
-  private static final long MONTHLY_TTL_DAYS = 730;
+  // TTL: Keep daily data in Redis for 25-26 hours (allows overlap for
+  // persistence)
+  // Historical weekly/monthly data is aggregated from DynamoDB, not Redis
+  private static final long DAILY_TTL_HOURS = 26;
 
   /**
    * Record a view for a media item. Called asynchronously to not block downloads.
-   * Uses Redis pipelining to batch all increments into a single network
-   * round-trip.
+   *
+   * <p>
+   * Implements Roll-Up Pattern: Only writes to daily bucket + all-time total.
+   * Weekly/monthly/yearly are calculated at read-time from DynamoDB snapshots.
+   * This reduces write amplification from 5 writes to 2 writes per view.
    *
    * @param mediaId The media ID that was viewed
    */
@@ -77,23 +86,25 @@ public class AnalyticsService {
     try {
       LocalDate today = LocalDate.now();
       String dailyKey = VIEWS_DAILY_PREFIX + today.format(DATE_FORMATTER);
-      String weeklyKey = VIEWS_WEEKLY_PREFIX + today.format(WEEK_FORMATTER);
-      String monthlyKey = VIEWS_MONTHLY_PREFIX + today.format(MONTH_FORMATTER);
       String mediaKey = MEDIA_VIEWS_PREFIX + mediaId;
-      // Use pipelining to batch all Redis commands into a single round-trip
+
+      // Roll-Up Pattern: Only increment daily bucket + all-time total
+      // Weekly/monthly/yearly are aggregated from DynamoDB at read-time
       redisTemplate.executePipelined((RedisCallback<Object>) connection -> {
         var stringConn = connection.stringCommands();
         var zSetConn = connection.zSetCommands();
-        // Increment all counters
+
+        // 1. Daily bucket (for today's leaderboard)
         zSetConn.zIncrBy(dailyKey.getBytes(), 1, mediaId.getBytes());
-        zSetConn.zIncrBy(weeklyKey.getBytes(), 1, mediaId.getBytes());
-        zSetConn.zIncrBy(monthlyKey.getBytes(), 1, mediaId.getBytes());
+
+        // 2. All-time total (for quick all-time queries)
         zSetConn.zIncrBy(VIEWS_TOTAL_KEY.getBytes(), 1, mediaId.getBytes());
+
+        // 3. Per-media counter (for individual media stats)
         stringConn.incr(mediaKey.getBytes());
-        // Set TTLs (only if key doesn't have one)
-        connection.keyCommands().expire(dailyKey.getBytes(), TimeUnit.DAYS.toSeconds(DAILY_TTL_DAYS));
-        connection.keyCommands().expire(weeklyKey.getBytes(), TimeUnit.DAYS.toSeconds(WEEKLY_TTL_DAYS));
-        connection.keyCommands().expire(monthlyKey.getBytes(), TimeUnit.DAYS.toSeconds(MONTHLY_TTL_DAYS));
+
+        // TTL: 26 hours ensures data survives until next persistence cycle
+        connection.keyCommands().expire(dailyKey.getBytes(), TimeUnit.HOURS.toSeconds(DAILY_TTL_HOURS));
         return null;
       });
       log.debug("Recorded view for mediaId: {}", mediaId);
@@ -134,9 +145,9 @@ public class AnalyticsService {
         hashConn.hIncrBy(downloadKey.getBytes(), "total".getBytes(), 1);
         hashConn.hIncrBy(downloadKey.getBytes(), ("format:" + formatName).getBytes(), 1);
 
-        // Set TTLs
-        connection.keyCommands().expire(formatKey.getBytes(), TimeUnit.DAYS.toSeconds(DAILY_TTL_DAYS));
-        connection.keyCommands().expire(downloadKey.getBytes(), TimeUnit.DAYS.toSeconds(DAILY_TTL_DAYS));
+        // Set TTLs (26 hours for persistence window)
+        connection.keyCommands().expire(formatKey.getBytes(), TimeUnit.HOURS.toSeconds(DAILY_TTL_HOURS));
+        connection.keyCommands().expire(downloadKey.getBytes(), TimeUnit.HOURS.toSeconds(DAILY_TTL_HOURS));
 
         return null;
       });
@@ -165,52 +176,118 @@ public class AnalyticsService {
 
   /**
    * Get view statistics for a specific media item.
+   * Today and total from Redis; week/month/year aggregated from DynamoDB.
    *
    * @param mediaId The media ID
    * @return View statistics across different time periods
    */
   public ViewStats getMediaViews(String mediaId) {
     var today = LocalDate.now();
+
+    // Today's views from Redis (fast)
+    long todayViews = getScoreFromZSet(VIEWS_DAILY_PREFIX + today.format(DATE_FORMATTER), mediaId);
+
+    // Week/Month/Year from DynamoDB aggregation (Roll-Up Pattern)
+    var weekStart = today.with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
+    var monthStart = today.withDayOfMonth(1);
+    var yearStart = today.withDayOfYear(1);
+
+    // Aggregate from persisted daily snapshots
+    long weekViews = getAggregatedViewsForMedia(mediaId, weekStart, today) + todayViews;
+    long monthViews = getAggregatedViewsForMedia(mediaId, monthStart, today) + todayViews;
+    long yearViews = getAggregatedViewsForMedia(mediaId, yearStart, today) + todayViews;
+
     return ViewStats.builder()
         .mediaId(mediaId)
         .total(getViewCount(mediaId))
-        .today(getScoreFromZSet(VIEWS_DAILY_PREFIX + today.format(DATE_FORMATTER), mediaId))
-        .thisWeek(getScoreFromZSet(VIEWS_WEEKLY_PREFIX + today.format(WEEK_FORMATTER), mediaId))
-        .thisMonth(getScoreFromZSet(VIEWS_MONTHLY_PREFIX + today.format(MONTH_FORMATTER), mediaId))
+        .today(todayViews)
+        .thisWeek(weekViews)
+        .thisMonth(monthViews)
+        .thisYear(yearViews)
         .build();
   }
 
   /**
+   * Get aggregated views for a specific media from DynamoDB daily snapshots.
+   */
+  private long getAggregatedViewsForMedia(String mediaId, LocalDate startDate, LocalDate endDate) {
+    // Query DynamoDB for daily snapshots in range (excluding today, which is in
+    // Redis)
+    var aggregated = persistenceService.aggregateDailyAnalytics(startDate, endDate.minusDays(1), Integer.MAX_VALUE);
+    return aggregated.getOrDefault(mediaId, 0L);
+  }
+
+  /**
    * Get top media by views for a specific time period.
+   * TODAY and ALL_TIME from Redis; WEEK/MONTH/YEAR aggregated from DynamoDB.
    *
-   * @param period Time period (TODAY, THIS_WEEK, THIS_MONTH, ALL_TIME)
+   * @param period Time period (TODAY, THIS_WEEK, THIS_MONTH, THIS_YEAR, ALL_TIME)
    * @param limit  Maximum number of results
    * @return List of media with view counts, ranked by views
    */
   public List<MediaViewCount> getTopMedia(Period period, int limit) {
-    var key = getKeyForPeriod(period);
-    if (key == null) {
-      return Collections.emptyList();
-    }
     try {
-      var topEntries = redisTemplate.opsForZSet().reverseRangeWithScores(key, 0,
-          limit - 1);
-      if (topEntries == null || topEntries.isEmpty()) {
+      Map<String, Long> viewCounts;
+
+      switch (period) {
+        case TODAY -> {
+          // Fast path: directly from Redis daily key
+          viewCounts = getTopFromRedis(VIEWS_DAILY_PREFIX + LocalDate.now().format(DATE_FORMATTER), limit);
+        }
+        case ALL_TIME -> {
+          // Fast path: directly from Redis all-time key
+          viewCounts = getTopFromRedis(VIEWS_TOTAL_KEY, limit);
+        }
+        case THIS_WEEK, THIS_MONTH, THIS_YEAR -> {
+          // Roll-Up Pattern: aggregate from DynamoDB + add today's Redis data
+          var today = LocalDate.now();
+          LocalDate startDate = switch (period) {
+            case THIS_WEEK -> today.with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
+            case THIS_MONTH -> today.withDayOfMonth(1);
+            case THIS_YEAR -> today.withDayOfYear(1);
+            default -> today;
+          };
+
+          // Get historical data from DynamoDB (excludes today)
+          viewCounts = new HashMap<>(
+              persistenceService.aggregateDailyAnalytics(startDate, today.minusDays(1), limit * 2));
+
+          // Add today's data from Redis
+          var todayData = getTopFromRedis(VIEWS_DAILY_PREFIX + today.format(DATE_FORMATTER), limit * 2);
+          for (var entry : todayData.entrySet()) {
+            viewCounts.merge(entry.getKey(), entry.getValue(), Long::sum);
+          }
+
+          // Re-sort and limit
+          viewCounts = viewCounts.entrySet().stream()
+              .sorted((a, b) -> Long.compare(b.getValue(), a.getValue()))
+              .limit(limit)
+              .collect(java.util.stream.Collectors.toMap(
+                  Map.Entry::getKey,
+                  Map.Entry::getValue,
+                  (e1, e2) -> e1,
+                  LinkedHashMap::new));
+        }
+        default -> {
+          return Collections.emptyList();
+        }
+      }
+
+      if (viewCounts.isEmpty()) {
         return Collections.emptyList();
       }
+
+      // Build result with media names
       var result = new ArrayList<MediaViewCount>();
       int rank = 1;
-      for (var entry : topEntries) {
-        String mediaId = entry.getValue();
-        long viewCount = entry.getScore() != null ? entry.getScore().longValue() : 0;
-        // Fetch media name from database
-        var name = dynamoDbService.getMedia(mediaId)
+      for (var entry : viewCounts.entrySet()) {
+        var name = dynamoDbService.getMedia(entry.getKey())
             .map(media -> media.getName())
             .orElse("Unknown");
         result.add(MediaViewCount.builder()
-            .mediaId(mediaId)
+            .mediaId(entry.getKey())
             .name(name)
-            .viewCount(viewCount)
+            .viewCount(entry.getValue())
             .rank(rank++)
             .build());
       }
@@ -219,6 +296,22 @@ public class AnalyticsService {
       log.error("Failed to get top media for period {}: {}", period, e.getMessage());
       return Collections.emptyList();
     }
+  }
+
+  /**
+   * Get top entries from a Redis sorted set.
+   */
+  private Map<String, Long> getTopFromRedis(String key, int limit) {
+    var results = new LinkedHashMap<String, Long>();
+    var topEntries = redisTemplate.opsForZSet().reverseRangeWithScores(key, 0, limit - 1);
+    if (topEntries != null) {
+      for (var entry : topEntries) {
+        if (entry.getValue() != null && entry.getScore() != null) {
+          results.put(entry.getValue(), entry.getScore().longValue());
+        }
+      }
+    }
+    return results;
   }
 
   /**
@@ -344,16 +437,6 @@ public class AnalyticsService {
         .build();
   }
 
-  private String getKeyForPeriod(Period period) {
-    var today = LocalDate.now();
-    return switch (period) {
-      case TODAY -> VIEWS_DAILY_PREFIX + today.format(DATE_FORMATTER);
-      case THIS_WEEK -> VIEWS_WEEKLY_PREFIX + today.format(WEEK_FORMATTER);
-      case THIS_MONTH -> VIEWS_MONTHLY_PREFIX + today.format(MONTH_FORMATTER);
-      case ALL_TIME -> VIEWS_TOTAL_KEY;
-    };
-  }
-
   private List<String> getKeysForPeriodRange(String prefix, Period period) {
     var today = LocalDate.now();
     var keys = new ArrayList<String>();
@@ -368,6 +451,12 @@ public class AnalyticsService {
       case THIS_MONTH -> {
         var monthStart = today.withDayOfMonth(1);
         for (LocalDate date = monthStart; !date.isAfter(today); date = date.plusDays(1)) {
+          keys.add(prefix + date.format(DATE_FORMATTER));
+        }
+      }
+      case THIS_YEAR -> {
+        var yearStart = today.withDayOfYear(1);
+        for (LocalDate date = yearStart; !date.isAfter(today); date = date.plusDays(1)) {
           keys.add(prefix + date.format(DATE_FORMATTER));
         }
       }

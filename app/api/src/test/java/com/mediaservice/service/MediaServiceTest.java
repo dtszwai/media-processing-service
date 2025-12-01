@@ -5,6 +5,7 @@ import com.mediaservice.dto.InitUploadRequest;
 import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaStatus;
 import com.mediaservice.common.model.OutputFormat;
+import com.mediaservice.service.cache.MultiLevelCacheOrchestrator;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.trace.Span;
@@ -47,6 +48,8 @@ class MediaServiceTest {
   @Mock
   private CacheInvalidationService cacheInvalidationService;
   @Mock
+  private MultiLevelCacheOrchestrator cacheOrchestrator;
+  @Mock
   private Tracer tracer;
   @Mock
   private Meter meter;
@@ -86,7 +89,8 @@ class MediaServiceTest {
         .thenReturn(mock(io.opentelemetry.api.metrics.LongCounterBuilder.class));
     lenient().when(meter.counterBuilder(anyString()).setDescription(anyString()).build()).thenReturn(counter);
 
-    mediaService = new MediaService(dynamoDbService, s3Service, snsService, mediaProperties, imageValidationService, cacheInvalidationService, tracer, meter);
+    mediaService = new MediaService(dynamoDbService, s3Service, snsService, mediaProperties, imageValidationService,
+        cacheInvalidationService, cacheOrchestrator, tracer, meter);
   }
 
   @Nested
@@ -167,9 +171,9 @@ class MediaServiceTest {
     @DisplayName("should return URL when media is complete")
     void shouldReturnUrlWhenComplete() {
       var media = createMedia(MediaStatus.COMPLETE);
-      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
-      when(s3Service.getPresignedUrl("media-123", "test.jpg", OutputFormat.JPEG))
-          .thenReturn("https://s3.example.com/signed-url");
+      when(cacheOrchestrator.getMedia("media-123")).thenReturn(Optional.of(media));
+      when(cacheOrchestrator.getPresignedUrl(eq("media-123"), eq("jpeg"), any()))
+          .thenReturn(Optional.of("https://s3.example.com/signed-url"));
       var result = mediaService.getDownloadUrl("media-123");
       assertThat(result).contains("https://s3.example.com/signed-url");
     }
@@ -178,10 +182,10 @@ class MediaServiceTest {
     @DisplayName("should return empty when media is not complete")
     void shouldReturnEmptyWhenNotComplete() {
       var media = createMedia(MediaStatus.PROCESSING);
-      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
+      when(cacheOrchestrator.getMedia("media-123")).thenReturn(Optional.of(media));
       var result = mediaService.getDownloadUrl("media-123");
       assertThat(result).isEmpty();
-      verify(s3Service, never()).getPresignedUrl(anyString(), anyString(), any());
+      verify(cacheOrchestrator, never()).getPresignedUrl(anyString(), anyString(), any());
     }
   }
 
@@ -325,7 +329,8 @@ class MediaServiceTest {
       var media = createMedia(MediaStatus.PENDING_UPLOAD);
       when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
       when(s3Service.objectExists("media-123", "test.jpg")).thenReturn(true);
-      when(dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.PENDING_UPLOAD, true))
+      when(
+          dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.PENDING_UPLOAD, true))
           .thenReturn(true);
 
       var result = mediaService.completePresignedUpload("media-123");
@@ -378,7 +383,8 @@ class MediaServiceTest {
       var media = createMedia(MediaStatus.PENDING_UPLOAD);
       when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
       when(s3Service.objectExists("media-123", "test.jpg")).thenReturn(true);
-      when(dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.PENDING_UPLOAD, true))
+      when(
+          dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.PENDING_UPLOAD, true))
           .thenReturn(false);
 
       var result = mediaService.completePresignedUpload("media-123");

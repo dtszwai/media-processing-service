@@ -1,7 +1,11 @@
 <script lang="ts">
   import type { Period, MediaViewCount } from "../../lib/types";
-  import { getTopMedia } from "../../lib/api";
+  import { createQuery } from "@tanstack/svelte-query";
   import { createAnalyticsSummaryQuery } from "../../lib/queries";
+  import { queryKeys } from "../../lib/query";
+  import { getTopMedia } from "../../lib/api";
+  import { MediaViewCountSchema } from "../../lib/schemas";
+  import { z } from "zod";
   import StatCard from "./StatCard.svelte";
   import PeriodSelector from "./PeriodSelector.svelte";
   import TopMediaTable from "./TopMediaTable.svelte";
@@ -9,32 +13,27 @@
   import MediaPreviewModal from "./MediaPreviewModal.svelte";
 
   let selectedPeriod = $state<Period>("TODAY");
-  let topMediaByPeriod = $state<MediaViewCount[]>([]);
-  let topMediaLoading = $state(false);
   let selectedMedia = $state<MediaViewCount | null>(null);
 
   const summaryQuery = createAnalyticsSummaryQuery();
 
-  async function loadTopMediaByPeriod(period: Period) {
-    try {
-      topMediaLoading = true;
-      topMediaByPeriod = await getTopMedia(period, 10);
-    } catch (e) {
-      console.error("Failed to load top media:", e);
-      topMediaByPeriod = [];
-    } finally {
-      topMediaLoading = false;
-    }
-  }
+  // Reactive query that updates when selectedPeriod changes
+  const topMediaQuery = createQuery(() => ({
+    queryKey: queryKeys.analytics.topMedia(selectedPeriod, 10),
+    queryFn: async (): Promise<MediaViewCount[]> => {
+      const data = await getTopMedia(selectedPeriod, 10);
+      return z.array(MediaViewCountSchema).parse(data);
+    },
+    staleTime: 30 * 1000,
+  }));
 
   function handlePeriodChange(period: Period) {
     selectedPeriod = period;
-    loadTopMediaByPeriod(period);
   }
 
   function handleRefresh() {
     summaryQuery.refetch();
-    loadTopMediaByPeriod(selectedPeriod);
+    topMediaQuery.refetch();
   }
 
   function handleMediaClick(media: MediaViewCount) {
@@ -44,11 +43,6 @@
   function handleModalClose() {
     selectedMedia = null;
   }
-
-  // Load initial top media data
-  $effect(() => {
-    loadTopMediaByPeriod(selectedPeriod);
-  });
 </script>
 
 <div class="space-y-6">
@@ -113,8 +107,8 @@
             : selectedPeriod === 'THIS_MONTH'
               ? 'This Month'
               : 'All Time'})"
-        data={topMediaByPeriod}
-        loading={topMediaLoading}
+        data={topMediaQuery.data ?? []}
+        loading={topMediaQuery.isLoading}
         onitemclick={handleMediaClick}
       />
 

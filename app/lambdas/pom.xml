@@ -6,7 +6,7 @@
 
     <groupId>com.mediaservice</groupId>
     <artifactId>media-service-lambdas</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <packaging>jar</packaging>
 
     <name>Media Service Lambda Functions</name>
@@ -47,7 +47,7 @@
         <dependency>
             <groupId>com.mediaservice</groupId>
             <artifactId>media-service-common</artifactId>
-            <version>1.0.0</version>
+            <version>1.1.0</version>
         </dependency>
 
         <!-- AWS Lambda -->
@@ -119,6 +119,13 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
             <version>2.17.0</version>
+        </dependency>
+
+        <!-- Redis Client for Analytics Lambda -->
+        <dependency>
+            <groupId>redis.clients</groupId>
+            <artifactId>jedis</artifactId>
+            <version>5.1.2</version>
         </dependency>
 
         <!-- Logging -->

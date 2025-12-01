@@ -7,6 +7,7 @@ import com.mediaservice.dto.MediaResponse;
 import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaStatus;
 import com.mediaservice.common.model.OutputFormat;
+import com.mediaservice.service.cache.MultiLevelCacheOrchestrator;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.trace.Span;
@@ -34,19 +35,22 @@ public class MediaService {
   private final MediaProperties mediaProperties;
   private final ImageValidationService imageValidationService;
   private final CacheInvalidationService cacheInvalidationService;
+  private final MultiLevelCacheOrchestrator cacheOrchestrator;
   private final Tracer tracer;
   private final LongCounter uploadSuccessCounter;
   private final LongCounter uploadFailureCounter;
 
   public MediaService(DynamoDbService dynamoDbService, S3Service s3Service, SnsService snsService,
       MediaProperties mediaProperties, ImageValidationService imageValidationService,
-      CacheInvalidationService cacheInvalidationService, Tracer tracer, Meter meter) {
+      CacheInvalidationService cacheInvalidationService, MultiLevelCacheOrchestrator cacheOrchestrator,
+      Tracer tracer, Meter meter) {
     this.dynamoDbService = dynamoDbService;
     this.s3Service = s3Service;
     this.snsService = snsService;
     this.mediaProperties = mediaProperties;
     this.imageValidationService = imageValidationService;
     this.cacheInvalidationService = cacheInvalidationService;
+    this.cacheOrchestrator = cacheOrchestrator;
     this.tracer = tracer;
     this.uploadSuccessCounter = meter.counterBuilder("media.upload.success")
         .setDescription("Count of successful media uploads")
@@ -147,25 +151,37 @@ public class MediaService {
   }
 
   /**
-   * Get media details.
-   * Note: Not cached because Optional doesn't serialize well with Redis JSON.
-   * Consider using a wrapper DTO for caching if needed.
+   * Get media details with multi-level caching.
+   *
+   * <p>
+   * Uses three-tier cache hierarchy:
+   * <ul>
+   * <li>L1: Caffeine local cache (microsecond access)</li>
+   * <li>L2: Redis distributed cache (millisecond access)</li>
+   * <li>L3: DynamoDB (with single-flight protection)</li>
+   * </ul>
    */
   public Optional<Media> getMedia(String mediaId) {
-    return dynamoDbService.getMedia(mediaId);
+    return cacheOrchestrator.getMedia(mediaId);
   }
 
   /**
-   * Get presigned download URL.
-   * Note: Not cached because Optional doesn't serialize well with Redis JSON.
-   * The URL generation is fast and S3 presigned URLs have built-in expiry.
+   * Get presigned download URL with multi-level caching.
+   *
+   * <p>
+   * Presigned URLs are cached to reduce S3 presigner overhead.
+   * Cache TTL is set to slightly less than URL expiry to prevent serving expired
+   * URLs.
    */
   public Optional<String> getDownloadUrl(String mediaId) {
-    return dynamoDbService.getMedia(mediaId)
+    return cacheOrchestrator.getMedia(mediaId)
         .filter(media -> media.getStatus() == MediaStatus.COMPLETE)
-        .map(media -> {
+        .flatMap(media -> {
           var format = media.getOutputFormat() != null ? media.getOutputFormat() : OutputFormat.JPEG;
-          return s3Service.getPresignedUrl(mediaId, media.getName(), format);
+          return cacheOrchestrator.getPresignedUrl(
+              mediaId,
+              format.getFormat(),
+              () -> s3Service.getPresignedUrl(mediaId, media.getName(), format));
         });
   }
 

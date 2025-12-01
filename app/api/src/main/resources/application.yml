@@ -66,7 +66,7 @@ media:
     presigned-url-expiration-seconds: 3600  # 1 hour
     max-presigned-upload-size: 5368709120   # 5GB
 
-# Cache TTL Configuration
+# Cache TTL Configuration (L2 Redis)
 cache:
   media:
     ttl-seconds: 300
@@ -77,11 +77,60 @@ cache:
   pagination:
     ttl-seconds: 120
 
+# Multi-Level Cache Configuration
+# Three-tier caching: L1 (Caffeine) + L2 (Redis) + L3 (DynamoDB)
+multi-level-cache:
+  enabled: ${MULTI_LEVEL_CACHE_ENABLED:true}
+  # L1 Local Cache (Caffeine - per instance)
+  local:
+    enabled: ${LOCAL_CACHE_ENABLED:true}
+    max-size: ${LOCAL_CACHE_MAX_SIZE:1000}
+    ttl-seconds: ${LOCAL_CACHE_TTL:30}      # Shorter than L2 for consistency
+    record-stats: ${LOCAL_CACHE_STATS:true}
+  # Hotkey Detection (extends TTL for frequently accessed items)
+  hotkey:
+    enabled: ${HOTKEY_DETECTION_ENABLED:true}
+    threshold: ${HOTKEY_THRESHOLD:100}      # Requests per window to be "hot"
+    window-seconds: ${HOTKEY_WINDOW:60}     # Detection window
+    ttl-multiplier: ${HOTKEY_TTL_MULTIPLIER:3}  # 3x TTL for hot keys
+    key-prefix: "hotkey:counter:"
+    known-hot-keys-key: "hotkey:known"
+    # Warm-up from analytics (loads known hot keys on startup and periodically)
+    warm-up:
+      enabled: ${HOTKEY_WARMUP_ENABLED:true}
+      top-count: ${HOTKEY_WARMUP_TOP_COUNT:100}           # Number of top items to load
+      refresh-interval-minutes: ${HOTKEY_WARMUP_REFRESH:5} # Refresh interval
+      known-keys-ttl-minutes: ${HOTKEY_WARMUP_TTL:30}     # TTL for known hot keys set
+  # Single-Flight (prevents thundering herd on cache miss)
+  single-flight:
+    enabled: ${SINGLE_FLIGHT_ENABLED:true}
+    lock-ttl-ms: ${SINGLE_FLIGHT_LOCK_TTL:5000}
+    max-retries: ${SINGLE_FLIGHT_MAX_RETRIES:50}
+    retry-interval-ms: ${SINGLE_FLIGHT_RETRY_INTERVAL:100}
+    lock-prefix: "singleflight:"
+  # TTL Jitter (prevents cache avalanche)
+  jitter:
+    enabled: ${TTL_JITTER_ENABLED:true}
+    max-percent: ${TTL_JITTER_PERCENT:0.1}  # ±10% jitter
+
 # Analytics Configuration
 analytics:
   enabled: ${ANALYTICS_ENABLED:true}
   top-media-limit: 10
   retention-days: 90
+  # Persistence to DynamoDB and S3 (scheduled snapshots)
+  persistence:
+    enabled: ${ANALYTICS_PERSISTENCE_ENABLED:true}
+    snapshot-cron: "0 0 1 * * *"           # 1:00 AM daily
+    ttl-enabled: ${ANALYTICS_TTL_ENABLED:false}  # When false, data is kept permanently
+    daily-retention-days: 90               # Only used when ttl-enabled is true
+    monthly-retention-days: 730            # Only used when ttl-enabled is true
+    yearly-retention-days: 1825            # Only used when ttl-enabled is true
+    # S3 archival for long-term storage
+    s3-archive:
+      enabled: ${ANALYTICS_S3_ARCHIVE_ENABLED:true}
+      prefix: "analytics/"                 # S3 prefix for archive files
+      archive-cron: "0 0 2 1 * *"          # 2:00 AM on 1st of each month
 
 # Rate Limiting Configuration
 rate-limiting:

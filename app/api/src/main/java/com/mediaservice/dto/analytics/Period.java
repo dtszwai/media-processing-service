@@ -7,5 +7,6 @@ public enum Period {
   TODAY,
   THIS_WEEK,
   THIS_MONTH,
+  THIS_YEAR,
   ALL_TIME
 }

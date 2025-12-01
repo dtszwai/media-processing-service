@@ -18,4 +18,5 @@ public class ViewStats {
   private long today;
   private long thisWeek;
   private long thisMonth;
+  private long thisYear;
 }

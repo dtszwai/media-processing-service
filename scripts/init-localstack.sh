@@ -13,7 +13,7 @@ TABLE_NAME="media"
 TOPIC_NAME="media-management-topic"
 QUEUE_NAME="media-management-sqs-queue"
 LAMBDA_NAME="media-service-manage-media-handler"
-LAMBDA_JAR_PATH="/opt/lambdas/media-service-lambdas-1.0.0.jar"
+LAMBDA_JAR_PATH="/opt/lambdas/media-service-lambdas-1.1.0.jar"
 
 log() {
     echo "[init] $1"

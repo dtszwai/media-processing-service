@@ -23,7 +23,8 @@ services:
       - "127.0.0.1:4566:4566"
     environment:
       - DEBUG=1
-      - SERVICES=s3,dynamodb,sns,sqs,lambda,iam
+      - PERSISTENCE=1
+      - SERVICES=s3,dynamodb,sns,sqs,lambda,iam,events
       - AWS_DEFAULT_REGION=us-west-2
       - LAMBDA_DOCKER_NETWORK=media-processing-service_default
       - LAMBDA_RUNTIME_ENVIRONMENT_TIMEOUT=60

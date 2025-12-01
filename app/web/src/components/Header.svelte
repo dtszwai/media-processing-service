@@ -2,7 +2,6 @@
   import { currentView } from "../lib/stores";
   import { createServiceHealthQuery, createVersionInfoQuery } from "../lib/queries";
   import type { HealthStatus } from "../lib/types";
-  import type { AppView } from "../lib/stores";
 
   let showDetails = $state(false);
   let dropdownRef: HTMLDivElement;
@@ -89,10 +88,6 @@
           </button>
         </nav>
 
-        {#if versionInfo?.build?.version}
-          <span class="text-xs text-gray-400">v{versionInfo.build.version}</span>
-        {/if}
-
         <div class="relative" bind:this={dropdownRef}>
           <button
             class="flex items-center space-x-2 text-sm text-gray-500 hover:text-gray-700 focus:outline-none"
@@ -160,6 +155,14 @@
                   </div>
                 </div>
               </div>
+              {#if versionInfo?.build?.version}
+                <div class="px-4 py-2 border-t border-gray-100">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs text-gray-400">Version</span>
+                    <span class="text-xs text-gray-500">v{versionInfo.build.version}</span>
+                  </div>
+                </div>
+              {/if}
             </div>
           {/if}
         </div>

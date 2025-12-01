@@ -13,7 +13,7 @@
 
     <groupId>com.mediaservice</groupId>
     <artifactId>media-service-api</artifactId>
-    <version>1.1.0</version>
+    <version>1.2.0</version>
     <name>media-service-api</name>
     <description>REST API providing file upload and media management - Spring Boot</description>
 
@@ -58,7 +58,7 @@
         <dependency>
             <groupId>com.mediaservice</groupId>
             <artifactId>media-service-common</artifactId>
-            <version>1.0.0</version>
+            <version>1.1.0</version>
         </dependency>
 
         <!-- Spring Boot -->

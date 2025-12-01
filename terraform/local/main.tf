@@ -33,7 +33,7 @@ provider "aws" {
 }
 
 locals {
-  lambda_jar_path = "${path.module}/../../app/lambdas/target/media-service-lambdas-1.0.0.jar"
+  lambda_jar_path = "${path.module}/../../app/lambdas/target/media-service-lambdas-1.1.0.jar"
 }
 
 # =============================================================================
@@ -196,6 +196,121 @@ resource "aws_lambda_event_source_mapping" "sqs_trigger" {
 }
 
 # =============================================================================
+# Analytics Rollup Lambda
+# =============================================================================
+
+resource "aws_lambda_function" "analytics_rollup" {
+  filename         = local.lambda_jar_path
+  function_name    = "media-service-analytics-rollup-handler"
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "com.mediaservice.lambda.AnalyticsRollupHandler::handleRequest"
+  source_code_hash = fileexists(local.lambda_jar_path) ? filebase64sha256(local.lambda_jar_path) : null
+  runtime          = "java21"
+  timeout          = 60 # Longer timeout for batch operations
+  memory_size      = 1024
+
+  environment {
+    variables = {
+      AWS_REGION                = var.aws_region
+      MEDIA_BUCKET_NAME         = var.media_s3_bucket_name
+      MEDIA_DYNAMODB_TABLE_NAME = var.media_dynamo_table_name
+      AWS_S3_ENDPOINT           = "http://localstack:4566"
+      AWS_DYNAMODB_ENDPOINT     = "http://localstack:4566"
+      # OpenTelemetry
+      OTEL_EXPORTER_OTLP_ENDPOINT = "http://grafana:4318"
+      OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf"
+      OTEL_SERVICE_NAME           = "media-service-analytics-lambda"
+    }
+  }
+}
+
+# Analytics DLQ for failed events
+resource "aws_sqs_queue" "analytics_dlq" {
+  name                      = "analytics-rollup-dlq"
+  message_retention_seconds = 1209600 # 14 days
+}
+
+# =============================================================================
+# EventBridge Rules for Analytics (Scheduled Triggers)
+# =============================================================================
+#
+# Note: Daily persistence is handled by the API via write-behind (every 5 min).
+# Weekly/yearly data is calculated at read-time from DynamoDB daily snapshots.
+# This Lambda handles:
+# - Daily archive to S3 (every day at 2:00 AM)
+# - Monthly aggregation (1st of month at 3:00 AM)
+# - Monthly archive to S3 (1st of month at 5:00 AM)
+
+# Daily archive at 2:00 AM UTC every day
+# Archives yesterday's daily data to S3 for long-term storage
+resource "aws_cloudwatch_event_rule" "analytics_daily_archive" {
+  name                = "analytics-daily-archive"
+  description         = "Archive daily analytics to S3 at 2:00 AM UTC"
+  schedule_expression = "cron(0 2 * * ? *)"
+}
+
+resource "aws_cloudwatch_event_target" "analytics_daily_archive_target" {
+  rule      = aws_cloudwatch_event_rule.analytics_daily_archive.name
+  target_id = "analytics-daily-archive-lambda"
+  arn       = aws_lambda_function.analytics_rollup.arn
+  input     = jsonencode({ type = "analytics.v1.archive.daily" })
+}
+
+resource "aws_lambda_permission" "allow_eventbridge_daily_archive" {
+  statement_id  = "AllowEventBridgeDailyArchive"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.analytics_rollup.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.analytics_daily_archive.arn
+}
+
+# Monthly rollup at 3:00 AM UTC on 1st of month
+# Aggregates daily snapshots into a monthly summary for faster queries
+resource "aws_cloudwatch_event_rule" "analytics_monthly_rollup" {
+  name                = "analytics-monthly-rollup"
+  description         = "Aggregate monthly analytics on 1st at 3:00 AM UTC"
+  schedule_expression = "cron(0 3 1 * ? *)"
+}
+
+resource "aws_cloudwatch_event_target" "analytics_monthly_rollup_target" {
+  rule      = aws_cloudwatch_event_rule.analytics_monthly_rollup.name
+  target_id = "analytics-monthly-rollup-lambda"
+  arn       = aws_lambda_function.analytics_rollup.arn
+  input     = jsonencode({ type = "analytics.v1.rollup.monthly" })
+}
+
+resource "aws_lambda_permission" "allow_eventbridge_monthly" {
+  statement_id  = "AllowEventBridgeMonthly"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.analytics_rollup.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.analytics_monthly_rollup.arn
+}
+
+# Monthly archive at 5:00 AM UTC on 1st of month
+# Archives monthly data to S3 for long-term storage
+resource "aws_cloudwatch_event_rule" "analytics_monthly_archive" {
+  name                = "analytics-monthly-archive"
+  description         = "Archive monthly analytics to S3 on 1st at 5:00 AM UTC"
+  schedule_expression = "cron(0 5 1 * ? *)"
+}
+
+resource "aws_cloudwatch_event_target" "analytics_monthly_archive_target" {
+  rule      = aws_cloudwatch_event_rule.analytics_monthly_archive.name
+  target_id = "analytics-monthly-archive-lambda"
+  arn       = aws_lambda_function.analytics_rollup.arn
+  input     = jsonencode({ type = "analytics.v1.archive.monthly" })
+}
+
+resource "aws_lambda_permission" "allow_eventbridge_archive" {
+  statement_id  = "AllowEventBridgeArchive"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.analytics_rollup.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.analytics_monthly_archive.arn
+}
+
+# =============================================================================
 # Outputs
 # =============================================================================
 
@@ -217,4 +332,8 @@ output "sqs_queue_url" {
 
 output "lambda_function_name" {
   value = aws_lambda_function.manage_media.function_name
+}
+
+output "analytics_lambda_function_name" {
+  value = aws_lambda_function.analytics_rollup.function_name
 }

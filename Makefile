@@ -6,7 +6,9 @@ help:
 	@echo ""
 	@echo "Local Development (recommended):"
 	@echo "  local-up       - Full setup: build all, start everything (API, Lambda, LocalStack, Grafana, Redis)"
-	@echo "  local-down     - Stop all services and destroy resources"
+	@echo "  local-start    - Start services with persisted data (no rebuild, no Terraform)"
+	@echo "  local-down     - Stop all services (data persists)"
+	@echo "  local-clean    - Stop all services AND delete all data"
 	@echo ""
 	@echo "Build:"
 	@echo "  build-common   - Build shared common module"
@@ -52,12 +54,30 @@ start-api:
 	@echo "Starting API..."
 	@docker compose up -d api
 
+.PHONY: local-start
+local-start:
+	@echo "Starting services with persisted data..."
+	@docker compose up -d
+	@echo ""
+	@echo "All services running (using persisted data)!"
+	@echo "  - API: http://localhost:9000"
+	@echo "  - Grafana: http://localhost:3000"
+	@echo "  - LocalStack: http://localhost:4566"
+
 .PHONY: local-down
 local-down:
-	@echo "Stopping services..."
+	@echo "Stopping services (data will persist)..."
 	@docker compose down --remove-orphans
 	@docker ps -a --filter "name=localstack-lambda" -q | xargs -r docker rm -f 2>/dev/null || true
-	@echo "All services stopped"
+	@echo "All services stopped. Run 'make local-start' to resume with existing data."
+
+.PHONY: local-clean
+local-clean:
+	@echo "Stopping services and deleting ALL data..."
+	@docker compose down --remove-orphans -v
+	@docker ps -a --filter "name=localstack-lambda" -q | xargs -r docker rm -f 2>/dev/null || true
+	@rm -rf ./volume
+	@echo "All services stopped and data deleted."
 
 # =============================================================================
 # Build

@@ -14,6 +14,10 @@ public final class LambdaConfig {
   private final String bucketName;
   private final String tableName;
 
+  // Redis Configuration (for Analytics Lambda)
+  private final String redisHost;
+  private final int redisPort;
+
   // Image Processing Configuration
   private final int defaultWidth;
   private final int minWatermarkWidth;
@@ -27,6 +31,9 @@ public final class LambdaConfig {
     this.s3Endpoint = getEnv("AWS_S3_ENDPOINT", null);
     this.bucketName = getEnv("MEDIA_BUCKET_NAME", "media-bucket");
     this.tableName = getEnv("MEDIA_DYNAMODB_TABLE_NAME", "media");
+
+    this.redisHost = getEnv("REDIS_HOST", "localhost");
+    this.redisPort = getEnvInt("REDIS_PORT", 6379);
 
     this.defaultWidth = getEnvInt("IMAGE_DEFAULT_WIDTH", 500);
     this.minWatermarkWidth = getEnvInt("IMAGE_MIN_WATERMARK_WIDTH", 30);

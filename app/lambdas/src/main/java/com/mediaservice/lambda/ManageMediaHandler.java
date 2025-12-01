@@ -124,6 +124,7 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
           }
         }
         case PROCESS_MEDIA -> handleMediaProcessing(mediaId, width, outputFormat, false, span);
+        default -> logger.info("Skipping message with unhandled event type: {}", event.getType());
       }
     } catch (Exception e) {
       span.setStatus(StatusCode.ERROR, e.getMessage());
