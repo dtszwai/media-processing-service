@@ -29,4 +29,6 @@ public class Media {
   private OutputFormat outputFormat;
   private Instant createdAt;
   private Instant updatedAt;
+  /** Timestamp when media was soft deleted, null if active */
+  private Instant deletedAt;
 }

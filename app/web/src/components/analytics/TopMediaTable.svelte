@@ -21,6 +21,16 @@
     return name.substring(0, maxLength - 3) + "...";
   }
 
+  function formatDeletedAt(deletedAt?: string): string {
+    if (!deletedAt) return "Deleted";
+    try {
+      const date = new Date(deletedAt);
+      return `Deleted on ${date.toLocaleDateString()}`;
+    } catch {
+      return "Deleted";
+    }
+  }
+
   function handleItemClick(item: EntityViewCount) {
     onitemclick?.(item);
   }
@@ -59,30 +69,44 @@
     <div class="divide-y divide-gray-100">
       {#each data as item}
         <div
-          class="px-4 py-3 flex items-center justify-between hover:bg-gray-50 cursor-pointer transition-colors"
+          class="px-4 py-3 flex items-center justify-between hover:bg-gray-50 cursor-pointer transition-colors {item.deleted ? 'opacity-60' : ''}"
           onclick={() => handleItemClick(item)}
           onkeydown={(e) => handleKeydown(e, item)}
           role="button"
           tabindex="0"
+          title={item.deleted ? formatDeletedAt(item.deletedAt) : item.name}
         >
           <div class="flex items-center space-x-3">
             <span
               class="w-6 h-6 flex items-center justify-center rounded-full text-xs font-medium
-              {item.rank === 1
-                ? 'bg-yellow-100 text-yellow-700'
-                : item.rank === 2
-                  ? 'bg-gray-100 text-gray-600'
-                  : item.rank === 3
-                    ? 'bg-orange-100 text-orange-700'
-                    : 'bg-gray-50 text-gray-500'}"
+              {item.deleted
+                ? 'bg-gray-100 text-gray-400'
+                : item.rank === 1
+                  ? 'bg-yellow-100 text-yellow-700'
+                  : item.rank === 2
+                    ? 'bg-gray-100 text-gray-600'
+                    : item.rank === 3
+                      ? 'bg-orange-100 text-orange-700'
+                      : 'bg-gray-50 text-gray-500'}"
             >
               {item.rank}
             </span>
-            <span class="text-sm text-gray-700" title={item.name}>{truncateName(item.name)}</span>
+            <div class="flex items-center space-x-2">
+              <span class="text-sm {item.deleted ? 'text-gray-400 line-through' : 'text-gray-700'}" title={item.name}>
+                {truncateName(item.name)}
+              </span>
+              {#if item.deleted}
+                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-red-50 text-red-600">
+                  Deleted
+                </span>
+              {/if}
+            </div>
           </div>
           <div class="flex items-center space-x-2">
-            <span class="text-sm font-medium text-gray-900">{formatViewCount(item.viewCount)}</span>
-            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <span class="text-sm font-medium {item.deleted ? 'text-gray-400' : 'text-gray-900'}">
+              {formatViewCount(item.viewCount)}
+            </span>
+            <svg class="w-4 h-4 {item.deleted ? 'text-gray-300' : 'text-gray-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
             </svg>
           </div>

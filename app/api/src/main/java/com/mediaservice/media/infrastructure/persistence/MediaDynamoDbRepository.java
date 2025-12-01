@@ -61,7 +61,8 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
         .status(MediaStatus.valueOf(getString(item, "status")))
         .width(getInt(item, "width"))
         .createdAt(getInstant(item, "createdAt"))
-        .updatedAt(getInstant(item, "updatedAt"));
+        .updatedAt(getInstant(item, "updatedAt"))
+        .deletedAt(getInstant(item, "deletedAt"));
     var outputFormat = getString(item, "outputFormat");
     if (outputFormat != null) {
       builder.outputFormat(OutputFormat.fromString(outputFormat));
@@ -84,6 +85,9 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
         s(media.getOutputFormat() != null ? media.getOutputFormat().getFormat() : OutputFormat.JPEG.getFormat()));
     item.put("createdAt", s(media.getCreatedAt() != null ? media.getCreatedAt().toString() : now.toString()));
     item.put("updatedAt", s(now.toString()));
+    if (media.getDeletedAt() != null) {
+      item.put("deletedAt", s(media.getDeletedAt().toString()));
+    }
     return item;
   }
 
@@ -127,7 +131,7 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
   }
 
   /**
-   * Get media records with pagination.
+   * Get media records with pagination, excluding soft-deleted items.
    */
   public MediaPagedResult getMediaPaginated(String cursor, Integer limit) {
     int pageSize = (limit != null && limit > 0 && limit <= 100) ? limit : DEFAULT_PAGE_SIZE;
@@ -139,8 +143,12 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
         pageSize,
         cursor,
         CURSOR_ATTRIBUTES);
-    log.info("Retrieved {} media records (hasMore={})", result.items().size(), result.hasMore());
-    return new MediaPagedResult(result.items(), result.nextCursor(), result.hasMore());
+    // Filter out soft-deleted items
+    var activeItems = result.items().stream()
+        .filter(media -> media.getStatus() != MediaStatus.DELETED)
+        .toList();
+    log.info("Retrieved {} media records (hasMore={})", activeItems.size(), result.hasMore());
+    return new MediaPagedResult(activeItems, result.nextCursor(), result.hasMore());
   }
 
   /**
@@ -218,10 +226,27 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
   }
 
   /**
-   * Delete a media record.
+   * Soft delete a media record by setting status to DELETED and deletedAt timestamp.
+   * The record is retained for analytics/audit purposes; S3 files are deleted separately.
+   */
+  public void softDelete(String mediaId) {
+    updateAttributes(
+        StorageConstants.DYNAMO_PK_PREFIX + mediaId,
+        StorageConstants.DYNAMO_SK_METADATA,
+        "SET #status = :status, deletedAt = :deletedAt, updatedAt = :updatedAt",
+        Map.of("#status", "status"),
+        Map.of(
+            ":status", s(MediaStatus.DELETED.name()),
+            ":deletedAt", s(Instant.now().toString()),
+            ":updatedAt", s(Instant.now().toString())));
+    log.info("Soft deleted media record for mediaId: {}", mediaId);
+  }
+
+  /**
+   * Hard delete a media record (for compensation/cleanup only).
    */
   public void deleteMedia(String mediaId) {
     delete(StorageConstants.DYNAMO_PK_PREFIX + mediaId, StorageConstants.DYNAMO_SK_METADATA);
-    log.info("Deleted media record for mediaId: {}", mediaId);
+    log.info("Hard deleted media record for mediaId: {}", mediaId);
   }
 }

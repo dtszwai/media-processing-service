@@ -146,7 +146,7 @@ class EndToEndTest extends BaseIntegrationTest {
         .contains(mediaId)
         .contains("lifecycle-test.jpg");
 
-    // DELETE
+    // DELETE (soft delete)
     var deleteResponse = restTemplate.exchange(
         baseUrl() + "/" + mediaId,
         HttpMethod.DELETE,
@@ -154,9 +154,11 @@ class EndToEndTest extends BaseIntegrationTest {
         String.class);
     assertThat(deleteResponse.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
 
-    // Verify status changed to DELETING
+    // Verify status changed to DELETED (soft delete preserves record)
     var statusAfterDelete = dynamoDbService.getMedia(mediaId);
-    assertThat(statusAfterDelete.get().getStatus()).isEqualTo(MediaStatus.DELETING);
+    assertThat(statusAfterDelete).isPresent();
+    assertThat(statusAfterDelete.get().getStatus()).isEqualTo(MediaStatus.DELETED);
+    assertThat(statusAfterDelete.get().getDeletedAt()).isNotNull();
   }
 
   @Test

@@ -228,13 +228,13 @@ class MediaApplicationServiceTest {
   @DisplayName("deleteMedia")
   class DeleteMedia {
     @Test
-    @DisplayName("should submit delete request when media exists")
-    void shouldSubmitDeleteWhenExists() {
+    @DisplayName("should soft delete when media exists")
+    void shouldSoftDeleteWhenExists() {
       var media = createMedia(MediaStatus.COMPLETE);
       when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
       var result = mediaService.deleteMedia("media-123");
       assertThat(result).isPresent();
-      verify(dynamoDbService).updateStatus("media-123", MediaStatus.DELETING);
+      verify(dynamoDbService).softDelete("media-123");
       verify(snsService).publishDeleteMediaEvent("media-123");
     }
 
@@ -244,6 +244,17 @@ class MediaApplicationServiceTest {
       when(dynamoDbService.getMedia("nonexistent")).thenReturn(Optional.empty());
       var result = mediaService.deleteMedia("nonexistent");
       assertThat(result).isEmpty();
+      verify(snsService, never()).publishDeleteMediaEvent(anyString());
+    }
+
+    @Test
+    @DisplayName("should return empty when media already deleted")
+    void shouldReturnEmptyWhenAlreadyDeleted() {
+      var media = createMedia(MediaStatus.DELETED);
+      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
+      var result = mediaService.deleteMedia("media-123");
+      assertThat(result).isEmpty();
+      verify(dynamoDbService, never()).softDelete(anyString());
       verify(snsService, never()).publishDeleteMediaEvent(anyString());
     }
   }

@@ -98,6 +98,9 @@ public class DynamoDbService {
     if (attrs.containsKey("outputFormat")) {
       builder.outputFormat(OutputFormat.fromString(attrs.get("outputFormat").s()));
     }
+    if (attrs.containsKey("deletedAt")) {
+      builder.deletedAt(Instant.parse(attrs.get("deletedAt").s()));
+    }
     return Optional.of(builder.build());
   }
 

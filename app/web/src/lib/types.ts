@@ -1,4 +1,4 @@
-export type MediaStatus = "PENDING_UPLOAD" | "PENDING" | "PROCESSING" | "COMPLETE" | "ERROR" | "DELETING";
+export type MediaStatus = "PENDING_UPLOAD" | "PENDING" | "PROCESSING" | "COMPLETE" | "ERROR" | "DELETED";
 
 export type OutputFormat = "jpeg" | "png" | "webp";
 
@@ -12,6 +12,7 @@ export interface Media {
   outputFormat?: OutputFormat;
   createdAt?: string;
   updatedAt?: string;
+  deletedAt?: string;
 }
 
 export interface InitUploadRequest {
@@ -131,6 +132,8 @@ export interface EntityViewCount {
   name: string;
   viewCount: number;
   rank: number;
+  deleted?: boolean;
+  deletedAt?: string;
 }
 
 export interface ViewStats {

@@ -208,13 +208,18 @@ public class MediaApplicationService {
         });
   }
 
+  /**
+   * Soft delete media: marks as DELETED, publishes event for S3 cleanup.
+   * The DynamoDB record is retained for analytics/audit purposes.
+   */
   public Optional<Media> deleteMedia(String mediaId) {
     return mediaRepository.getMedia(mediaId)
+        .filter(media -> media.getStatus() != MediaStatus.DELETED)
         .map(media -> {
-          mediaRepository.updateStatus(mediaId, MediaStatus.DELETING);
+          mediaRepository.softDelete(mediaId);
           eventPublisher.publishDeleteMediaEvent(mediaId);
           cacheInvalidationService.invalidateMedia(mediaId);
-          log.info("Delete request submitted for mediaId: {}", mediaId);
+          log.info("Soft delete completed for mediaId: {}", mediaId);
           return media;
         });
   }

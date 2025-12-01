@@ -74,8 +74,8 @@ export function createMediaStatusQuery(mediaId: string, enabled = true) {
     enabled,
     refetchInterval: (query: Query<StatusResponse>) => {
       const status = query.state.data?.status;
-      // Keep polling while processing
-      if (status === "PENDING" || status === "PROCESSING" || status === "DELETING") {
+      // Keep polling while processing (DELETED is terminal, no need to poll)
+      if (status === "PENDING" || status === "PROCESSING") {
         return 2000;
       }
       return false;
@@ -166,6 +166,8 @@ export function createDeleteMutation() {
     },
     onSuccess: () => {
       defaultQueryClient.invalidateQueries({ queryKey: queryKeys.media.all });
+      // Also invalidate analytics since deleted status affects analytics display
+      defaultQueryClient.invalidateQueries({ queryKey: queryKeys.analytics.all });
     },
   }));
 }

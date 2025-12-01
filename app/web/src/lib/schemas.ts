@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 // Enums
-export const MediaStatusSchema = z.enum(["PENDING_UPLOAD", "PENDING", "PROCESSING", "COMPLETE", "ERROR", "DELETING"]);
+export const MediaStatusSchema = z.enum(["PENDING_UPLOAD", "PENDING", "PROCESSING", "COMPLETE", "ERROR", "DELETED"]);
 
 export const OutputFormatSchema = z.enum(["jpeg", "png", "webp"]);
 
@@ -20,6 +20,7 @@ export const MediaSchema = z.object({
   outputFormat: OutputFormatSchema.optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
+  deletedAt: z.string().optional(),
 });
 
 // Upload
@@ -102,6 +103,8 @@ export const EntityViewCountSchema = z.object({
   name: z.string(),
   viewCount: z.number(),
   rank: z.number(),
+  deleted: z.boolean().optional().default(false),
+  deletedAt: z.string().optional(),
 });
 
 export const ViewStatsSchema = z.object({

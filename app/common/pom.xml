@@ -6,7 +6,7 @@
 
     <groupId>com.mediaservice</groupId>
     <artifactId>media-service-common</artifactId>
-    <version>1.2.1</version>
+    <version>1.2.2</version>
     <packaging>jar</packaging>
 
     <name>Media Service Common</name>

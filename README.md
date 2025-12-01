@@ -15,6 +15,7 @@ This service handles image uploads asynchronously using an event-driven architec
 - **SNS/SQS buffering** decouples high-throughput API ingestion from CPU-intensive image transformation
 - **Async processing** allows the API to respond immediately while processing happens in background
 - **Status polling** enables clients to track processing state without blocking
+- **Soft delete** preserves analytics data when media is deleted (see [ADR-0002](docs/adr/0002-soft-delete-pattern.md))
 
 ## Tech Stack
 

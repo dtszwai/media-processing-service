@@ -6,5 +6,6 @@ public enum MediaStatus {
   PROCESSING,
   COMPLETE,
   ERROR,
-  DELETING
+  /** Soft deleted - S3 files removed, record retained for analytics/audit */
+  DELETED
 }

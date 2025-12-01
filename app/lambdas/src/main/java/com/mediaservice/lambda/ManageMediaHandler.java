@@ -134,30 +134,32 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
     }
   }
 
+  /**
+   * Handle soft delete: S3 files are deleted, DynamoDB record is preserved.
+   * The API has already soft-deleted the record (status=DELETED, deletedAt set).
+   */
   private void handleDelete(String mediaId, Span span) {
-    logger.info("Deleting media: {}", mediaId);
+    logger.info("Cleaning up S3 files for soft-deleted media: {}", mediaId);
     try {
-      var mediaOpt = dynamoDbService.deleteMedia(mediaId);
+      var mediaOpt = dynamoDbService.getMedia(mediaId);
       if (mediaOpt.isEmpty()) {
-        logger.info("Media {} not found, nothing to delete", mediaId);
+        logger.info("Media {} not found, nothing to clean up", mediaId);
         return;
       }
       var media = mediaOpt.get();
       var outputFormat = media.getOutputFormat() != null ? media.getOutputFormat() : OutputFormat.JPEG;
 
-      // Always delete original file
+      // Delete original file from S3
       s3Service.deleteOriginalFile(mediaId, media.getName());
 
-      // Delete processed file if processing was completed (not still in progress or error state)
-      if (media.getStatus() != MediaStatus.PROCESSING && media.getStatus() != MediaStatus.ERROR) {
-        s3Service.deleteProcessedFile(mediaId, outputFormat);
-      }
+      // Always try to delete processed file (S3 delete is idempotent - no error if file doesn't exist)
+      s3Service.deleteProcessedFile(mediaId, outputFormat);
 
-      logger.info("Deleted media: {}", mediaId);
+      logger.info("S3 cleanup completed for media: {} (DynamoDB record preserved for analytics)", mediaId);
       span.setStatus(StatusCode.OK);
       deleteSuccessCounter.add(1);
     } catch (Exception e) {
-      logger.error("Failed to delete media {}: {}", mediaId, e.getMessage(), e);
+      logger.error("Failed to clean up S3 files for media {}: {}", mediaId, e.getMessage(), e);
       span.setStatus(StatusCode.ERROR, e.getMessage());
       deleteFailureCounter.add(1);
       throw e;

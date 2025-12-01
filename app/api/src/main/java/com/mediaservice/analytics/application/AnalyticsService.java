@@ -1,5 +1,6 @@
 package com.mediaservice.analytics.application;
 
+import com.mediaservice.common.model.MediaStatus;
 import com.mediaservice.common.model.OutputFormat;
 import com.mediaservice.shared.config.properties.AnalyticsProperties;
 import com.mediaservice.analytics.api.dto.*;
@@ -277,14 +278,16 @@ public class AnalyticsService {
         return Collections.emptyList();
       }
 
-      // Build result with media names
+      // Build result with media names and deleted status
       var result = new ArrayList<EntityViewCount>();
       int rank = 1;
       for (var entry : viewCounts.entrySet()) {
-        var name = dynamoDbService.getMedia(entry.getKey())
-            .map(media -> media.getName())
-            .orElse("Unknown");
-        result.add(EntityViewCount.forMedia(entry.getKey(), name, entry.getValue(), rank++));
+        var mediaOpt = dynamoDbService.getMedia(entry.getKey());
+        var name = mediaOpt.map(media -> media.getName()).orElse("Unknown");
+        var deleted = mediaOpt.map(media -> media.getStatus() == MediaStatus.DELETED).orElse(false);
+        var deletedAt = mediaOpt.filter(media -> media.getStatus() == MediaStatus.DELETED)
+            .map(media -> media.getDeletedAt()).orElse(null);
+        result.add(EntityViewCount.forMedia(entry.getKey(), name, entry.getValue(), rank++, deleted, deletedAt));
       }
       return result;
     } catch (Exception e) {

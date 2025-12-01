@@ -124,6 +124,9 @@ export async function getMediaStatus(mediaId: string): Promise<StatusResponse> {
   if (response.status === 404) {
     throw new Error("NOT_FOUND");
   }
+  if (response.status === 410) {
+    throw new Error("DELETED");
+  }
   return handleResponse<StatusResponse>(response);
 }
 
@@ -259,7 +262,7 @@ export async function pollForStatus(
         throw new Error("Processing failed");
       }
     } catch (error) {
-      if (error instanceof Error && error.message === "NOT_FOUND") {
+      if (error instanceof Error && (error.message === "NOT_FOUND" || error.message === "DELETED")) {
         return "DELETED";
       }
       throw error;

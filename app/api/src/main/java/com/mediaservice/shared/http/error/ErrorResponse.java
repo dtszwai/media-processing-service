@@ -19,4 +19,6 @@ public class ErrorResponse {
   private String requestId;
   @Builder.Default
   private Instant timestamp = Instant.now();
+  /** For 410 Gone responses - when the resource was deleted */
+  private Instant deletedAt;
 }

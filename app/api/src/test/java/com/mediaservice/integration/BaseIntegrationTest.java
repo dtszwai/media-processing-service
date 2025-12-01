@@ -1,5 +1,6 @@
 package com.mediaservice.integration;
 
+import com.mediaservice.shared.cache.L1CacheManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -31,6 +32,9 @@ public abstract class BaseIntegrationTest {
 
   @Autowired
   protected StringRedisTemplate redisTemplate;
+
+  @Autowired
+  protected L1CacheManager l1CacheManager;
 
   @DynamicPropertySource
   static void configureProperties(DynamicPropertyRegistry registry) {
@@ -64,6 +68,7 @@ public abstract class BaseIntegrationTest {
     cleanDynamoDbTable();
     cleanS3Bucket();
     cleanRedis();
+    cleanL1Cache();
   }
 
   private void cleanDynamoDbTable() {
@@ -111,6 +116,14 @@ public abstract class BaseIntegrationTest {
       }
     } catch (Exception e) {
       // Redis might be empty or not yet available
+    }
+  }
+
+  private void cleanL1Cache() {
+    try {
+      l1CacheManager.invalidateAllEntries();
+    } catch (Exception e) {
+      // L1 cache might not be initialized yet
     }
   }
 

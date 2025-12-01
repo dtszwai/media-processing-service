@@ -176,9 +176,8 @@ class MediaControllerTest {
     @DisplayName("should redirect when media is complete")
     void shouldRedirectWhenComplete() throws Exception {
       var media = createMedia();
-      when(mediaService.mediaExists("media-123")).thenReturn(true);
-      when(mediaService.isMediaProcessing("media-123")).thenReturn(false);
       when(mediaService.getMedia("media-123")).thenReturn(Optional.of(media));
+      when(mediaService.isMediaProcessing("media-123")).thenReturn(false);
       when(mediaService.getDownloadUrl("media-123")).thenReturn(Optional.of("https://s3.example.com/file"));
 
       mockMvc.perform(get("/v1/media/{mediaId}/download", "media-123"))
@@ -189,10 +188,11 @@ class MediaControllerTest {
     @Test
     @DisplayName("should return 202 when still processing")
     void shouldReturn202WhenProcessing() throws Exception {
+      var media = createMedia(MediaStatus.PROCESSING);
       var messageResponse = MediaResponse.builder()
           .message("Media processing in progress.").build();
 
-      when(mediaService.mediaExists("media-123")).thenReturn(true);
+      when(mediaService.getMedia("media-123")).thenReturn(Optional.of(media));
       when(mediaService.isMediaProcessing("media-123")).thenReturn(true);
       when(mediaMapper.toMessageResponse(any())).thenReturn(messageResponse);
 
@@ -205,10 +205,21 @@ class MediaControllerTest {
     @Test
     @DisplayName("should return 404 when not found")
     void shouldReturn404WhenNotFound() throws Exception {
-      when(mediaService.mediaExists("nonexistent")).thenReturn(false);
+      when(mediaService.getMedia("nonexistent")).thenReturn(Optional.empty());
 
       mockMvc.perform(get("/v1/media/{mediaId}/download", "nonexistent"))
           .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("should return 410 when media is deleted")
+    void shouldReturn410WhenDeleted() throws Exception {
+      var media = createMedia(MediaStatus.DELETED);
+      when(mediaService.getMedia("media-123")).thenReturn(Optional.of(media));
+
+      mockMvc.perform(get("/v1/media/{mediaId}/download", "media-123"))
+          .andExpect(status().isGone())
+          .andExpect(jsonPath("$.message").value("Media has been deleted"));
     }
   }
 
@@ -454,15 +465,20 @@ class MediaControllerTest {
   }
 
   private Media createMedia() {
+    return createMedia(MediaStatus.COMPLETE);
+  }
+
+  private Media createMedia(MediaStatus status) {
     return Media.builder()
         .mediaId("media-123")
         .name("test.jpg")
         .size(1024L)
         .mimetype("image/jpeg")
-        .status(MediaStatus.COMPLETE)
+        .status(status)
         .width(500)
         .createdAt(Instant.now())
         .updatedAt(Instant.now())
+        .deletedAt(status == MediaStatus.DELETED ? Instant.now() : null)
         .build();
   }
 }

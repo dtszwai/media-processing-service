@@ -9,9 +9,11 @@ import com.mediaservice.media.api.dto.MediaResponse;
 import com.mediaservice.media.api.dto.ResizeRequest;
 import com.mediaservice.media.api.dto.StatusResponse;
 import com.mediaservice.shared.http.error.MediaConflictException;
+import com.mediaservice.shared.http.error.MediaGoneException;
 import com.mediaservice.media.application.mapper.MediaMapper;
 import com.mediaservice.media.application.MediaApplicationService;
 import com.mediaservice.analytics.application.AnalyticsService;
+import com.mediaservice.common.model.MediaStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -115,26 +117,38 @@ public class MediaController {
   @Operation(summary = "Get media by ID")
   @ApiResponses({
       @ApiResponse(responseCode = "200", description = "Media found"),
-      @ApiResponse(responseCode = "404", description = "Media not found")
+      @ApiResponse(responseCode = "404", description = "Media not found"),
+      @ApiResponse(responseCode = "410", description = "Media has been deleted")
   })
   @GetMapping("/{mediaId}")
   public ResponseEntity<MediaResponse> getMedia(@PathVariable String mediaId) {
     log.info("Get media request: mediaId={}", mediaId);
     return mediaService.getMedia(mediaId)
-        .<ResponseEntity<MediaResponse>>map(media -> ResponseEntity.ok(mediaMapper.toResponse(media)))
+        .<ResponseEntity<MediaResponse>>map(media -> {
+          if (media.getStatus() == MediaStatus.DELETED) {
+            throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
+          }
+          return ResponseEntity.ok(mediaMapper.toResponse(media));
+        })
         .orElse(ResponseEntity.notFound().build());
   }
 
   @Operation(summary = "Get media processing status")
   @ApiResponses({
       @ApiResponse(responseCode = "200", description = "Status retrieved"),
-      @ApiResponse(responseCode = "404", description = "Media not found")
+      @ApiResponse(responseCode = "404", description = "Media not found"),
+      @ApiResponse(responseCode = "410", description = "Media has been deleted")
   })
   @GetMapping("/{mediaId}/status")
   public ResponseEntity<StatusResponse> getMediaStatus(@PathVariable String mediaId) {
     log.info("Status request: mediaId={}", mediaId);
     return mediaService.getMediaStatus(mediaId)
-        .<ResponseEntity<StatusResponse>>map(status -> ResponseEntity.ok(mediaMapper.toStatusResponse(status)))
+        .<ResponseEntity<StatusResponse>>map(status -> {
+          if (status == MediaStatus.DELETED) {
+            throw new MediaGoneException("Media has been deleted");
+          }
+          return ResponseEntity.ok(mediaMapper.toStatusResponse(status));
+        })
         .orElse(ResponseEntity.notFound().build());
   }
 
@@ -142,13 +156,19 @@ public class MediaController {
   @ApiResponses({
       @ApiResponse(responseCode = "302", description = "Redirect to download URL"),
       @ApiResponse(responseCode = "202", description = "Media still processing", content = @Content(schema = @Schema(implementation = MediaResponse.class))),
-      @ApiResponse(responseCode = "404", description = "Media not found")
+      @ApiResponse(responseCode = "404", description = "Media not found"),
+      @ApiResponse(responseCode = "410", description = "Media has been deleted")
   })
   @GetMapping("/{mediaId}/download")
   public ResponseEntity<MediaResponse> downloadMedia(@PathVariable String mediaId, HttpServletRequest request) {
     log.info("Download request: mediaId={}", mediaId);
-    if (!mediaService.mediaExists(mediaId)) {
+    var mediaOpt = mediaService.getMedia(mediaId);
+    if (mediaOpt.isEmpty()) {
       return ResponseEntity.notFound().build();
+    }
+    var media = mediaOpt.get();
+    if (media.getStatus() == MediaStatus.DELETED) {
+      throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
     }
     if (mediaService.isMediaProcessing(mediaId)) {
       var headers = new HttpHeaders();
@@ -159,11 +179,6 @@ public class MediaController {
           .headers(headers)
           .body(mediaMapper.toMessageResponse("Media processing in progress."));
     }
-    var mediaOpt = mediaService.getMedia(mediaId);
-    if (mediaOpt.isEmpty()) {
-      return ResponseEntity.notFound().build();
-    }
-    var media = mediaOpt.get();
     return mediaService.getDownloadUrl(mediaId)
         .<ResponseEntity<MediaResponse>>map(url -> {
           analyticsService.recordView(mediaId);

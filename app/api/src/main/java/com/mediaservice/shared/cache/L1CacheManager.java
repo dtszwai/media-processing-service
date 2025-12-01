@@ -205,4 +205,17 @@ public class L1CacheManager {
   public long getPresignedUrlCacheSize() {
     return presignedUrlCache.estimatedSize();
   }
+
+  /**
+   * Invalidate all entries in all L1 caches.
+   *
+   * <p>
+   * This is primarily used for testing to ensure clean state between tests.
+   * In production, prefer targeted invalidation via {@link #invalidateAll(String)}.
+   */
+  public void invalidateAllEntries() {
+    mediaCache.invalidateAll();
+    presignedUrlCache.invalidateAll();
+    log.debug("L1 all caches cleared");
+  }
 }

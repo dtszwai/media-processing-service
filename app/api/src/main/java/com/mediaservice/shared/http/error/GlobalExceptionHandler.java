@@ -111,6 +111,18 @@ public class GlobalExceptionHandler {
             .build());
   }
 
+  @ExceptionHandler(MediaGoneException.class)
+  public ResponseEntity<ErrorResponse> handleMediaGone(MediaGoneException e) {
+    log.info("Media resource gone: {}", e.getMessage());
+    return ResponseEntity.status(HttpStatus.GONE)
+        .body(ErrorResponse.builder()
+            .message(e.getMessage())
+            .status(410)
+            .requestId(getRequestId())
+            .deletedAt(e.getDeletedAt())
+            .build());
+  }
+
   @ExceptionHandler(InvalidImageException.class)
   public ResponseEntity<ErrorResponse> handleInvalidImage(InvalidImageException e) {
     log.warn("Invalid image upload: {}", e.getMessage());
