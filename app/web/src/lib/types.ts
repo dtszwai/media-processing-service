@@ -123,19 +123,24 @@ export interface ServiceHealth {
 // Analytics Types
 export type Period = "TODAY" | "THIS_WEEK" | "THIS_MONTH" | "ALL_TIME";
 
-export interface MediaViewCount {
-  mediaId: string;
+export type EntityType = "MEDIA" | "THREAD" | "COMMENT" | "USER";
+
+export interface EntityViewCount {
+  entityType: EntityType;
+  entityId: string;
   name: string;
   viewCount: number;
   rank: number;
 }
 
 export interface ViewStats {
-  mediaId: string;
+  entityType: EntityType;
+  entityId: string;
   total: number;
   today: number;
   thisWeek: number;
   thisMonth: number;
+  thisYear: number;
 }
 
 export interface FormatUsageStats {
@@ -156,7 +161,7 @@ export interface AnalyticsSummary {
   totalDownloads: number;
   viewsToday: number;
   downloadsToday: number;
-  topMediaToday: MediaViewCount[];
-  topMediaAllTime: MediaViewCount[];
+  topMediaToday: EntityViewCount[];
+  topMediaAllTime: EntityViewCount[];
   formatUsage: Record<string, number>;
 }

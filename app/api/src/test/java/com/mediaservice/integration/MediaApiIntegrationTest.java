@@ -3,7 +3,7 @@ package com.mediaservice.integration;
 import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaStatus;
 import com.mediaservice.common.model.OutputFormat;
-import com.mediaservice.service.DynamoDbService;
+import com.mediaservice.media.infrastructure.persistence.MediaDynamoDbRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
@@ -32,7 +32,7 @@ class MediaApiIntegrationTest extends BaseIntegrationTest {
   private TestRestTemplate restTemplate;
 
   @Autowired
-  private DynamoDbService dynamoDbService;
+  private MediaDynamoDbRepository dynamoDbService;
 
   private String baseUrl() {
     return "http://localhost:" + port + "/v1/media";

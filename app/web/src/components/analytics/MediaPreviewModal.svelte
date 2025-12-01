@@ -2,17 +2,17 @@
   import { getDownloadUrl } from "../../lib/api";
   import { createMediaViewsQuery } from "../../lib/queries";
   import { currentMediaId, currentView } from "../../lib/stores";
-  import type { MediaViewCount } from "../../lib/types";
+  import type { EntityViewCount } from "../../lib/types";
 
   interface Props {
-    media: MediaViewCount | null;
+    media: EntityViewCount | null;
     onclose: () => void;
   }
 
   let { media, onclose }: Props = $props();
 
   // Query for detailed view stats when modal opens
-  const viewsQuery = $derived(media ? createMediaViewsQuery(media.mediaId) : null);
+  const viewsQuery = $derived(media ? createMediaViewsQuery(media.entityId) : null);
 
   function handleBackdropClick(e: MouseEvent) {
     if (e.target === e.currentTarget) {
@@ -28,7 +28,7 @@
 
   function handleViewDetails() {
     if (media) {
-      currentMediaId.set(media.mediaId);
+      currentMediaId.set(media.entityId);
       currentView.set("upload");
       onclose();
     }
@@ -36,7 +36,7 @@
 
   function handleDownload() {
     if (media) {
-      window.open(getDownloadUrl(media.mediaId), "_blank");
+      window.open(getDownloadUrl(media.entityId), "_blank");
     }
   }
 
@@ -81,7 +81,7 @@
         <!-- Image Preview -->
         <div class="bg-gray-100 rounded-lg overflow-hidden mb-6">
           <img
-            src="{getDownloadUrl(media.mediaId)}?t={Date.now()}"
+            src="{getDownloadUrl(media.entityId)}?t={Date.now()}"
             alt={media.name}
             class="w-full h-auto max-h-80 object-contain"
           />

@@ -4,11 +4,11 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaStatus;
 import com.mediaservice.common.model.OutputFormat;
-import com.mediaservice.service.DynamoDbService;
-import com.mediaservice.service.HotkeyDetectionService;
-import com.mediaservice.service.SingleFlightService;
-import com.mediaservice.service.cache.CacheKeyProvider;
-import com.mediaservice.service.cache.MultiLevelCacheOrchestrator;
+import com.mediaservice.media.infrastructure.persistence.MediaDynamoDbRepository;
+import com.mediaservice.shared.cache.HotkeyDetectionService;
+import com.mediaservice.shared.cache.SingleFlightService;
+import com.mediaservice.shared.cache.CacheKeyProvider;
+import com.mediaservice.shared.cache.MultiLevelCacheOrchestrator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -44,7 +44,7 @@ class MultiLevelCacheIntegrationTest extends BaseIntegrationTest {
   private MultiLevelCacheOrchestrator cacheOrchestrator;
 
   @Autowired
-  private DynamoDbService dynamoDbService;
+  private MediaDynamoDbRepository dynamoDbService;
 
   @Autowired
   private HotkeyDetectionService hotkeyDetectionService;

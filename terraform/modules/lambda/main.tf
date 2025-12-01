@@ -111,7 +111,7 @@ locals {
   }
   combined_hash_input   = join("", concat(values(local.java_file_hashes), [local.pom_hash]))
   source_directory_hash = sha256(local.combined_hash_input)
-  lambda_jar_file       = "${var.lambdas_src_path}/target/media-service-lambdas-1.1.0.jar"
+  lambda_jar_file       = "${var.lambdas_src_path}/target/media-service-lambdas-1.2.0.jar"
 }
 
 resource "null_resource" "build_lambda_jar" {

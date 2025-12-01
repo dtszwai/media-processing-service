@@ -2,7 +2,7 @@ package com.mediaservice.integration;
 
 import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaStatus;
-import com.mediaservice.service.DynamoDbService;
+import com.mediaservice.media.infrastructure.persistence.MediaDynamoDbRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -17,10 +17,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Tag("integration")
-class DynamoDbServiceIntegrationTest extends BaseIntegrationTest {
+class MediaDynamoDbRepositoryIntegrationTest extends BaseIntegrationTest {
 
   @Autowired
-  private DynamoDbService dynamoDbService;
+  private MediaDynamoDbRepository dynamoDbService;
 
   @Nested
   @DisplayName("CRUD Operations")

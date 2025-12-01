@@ -33,7 +33,7 @@ provider "aws" {
 }
 
 locals {
-  lambda_jar_path = "${path.module}/../../app/lambdas/target/media-service-lambdas-1.1.0.jar"
+  lambda_jar_path = "${path.module}/../../app/lambdas/target/media-service-lambdas-1.2.0.jar"
 }
 
 # =============================================================================

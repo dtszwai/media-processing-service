@@ -24,7 +24,7 @@ import {
   StatusResponseSchema,
   VersionInfoSchema,
   AnalyticsSummarySchema,
-  MediaViewCountSchema,
+  EntityViewCountSchema,
   ViewStatsSchema,
   FormatUsageStatsSchema,
   DownloadStatsSchema,
@@ -38,7 +38,7 @@ import type {
   StatusResponse,
   VersionInfo,
   AnalyticsSummary,
-  MediaViewCount,
+  EntityViewCount,
   ViewStats,
   FormatUsageStats,
   DownloadStats,
@@ -212,9 +212,9 @@ export function createAnalyticsSummaryQuery(enabled = true) {
 export function createTopMediaQuery(period: Period = "TODAY", limit = 10) {
   return createQuery(() => ({
     queryKey: queryKeys.analytics.topMedia(period, limit),
-    queryFn: async (): Promise<MediaViewCount[]> => {
+    queryFn: async (): Promise<EntityViewCount[]> => {
       const data = await getTopMedia(period, limit);
-      return z.array(MediaViewCountSchema).parse(data);
+      return z.array(EntityViewCountSchema).parse(data);
     },
     staleTime: 30 * 1000,
   }));

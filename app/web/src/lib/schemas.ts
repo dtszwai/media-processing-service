@@ -94,19 +94,24 @@ export const HealthResponseSchema = z.object({
 });
 
 // Analytics
-export const MediaViewCountSchema = z.object({
-  mediaId: z.string(),
+export const EntityTypeSchema = z.enum(["MEDIA", "THREAD", "COMMENT", "USER"]);
+
+export const EntityViewCountSchema = z.object({
+  entityType: EntityTypeSchema,
+  entityId: z.string(),
   name: z.string(),
   viewCount: z.number(),
   rank: z.number(),
 });
 
 export const ViewStatsSchema = z.object({
-  mediaId: z.string(),
+  entityType: EntityTypeSchema,
+  entityId: z.string(),
   total: z.number(),
   today: z.number(),
   thisWeek: z.number(),
   thisMonth: z.number(),
+  thisYear: z.number(),
 });
 
 export const FormatUsageStatsSchema = z.object({
@@ -127,8 +132,8 @@ export const AnalyticsSummarySchema = z.object({
   totalDownloads: z.number(),
   viewsToday: z.number(),
   downloadsToday: z.number(),
-  topMediaToday: z.array(MediaViewCountSchema),
-  topMediaAllTime: z.array(MediaViewCountSchema),
+  topMediaToday: z.array(EntityViewCountSchema),
+  topMediaAllTime: z.array(EntityViewCountSchema),
   formatUsage: z.record(z.string(), z.number()),
 });
 
@@ -148,7 +153,8 @@ export type VersionInfo = z.infer<typeof VersionInfoSchema>;
 export type ComponentHealth = z.infer<typeof ComponentHealthSchema>;
 export type HealthResponse = z.infer<typeof HealthResponseSchema>;
 export type Period = z.infer<typeof PeriodSchema>;
-export type MediaViewCount = z.infer<typeof MediaViewCountSchema>;
+export type EntityType = z.infer<typeof EntityTypeSchema>;
+export type EntityViewCount = z.infer<typeof EntityViewCountSchema>;
 export type ViewStats = z.infer<typeof ViewStatsSchema>;
 export type FormatUsageStats = z.infer<typeof FormatUsageStatsSchema>;
 export type DownloadStats = z.infer<typeof DownloadStatsSchema>;

@@ -1,10 +1,10 @@
 <script lang="ts">
-  import type { Period, MediaViewCount } from "../../lib/types";
+  import type { Period, EntityViewCount } from "../../lib/types";
   import { createQuery } from "@tanstack/svelte-query";
   import { createAnalyticsSummaryQuery } from "../../lib/queries";
   import { queryKeys } from "../../lib/query";
   import { getTopMedia } from "../../lib/api";
-  import { MediaViewCountSchema } from "../../lib/schemas";
+  import { EntityViewCountSchema } from "../../lib/schemas";
   import { z } from "zod";
   import StatCard from "./StatCard.svelte";
   import PeriodSelector from "./PeriodSelector.svelte";
@@ -13,16 +13,16 @@
   import MediaPreviewModal from "./MediaPreviewModal.svelte";
 
   let selectedPeriod = $state<Period>("TODAY");
-  let selectedMedia = $state<MediaViewCount | null>(null);
+  let selectedMedia = $state<EntityViewCount | null>(null);
 
   const summaryQuery = createAnalyticsSummaryQuery();
 
   // Reactive query that updates when selectedPeriod changes
   const topMediaQuery = createQuery(() => ({
     queryKey: queryKeys.analytics.topMedia(selectedPeriod, 10),
-    queryFn: async (): Promise<MediaViewCount[]> => {
+    queryFn: async (): Promise<EntityViewCount[]> => {
       const data = await getTopMedia(selectedPeriod, 10);
-      return z.array(MediaViewCountSchema).parse(data);
+      return z.array(EntityViewCountSchema).parse(data);
     },
     staleTime: 30 * 1000,
   }));
@@ -36,7 +36,7 @@
     topMediaQuery.refetch();
   }
 
-  function handleMediaClick(media: MediaViewCount) {
+  function handleMediaClick(media: EntityViewCount) {
     selectedMedia = media;
   }
 

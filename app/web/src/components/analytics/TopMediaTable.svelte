@@ -1,11 +1,11 @@
 <script lang="ts">
-  import type { MediaViewCount } from "../../lib/types";
+  import type { EntityViewCount } from "../../lib/types";
 
   interface Props {
     title: string;
-    data: MediaViewCount[];
+    data: EntityViewCount[];
     loading?: boolean;
-    onitemclick?: (item: MediaViewCount) => void;
+    onitemclick?: (item: EntityViewCount) => void;
   }
 
   let { title, data, loading = false, onitemclick }: Props = $props();
@@ -21,11 +21,11 @@
     return name.substring(0, maxLength - 3) + "...";
   }
 
-  function handleItemClick(item: MediaViewCount) {
+  function handleItemClick(item: EntityViewCount) {
     onitemclick?.(item);
   }
 
-  function handleKeydown(e: KeyboardEvent, item: MediaViewCount) {
+  function handleKeydown(e: KeyboardEvent, item: EntityViewCount) {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       handleItemClick(item);

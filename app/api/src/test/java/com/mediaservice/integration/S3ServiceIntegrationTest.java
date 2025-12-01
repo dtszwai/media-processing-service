@@ -1,7 +1,7 @@
 package com.mediaservice.integration;
 
 import com.mediaservice.common.model.OutputFormat;
-import com.mediaservice.service.S3Service;
+import com.mediaservice.media.infrastructure.storage.S3StorageService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
@@ -16,10 +16,10 @@ import java.time.Duration;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Tag("integration")
-class S3ServiceIntegrationTest extends BaseIntegrationTest {
+class S3StorageServiceIntegrationTest extends BaseIntegrationTest {
 
   @Autowired
-  private S3Service s3Service;
+  private S3StorageService s3Service;
 
   @Nested
   @DisplayName("File Upload")

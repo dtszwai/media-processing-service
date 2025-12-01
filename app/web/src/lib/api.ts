@@ -12,7 +12,7 @@ import type {
   PagedResponse,
   VersionInfo,
   Period,
-  MediaViewCount,
+  EntityViewCount,
   ViewStats,
   FormatUsageStats,
   DownloadStats,
@@ -270,13 +270,13 @@ export async function pollForStatus(
 // Analytics API functions
 const ANALYTICS_BASE = "/api/analytics";
 
-export async function getTopMedia(period: Period = "TODAY", limit = 10): Promise<MediaViewCount[]> {
+export async function getTopMedia(period: Period = "TODAY", limit = 10): Promise<EntityViewCount[]> {
   const params = new URLSearchParams();
   params.set("period", period);
   params.set("limit", limit.toString());
 
   const response = await fetch(`${ANALYTICS_BASE}/top-media?${params}`);
-  return handleResponse<MediaViewCount[]>(response);
+  return handleResponse<EntityViewCount[]>(response);
 }
 
 export async function getMediaViews(mediaId: string): Promise<ViewStats> {
