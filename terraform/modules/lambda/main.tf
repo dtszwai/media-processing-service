@@ -111,10 +111,13 @@ locals {
   }
   combined_hash_input   = join("", concat(values(local.java_file_hashes), [local.pom_hash]))
   source_directory_hash = sha256(local.combined_hash_input)
-  lambda_jar_file       = "${var.lambdas_src_path}/target/media-service-lambdas-1.2.0.jar"
+  lambda_jar_file       = "${var.lambdas_src_path}/target/media-service-lambdas.jar"
 }
 
 resource "null_resource" "build_lambda_jar" {
+  # Skip rebuild for LocalStack - JAR built via Makefile
+  count = var.is_local ? 0 : 1
+
   provisioner "local-exec" {
     command     = "mvn clean package -DskipTests -q"
     working_dir = var.lambdas_src_path
@@ -129,6 +132,7 @@ resource "null_resource" "build_lambda_jar" {
 # Manage Media Lambda #
 ########################
 resource "aws_vpc_security_group_egress_rule" "allow_lambda_outbound_traffic" {
+  count             = var.is_local ? 0 : 1
   security_group_id = var.lambda_sg
   description       = "Allow all outbound traffic"
   cidr_ipv4         = "0.0.0.0/0"
@@ -152,11 +156,12 @@ resource "aws_iam_role" "lambda_iam_role" {
 }
 
 resource "aws_lambda_function" "manage_media" {
-  depends_on = [null_resource.build_lambda_jar]
-
-  vpc_config {
-    security_group_ids = [var.lambda_sg]
-    subnet_ids         = var.private_subnet_ids
+  dynamic "vpc_config" {
+    for_each = var.is_local ? [] : [1]
+    content {
+      security_group_ids = [var.lambda_sg]
+      subnet_ids         = var.private_subnet_ids
+    }
   }
 
   filename         = local.lambda_jar_file
@@ -168,23 +173,29 @@ resource "aws_lambda_function" "manage_media" {
   architectures    = [var.lambda_architecture]
   timeout          = 30
   memory_size      = 1024
-  publish          = var.enable_snapstart
+  publish          = var.is_local ? false : var.enable_snapstart
 
   dynamic "snap_start" {
-    for_each = var.enable_snapstart ? [1] : []
+    for_each = var.is_local ? [] : (var.enable_snapstart ? [1] : [])
     content {
       apply_on = "PublishedVersions"
     }
   }
 
   environment {
-    variables = {
-      MEDIA_BUCKET_NAME           = var.media_s3_bucket_name
-      MEDIA_DYNAMODB_TABLE_NAME   = var.dynamodb_table_name
-      OTEL_EXPORTER_OTLP_ENDPOINT = var.otel_exporter_endpoint
-      OTEL_SERVICE_NAME           = "media-service-lambda"
-      JAVA_TOOL_OPTIONS           = "-XX:+TieredCompilation -XX:TieredStopAtLevel=1"
-    }
+    variables = merge(
+      {
+        MEDIA_BUCKET_NAME           = var.media_s3_bucket_name
+        MEDIA_DYNAMODB_TABLE_NAME   = var.dynamodb_table_name
+        OTEL_EXPORTER_OTLP_ENDPOINT = var.otel_exporter_endpoint
+        OTEL_SERVICE_NAME           = "media-service-lambda"
+        JAVA_TOOL_OPTIONS           = "-XX:+TieredCompilation -XX:TieredStopAtLevel=1"
+      },
+      var.is_local ? {
+        AWS_S3_ENDPOINT       = var.localstack_endpoint
+        AWS_DYNAMODB_ENDPOINT = var.localstack_endpoint
+      } : {}
+    )
   }
 
   tags = merge(
@@ -196,6 +207,7 @@ resource "aws_lambda_function" "manage_media" {
 }
 
 resource "aws_cloudwatch_log_group" "lambda_log_group" {
+  count             = var.is_local ? 0 : 1
   depends_on        = [aws_lambda_function.manage_media]
   name              = "/aws/lambda/${aws_lambda_function.manage_media.function_name}"
   retention_in_days = 7
@@ -238,11 +250,12 @@ resource "aws_lambda_event_source_mapping" "sqs_event_source_mapping" {
 # Weekly/yearly data is calculated at read-time from DynamoDB.
 
 resource "aws_lambda_function" "analytics_rollup" {
-  depends_on = [null_resource.build_lambda_jar]
-
-  vpc_config {
-    security_group_ids = [var.lambda_sg]
-    subnet_ids         = var.private_subnet_ids
+  dynamic "vpc_config" {
+    for_each = var.is_local ? [] : [1]
+    content {
+      security_group_ids = [var.lambda_sg]
+      subnet_ids         = var.private_subnet_ids
+    }
   }
 
   filename         = local.lambda_jar_file
@@ -254,23 +267,29 @@ resource "aws_lambda_function" "analytics_rollup" {
   architectures    = [var.lambda_architecture]
   timeout          = 60 # Longer timeout for batch operations
   memory_size      = 1024
-  publish          = var.enable_snapstart
+  publish          = var.is_local ? false : var.enable_snapstart
 
   dynamic "snap_start" {
-    for_each = var.enable_snapstart ? [1] : []
+    for_each = var.is_local ? [] : (var.enable_snapstart ? [1] : [])
     content {
       apply_on = "PublishedVersions"
     }
   }
 
   environment {
-    variables = {
-      MEDIA_BUCKET_NAME           = var.media_s3_bucket_name
-      MEDIA_DYNAMODB_TABLE_NAME   = var.dynamodb_table_name
-      OTEL_EXPORTER_OTLP_ENDPOINT = var.otel_exporter_endpoint
-      OTEL_SERVICE_NAME           = "media-service-analytics-lambda"
-      JAVA_TOOL_OPTIONS           = "-XX:+TieredCompilation -XX:TieredStopAtLevel=1"
-    }
+    variables = merge(
+      {
+        MEDIA_BUCKET_NAME           = var.media_s3_bucket_name
+        MEDIA_DYNAMODB_TABLE_NAME   = var.dynamodb_table_name
+        OTEL_EXPORTER_OTLP_ENDPOINT = var.otel_exporter_endpoint
+        OTEL_SERVICE_NAME           = "media-service-analytics-lambda"
+        JAVA_TOOL_OPTIONS           = "-XX:+TieredCompilation -XX:TieredStopAtLevel=1"
+      },
+      var.is_local ? {
+        AWS_S3_ENDPOINT       = var.localstack_endpoint
+        AWS_DYNAMODB_ENDPOINT = var.localstack_endpoint
+      } : {}
+    )
   }
 
   tags = merge(
@@ -282,6 +301,7 @@ resource "aws_lambda_function" "analytics_rollup" {
 }
 
 resource "aws_cloudwatch_log_group" "analytics_lambda_log_group" {
+  count             = var.is_local ? 0 : 1
   depends_on        = [aws_lambda_function.analytics_rollup]
   name              = "/aws/lambda/${aws_lambda_function.analytics_rollup.function_name}"
   retention_in_days = 7

@@ -60,3 +60,15 @@ variable "enable_snapstart" {
   type        = bool
   default     = true
 }
+
+variable "is_local" {
+  description = "Whether running in LocalStack (disables VPC, SnapStart)"
+  type        = bool
+  default     = false
+}
+
+variable "localstack_endpoint" {
+  description = "LocalStack endpoint for Lambda environment variables"
+  type        = string
+  default     = ""
+}

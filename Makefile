@@ -139,24 +139,24 @@ redis-flush:
 
 .PHONY: tf-init
 tf-init:
-	@cd terraform/local && tflocal init
+	@cd terraform && tflocal init
 
 .PHONY: tf-plan
-tf-plan:
-	@cd terraform/local && tflocal plan
+tf-plan: tf-init
+	@cd terraform && tflocal plan -var-file=local.tfvars
 
 .PHONY: tf-apply
 tf-apply: tf-init
 	@echo "Deploying to LocalStack with Terraform..."
-	@cd terraform/local && tflocal apply -auto-approve
+	@cd terraform && tflocal apply -var-file=local.tfvars -auto-approve
 
 .PHONY: tf-destroy
 tf-destroy:
-	@cd terraform/local && tflocal destroy -auto-approve 2>/dev/null || true
+	@cd terraform && tflocal destroy -var-file=local.tfvars -auto-approve 2>/dev/null || true
 
 .PHONY: tf-output
 tf-output:
-	@cd terraform/local && tflocal output
+	@cd terraform && tflocal output
 
 # =============================================================================
 # Dev
@@ -179,9 +179,9 @@ clean:
 	@cd app/common && mvn clean
 	@cd app/api && mvn clean
 	@cd app/lambdas && mvn clean
-	@rm -rf terraform/local/.terraform
-	@rm -f terraform/local/.terraform.lock.hcl
-	@rm -f terraform/local/terraform.tfstate*
+	@rm -rf terraform/.terraform
+	@rm -f terraform/.terraform.lock.hcl
+	@rm -f terraform/terraform.tfstate*
 	@echo "Cleaned"
 
 # =============================================================================
@@ -194,8 +194,8 @@ aws-init:
 
 .PHONY: aws-plan
 aws-plan:
-	@cd terraform && terraform plan
+	@cd terraform && terraform plan -var-file=prod.tfvars
 
 .PHONY: aws-apply
 aws-apply:
-	@cd terraform && terraform apply
+	@cd terraform && terraform apply -var-file=prod.tfvars

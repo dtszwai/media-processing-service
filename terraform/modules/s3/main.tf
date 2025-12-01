@@ -1,5 +1,6 @@
 resource "aws_s3_bucket" "media_bucket" {
-  bucket = var.media_s3_bucket_name
+  bucket        = var.media_s3_bucket_name
+  force_destroy = var.is_local
 
   tags = merge(var.additional_tags, {
     Name = var.media_s3_bucket_name

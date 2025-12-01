@@ -4,6 +4,24 @@ variable "aws_region" {
   default     = "us-west-2"
 }
 
+variable "is_local" {
+  description = "Whether running in LocalStack (skips AWS-only resources)"
+  type        = bool
+  default     = false
+}
+
+variable "localstack_endpoint" {
+  description = "LocalStack endpoint URL (only used when is_local=true)"
+  type        = string
+  default     = "http://localhost:4566"
+}
+
+variable "localstack_lambda_endpoint" {
+  description = "LocalStack endpoint for Lambda env vars (Docker network)"
+  type        = string
+  default     = "http://localstack:4566"
+}
+
 variable "application_environment" {
   description = "Environment (localstack or aws)"
   type        = string
