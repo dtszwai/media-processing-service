@@ -23,8 +23,10 @@ import { RateLimitError, ApiRequestError } from "./types";
 const API_BASE = "/api";
 const ACTUATOR_BASE = "/actuator";
 
-// Threshold for using presigned URL upload (5MB)
-export const PRESIGNED_UPLOAD_THRESHOLD = 5 * 1024 * 1024;
+// File size limits
+export const MAX_DIRECT_UPLOAD_SIZE = 50 * 1024 * 1024; // 50MB for direct upload
+export const MAX_PRESIGNED_UPLOAD_SIZE = 1024 * 1024 * 1024; // 1GB for presigned upload
+export const PRESIGNED_UPLOAD_THRESHOLD = 5 * 1024 * 1024; // Use presigned for files > 5MB
 
 async function handleResponse<T>(response: Response): Promise<T> {
   const requestId = response.headers.get("X-Request-ID") || undefined;
@@ -158,6 +160,14 @@ export async function initPresignedUpload(request: InitUploadRequest): Promise<I
   return handleResponse<InitUploadResponse>(response);
 }
 
+export async function refreshPresignedUploadUrl(mediaId: string): Promise<InitUploadResponse> {
+  const response = await fetch(`${API_BASE}/${mediaId}/upload/refresh`, {
+    method: "POST",
+  });
+
+  return handleResponse<InitUploadResponse>(response);
+}
+
 export async function uploadToPresignedUrl(
   url: string,
   file: File,
@@ -231,6 +241,14 @@ export async function deleteMedia(mediaId: string): Promise<void> {
   if (!response.ok) {
     throw new ApiRequestError("Delete failed", response.status);
   }
+}
+
+export async function retryProcessing(mediaId: string): Promise<UploadResponse> {
+  const response = await fetch(`${API_BASE}/${mediaId}/retry`, {
+    method: "POST",
+  });
+
+  return handleResponse<UploadResponse>(response);
 }
 
 export function getDownloadUrl(mediaId: string): string {

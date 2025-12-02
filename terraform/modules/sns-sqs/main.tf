@@ -9,9 +9,9 @@ resource "aws_sqs_queue" "media_management_sqs_queue" {
     maxReceiveCount     = 5
   })
 
-  # Six times the Lambda timeout (30s * 6 = 180s).
+  # Six times the Lambda timeout (120s * 6 = 720s).
   # https://docs.aws.amazon.com/lambda/latest/dg/services-sqs-configure.html
-  visibility_timeout_seconds = 180
+  visibility_timeout_seconds = 720
 
   tags = merge(var.additional_tags, {
     Name = var.media_mngmt_queue_name

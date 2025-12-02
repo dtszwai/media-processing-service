@@ -34,15 +34,15 @@ PENDING_UPLOAD → PENDING → PROCESSING → COMPLETE
 
 ## Processing Flow
 
-### Direct Upload (< 100MB)
+### Direct Upload (up to 50MB)
 
-1. Client uploads image → API stores in S3, metadata in DynamoDB (`PENDING`)
+1. Client uploads image → API validates and stores in S3, metadata in DynamoDB (`PENDING`)
 2. API publishes `media.v1.process` event to SNS
 3. Lambda receives event, sets status to `PROCESSING`, processes image
 4. Lambda stores result in S3 `resized/` prefix, updates status to `COMPLETE`
 5. Client polls status, downloads via presigned URL
 
-### Presigned URL Upload (up to 5GB)
+### Presigned URL Upload (up to 1GB)
 
 1. Client calls `POST /v1/media/upload/init` → API returns presigned S3 PUT URL (`PENDING_UPLOAD`)
 2. Client uploads directly to S3 using presigned URL

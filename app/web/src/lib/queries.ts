@@ -10,6 +10,7 @@ import {
   completePresignedUpload,
   resizeMedia,
   deleteMedia,
+  retryProcessing,
   getServiceHealth,
   getVersionInfo,
   getAnalyticsSummary,
@@ -18,6 +19,8 @@ import {
   getFormatUsage,
   getDownloadStats,
   PRESIGNED_UPLOAD_THRESHOLD,
+  MAX_DIRECT_UPLOAD_SIZE,
+  MAX_PRESIGNED_UPLOAD_SIZE,
 } from "./api";
 import {
   PagedMediaResponseSchema,
@@ -172,6 +175,21 @@ export function createDeleteMutation() {
   }));
 }
 
+export function createRetryMutation() {
+  return createMutation(() => ({
+    mutationFn: async (mediaId: string) => {
+      await retryProcessing(mediaId);
+      return mediaId;
+    },
+    onSuccess: (_result: string, mediaId: string) => {
+      defaultQueryClient.invalidateQueries({
+        queryKey: queryKeys.media.status(mediaId),
+      });
+      defaultQueryClient.invalidateQueries({ queryKey: queryKeys.media.all });
+    },
+  }));
+}
+
 // ============= Health Queries =============
 
 export function createServiceHealthQuery() {
@@ -255,5 +273,5 @@ export function createDownloadStatsQuery(period: Period = "TODAY") {
   }));
 }
 
-// Export the threshold for components
-export { PRESIGNED_UPLOAD_THRESHOLD };
+// Export file size constants for components
+export { PRESIGNED_UPLOAD_THRESHOLD, MAX_DIRECT_UPLOAD_SIZE, MAX_PRESIGNED_UPLOAD_SIZE };

@@ -114,6 +114,19 @@ public class MediaController {
             "Upload not found, not in PENDING_UPLOAD status, or file not uploaded to S3."));
   }
 
+  @Operation(summary = "Refresh presigned upload URL", description = "Get a new presigned URL for a PENDING_UPLOAD media item")
+  @ApiResponses({
+      @ApiResponse(responseCode = "200", description = "New upload URL generated"),
+      @ApiResponse(responseCode = "404", description = "Media not found or not in PENDING_UPLOAD status")
+  })
+  @PostMapping("/{mediaId}/upload/refresh")
+  public ResponseEntity<InitUploadResponse> refreshPresignedUploadUrl(@PathVariable String mediaId) {
+    log.info("Refresh presigned upload URL request: mediaId={}", mediaId);
+    return mediaService.refreshPresignedUploadUrl(mediaId)
+        .map(ResponseEntity::ok)
+        .orElse(ResponseEntity.notFound().build());
+  }
+
   @Operation(summary = "Get media by ID")
   @ApiResponses({
       @ApiResponse(responseCode = "200", description = "Media found"),
@@ -217,6 +230,23 @@ public class MediaController {
     return mediaService.deleteMedia(mediaId)
         .<ResponseEntity<MediaResponse>>map(media -> ResponseEntity.accepted().body(mediaMapper.toIdResponse(media)))
         .orElse(ResponseEntity.notFound().build());
+  }
+
+  @Operation(summary = "Retry processing", description = "Retry processing for media stuck in PROCESSING or ERROR status")
+  @ApiResponses({
+      @ApiResponse(responseCode = "202", description = "Retry initiated"),
+      @ApiResponse(responseCode = "404", description = "Media not found"),
+      @ApiResponse(responseCode = "409", description = "Media not in retryable status (PROCESSING or ERROR)", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+  })
+  @PostMapping("/{mediaId}/retry")
+  public ResponseEntity<MediaResponse> retryProcessing(@PathVariable String mediaId) {
+    log.info("Retry request: mediaId={}", mediaId);
+    if (!mediaService.mediaExists(mediaId)) {
+      return ResponseEntity.notFound().build();
+    }
+    return mediaService.retryProcessing(mediaId)
+        .map(media -> ResponseEntity.accepted().body(mediaMapper.toIdResponse(media)))
+        .orElseThrow(() -> new MediaConflictException("Cannot retry: media is not in PROCESSING or ERROR status"));
   }
 
   private void validateUploadFile(MultipartFile file) {

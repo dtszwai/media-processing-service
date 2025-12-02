@@ -21,8 +21,8 @@ spring:
   servlet:
     multipart:
       enabled: true
-      max-file-size: 100MB
-      max-request-size: 100MB
+      max-file-size: 50MB
+      max-request-size: 50MB
   data:
     redis:
       host: ${REDIS_HOST:127.0.0.1}
@@ -61,10 +61,10 @@ media:
     default: 500
     min: 100
     max: 1024
-  max-file-size: 104857600  # 100MB in bytes
+  max-file-size: 52428800   # 50MB in bytes (direct upload)
   upload:
     presigned-url-expiration-seconds: 3600  # 1 hour
-    max-presigned-upload-size: 5368709120   # 5GB
+    max-presigned-upload-size: 1073741824   # 1GB (presigned S3 upload)
 
 # Cache TTL Configuration (L2 Redis)
 cache:

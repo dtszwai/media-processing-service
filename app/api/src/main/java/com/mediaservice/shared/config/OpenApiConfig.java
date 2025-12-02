@@ -35,15 +35,18 @@ public class OpenApiConfig {
                 REST API for media upload, processing, and management.
 
                 ## Features
-                - Direct file upload (up to 100MB)
-                - Presigned URL upload (up to 5GB)
-                - Image resizing with configurable dimensions
+                - Direct file upload (up to 50MB)
+                - Presigned URL upload for large files (up to 1GB)
+                - Image resizing with configurable dimensions (max 8192px)
                 - Multiple output formats (JPEG, PNG, WebP)
                 - Async processing with status polling
 
-                ## Rate Limits
-                - General API: 100 requests/minute
-                - Upload endpoints: 10 requests/minute
+                ## Limits
+                - Direct upload: 50MB max
+                - Presigned upload: 1GB max
+                - Max image dimension: 8192x8192px
+                - General API rate limit: 100 requests/minute
+                - Upload rate limit: 10 requests/minute
                 """))
         .servers(List.of(
             new Server()

@@ -171,9 +171,13 @@ resource "aws_lambda_function" "manage_media" {
   source_code_hash = filebase64sha256(local.lambda_jar_file)
   runtime          = "java21"
   architectures    = [var.lambda_architecture]
-  timeout          = 30
-  memory_size      = 1024
+  timeout          = 120
+  memory_size      = 10240 # 10GB max for large image processing
   publish          = var.is_local ? false : var.enable_snapstart
+
+  ephemeral_storage {
+    size = 2048 # 2GB for large file processing
+  }
 
   dynamic "snap_start" {
     for_each = var.is_local ? [] : (var.enable_snapstart ? [1] : [])
@@ -189,7 +193,6 @@ resource "aws_lambda_function" "manage_media" {
         MEDIA_DYNAMODB_TABLE_NAME   = var.dynamodb_table_name
         OTEL_EXPORTER_OTLP_ENDPOINT = var.otel_exporter_endpoint
         OTEL_SERVICE_NAME           = "media-service-lambda"
-        JAVA_TOOL_OPTIONS           = "-XX:+TieredCompilation -XX:TieredStopAtLevel=1"
       },
       var.is_local ? {
         AWS_S3_ENDPOINT       = var.localstack_endpoint

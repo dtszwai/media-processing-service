@@ -30,7 +30,7 @@ public class MediaProperties {
   @Data
   public static class Upload {
     private int presignedUrlExpirationSeconds = 3600; // 1 hour
-    private long maxPresignedUploadSize = 5368709120L; // 5GB
+    private long maxPresignedUploadSize = 1073741824L; // 1GB
     private int pendingUploadTtlHours = 24; // TTL for PENDING_UPLOAD records
   }
 

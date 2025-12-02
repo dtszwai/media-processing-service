@@ -22,6 +22,21 @@ log() {
 create_s3_bucket() {
     awslocal s3 mb "s3://${BUCKET_NAME}" --region "${AWS_REGION}"
     log "S3 bucket created: ${BUCKET_NAME}"
+
+    # Configure CORS for presigned URL uploads from browser
+    awslocal s3api put-bucket-cors \
+        --bucket "${BUCKET_NAME}" \
+        --cors-configuration '{
+            "CORSRules": [{
+                "AllowedHeaders": ["*"],
+                "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
+                "AllowedOrigins": ["*"],
+                "ExposeHeaders": ["ETag"],
+                "MaxAgeSeconds": 3600
+            }]
+        }' \
+        --region "${AWS_REGION}"
+    log "S3 CORS configured for bucket: ${BUCKET_NAME}"
 }
 
 create_dynamodb_table() {
@@ -102,8 +117,8 @@ create_lambda_function() {
         --handler "com.mediaservice.lambda.ManageMediaHandler::handleRequest" \
         --role "arn:aws:iam::000000000000:role/lambda-execution-role" \
         --zip-file "fileb://${LAMBDA_JAR_PATH}" \
-        --timeout 30 \
-        --memory-size 1024 \
+        --timeout 60 \
+        --memory-size 3072 \
         --environment "Variables={AWS_REGION=${AWS_REGION},MEDIA_BUCKET_NAME=${BUCKET_NAME},MEDIA_DYNAMODB_TABLE_NAME=${TABLE_NAME},AWS_S3_ENDPOINT=http://host.docker.internal:4566,AWS_DYNAMODB_ENDPOINT=http://host.docker.internal:4566,OTEL_EXPORTER_OTLP_ENDPOINT=http://grafana-lgtm:4318,OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf,OTEL_SERVICE_NAME=media-service-lambda,OTEL_LOGS_EXPORTER=otlp}" \
         --region "${AWS_REGION}"
     log "Lambda function created: ${LAMBDA_NAME}"

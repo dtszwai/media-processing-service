@@ -5,8 +5,8 @@ Web interface for the Media Processing Service built with Svelte 5, TypeScript, 
 ## Features
 
 - Image upload with drag & drop
-- Direct upload for files < 5MB
-- Presigned S3 URL upload for large files (up to 5GB) with progress tracking
+- Direct upload for files up to 50MB
+- Presigned S3 URL upload for large files (up to 1GB) with progress tracking
 - Image resize with width slider (100-1024px)
 - Side-by-side original vs processed comparison
 - Media history with status badges

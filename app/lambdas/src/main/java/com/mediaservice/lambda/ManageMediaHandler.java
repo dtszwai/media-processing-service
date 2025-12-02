@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mediaservice.lambda.config.OpenTelemetryInitializer;
 import com.mediaservice.common.event.MediaEvent;
 import com.mediaservice.common.model.EventType;
+import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaStatus;
 import com.mediaservice.common.model.OutputFormat;
 import com.mediaservice.lambda.service.DynamoDbService;
@@ -152,7 +153,8 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
       // Delete original file from S3
       s3Service.deleteOriginalFile(mediaId, media.getName());
 
-      // Always try to delete processed file (S3 delete is idempotent - no error if file doesn't exist)
+      // Always try to delete processed file (S3 delete is idempotent - no error if
+      // file doesn't exist)
       s3Service.deleteProcessedFile(mediaId, outputFormat);
 
       logger.info("S3 cleanup completed for media: {} (DynamoDB record preserved for analytics)", mediaId);
@@ -173,13 +175,29 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
 
     logger.info("Processing media: {} with outputFormat: {}", mediaId, outputFormat.getFormat());
     try {
-      var mediaOpt = dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.PROCESSING, MediaStatus.PENDING);
-      if (mediaOpt.isEmpty()) {
-        logger.warn("Media {} not found or not in PENDING status", mediaId);
-        return;
+      // Try to set status to PROCESSING (from PENDING)
+      // If already PROCESSING (retry scenario), continue with the existing media data
+      Media media;
+      try {
+        var mediaOpt = dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.PROCESSING,
+            MediaStatus.PENDING);
+        if (mediaOpt.isEmpty()) {
+          logger.warn("Media {} not found or not in PENDING status", mediaId);
+          return;
+        }
+        media = mediaOpt.get();
+      } catch (ConditionalCheckFailedException e) {
+        // Check if this is a retry (status already PROCESSING)
+        var existingMedia = dynamoDbService.getMedia(mediaId);
+        if (existingMedia.isPresent() && existingMedia.get().getStatus() == MediaStatus.PROCESSING) {
+          logger.info("Media {} already PROCESSING, continuing as retry", mediaId);
+          media = existingMedia.get();
+        } else {
+          logger.warn("Media {} in unexpected status: {}", mediaId,
+              existingMedia.map(m -> m.getStatus().name()).orElse("NOT_FOUND"));
+          return;
+        }
       }
-
-      var media = mediaOpt.get();
       byte[] imageData = s3Service.getMediaFile(mediaId, media.getName());
 
       var targetWidth = requestedWidth != null ? requestedWidth : media.getWidth();
@@ -203,9 +221,17 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
       span.setStatus(StatusCode.OK);
       successCounter.add(1);
     } catch (ConditionalCheckFailedException e) {
+      // This catch handles PROCESSING→COMPLETE transition failures
+      // (the PENDING→PROCESSING transition is handled in the inner try-catch)
       var actual = dynamoDbService.getMedia(mediaId).map(m -> m.getStatus().name()).orElse("NOT_FOUND");
-      logger.error("Conditional check failed for media {}: actual={}", mediaId, actual);
-      span.setStatus(StatusCode.ERROR, "actual=" + actual);
+      if ("COMPLETE".equals(actual)) {
+        logger.info("Media {} already COMPLETE, skipping duplicate processing", mediaId);
+        span.setStatus(StatusCode.OK);
+        successCounter.add(1);
+        return; // Idempotent - already completed by another instance
+      }
+      logger.error("Failed to complete media {}: unexpected status={}", mediaId, actual);
+      span.setStatus(StatusCode.ERROR, "unexpected_status=" + actual);
       failureCounter.add(1);
       throw e;
     } catch (Exception e) {

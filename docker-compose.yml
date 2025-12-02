@@ -1,3 +1,7 @@
+# NOTE: For processing large images (100MB+), increase Docker Desktop memory to 8GB+
+# Docker Desktop → Settings → Resources → Memory → 8GB → Apply & Restart
+# The Lambda needs ~4GB heap for large image processing via -Xmx in Terraform config.
+
 services:
   redis:
     container_name: media-service-redis
@@ -27,7 +31,7 @@ services:
       - SERVICES=s3,dynamodb,sns,sqs,lambda,iam,events
       - AWS_DEFAULT_REGION=us-west-2
       - LAMBDA_DOCKER_NETWORK=media-processing-service_default
-      - LAMBDA_RUNTIME_ENVIRONMENT_TIMEOUT=60
+      - LAMBDA_RUNTIME_ENVIRONMENT_TIMEOUT=120
       - LAMBDA_KEEPALIVE_MS=60000
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]

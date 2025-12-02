@@ -1,10 +1,14 @@
 <script lang="ts">
   import { formatFileSize } from "../lib/utils";
-  import { createUploadMutation, createPresignedUploadMutation, PRESIGNED_UPLOAD_THRESHOLD } from "../lib/queries";
+  import { createUploadMutation, createPresignedUploadMutation, PRESIGNED_UPLOAD_THRESHOLD, MAX_DIRECT_UPLOAD_SIZE, MAX_PRESIGNED_UPLOAD_SIZE } from "../lib/queries";
   import { pollForStatus } from "../lib/api";
   import { isProcessing, currentMediaId } from "../lib/stores";
   import { invalidateMediaList } from "../lib/query";
   import type { OutputFormat } from "../lib/types";
+
+  // Generate thumbnail for files larger than 10MB to avoid lag
+  const THUMBNAIL_THRESHOLD = 10 * 1024 * 1024;
+  const THUMBNAIL_MAX_SIZE = 200; // Max width/height for thumbnail
 
   let selectedFile: File | null = $state(null);
   let previewUrl: string | null = $state(null);
@@ -15,6 +19,52 @@
   let uploadMethod = $state<"direct" | "presigned" | null>(null);
 
   let fileInput: HTMLInputElement;
+
+  /**
+   * Generate a thumbnail from an image file using canvas.
+   * Much faster and more memory-efficient than loading the full image.
+   */
+  async function generateThumbnail(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const objectUrl = URL.createObjectURL(file);
+      const img = new Image();
+
+      img.onload = () => {
+        // Calculate thumbnail dimensions maintaining aspect ratio
+        let thumbWidth = img.width;
+        let thumbHeight = img.height;
+
+        if (thumbWidth > thumbHeight) {
+          if (thumbWidth > THUMBNAIL_MAX_SIZE) {
+            thumbHeight = Math.round((thumbHeight * THUMBNAIL_MAX_SIZE) / thumbWidth);
+            thumbWidth = THUMBNAIL_MAX_SIZE;
+          }
+        } else {
+          if (thumbHeight > THUMBNAIL_MAX_SIZE) {
+            thumbWidth = Math.round((thumbWidth * THUMBNAIL_MAX_SIZE) / thumbHeight);
+            thumbHeight = THUMBNAIL_MAX_SIZE;
+          }
+        }
+
+        // Draw to canvas and export as small JPEG
+        const canvas = document.createElement("canvas");
+        canvas.width = thumbWidth;
+        canvas.height = thumbHeight;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0, thumbWidth, thumbHeight);
+
+        URL.revokeObjectURL(objectUrl);
+        resolve(canvas.toDataURL("image/jpeg", 0.7));
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error("Failed to load image"));
+      };
+
+      img.src = objectUrl;
+    });
+  }
 
   const uploadMutation = createUploadMutation();
   const presignedUploadMutation = createPresignedUploadMutation();
@@ -54,23 +104,41 @@
     if (file) handleFile(file);
   }
 
-  function handleFile(file: File) {
+  async function handleFile(file: File) {
     if ($isProcessing) return;
     if (!file.type.startsWith("image/")) {
       alert("Please select an image file");
       return;
     }
 
+    // Determine upload method and validate size
+    const usePresigned = file.size > PRESIGNED_UPLOAD_THRESHOLD;
+    const maxSize = usePresigned ? MAX_PRESIGNED_UPLOAD_SIZE : MAX_DIRECT_UPLOAD_SIZE;
+
+    if (file.size > maxSize) {
+      alert(`File too large: ${formatFileSize(file.size)}. Maximum size is ${formatFileSize(maxSize)}.`);
+      return;
+    }
+
     selectedFile = file;
+    uploadMethod = usePresigned ? "presigned" : "direct";
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      previewUrl = e.target?.result as string;
-    };
-    reader.readAsDataURL(file);
-
-    // Determine upload method based on file size
-    uploadMethod = file.size > PRESIGNED_UPLOAD_THRESHOLD ? "presigned" : "direct";
+    // Use thumbnail for large files to avoid lag, full preview for small files
+    if (file.size > THUMBNAIL_THRESHOLD) {
+      try {
+        previewUrl = await generateThumbnail(file);
+      } catch {
+        // Fallback: show placeholder if thumbnail generation fails
+        previewUrl = null;
+      }
+    } else {
+      // Small files: use FileReader (fast enough)
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        previewUrl = e.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    }
   }
 
   function clearFile() {
@@ -158,9 +226,18 @@
         ></path>
       </svg>
       <p class="text-gray-600 text-sm">Drop image here or click to browse</p>
-      <p class="text-gray-400 text-xs mt-1">JPG, PNG, GIF, WebP supported (up to 5GB)</p>
+      <p class="text-gray-400 text-xs mt-1">JPG, PNG, GIF, WebP supported (up to 1GB)</p>
     {:else}
-      <img src={previewUrl} alt="Preview" class="max-h-24 mx-auto rounded mb-2" />
+      {#if previewUrl}
+        <img src={previewUrl} alt="Preview" class="max-h-24 mx-auto rounded mb-2" />
+      {:else}
+        <div class="h-24 flex items-center justify-center mb-2">
+          <svg class="animate-spin h-6 w-6 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+        </div>
+      {/if}
       <p class="text-gray-800 text-sm font-medium">{selectedFile.name}</p>
       <p class="text-gray-400 text-xs">{formatFileSize(selectedFile.size)}</p>
       {#if uploadMethod === "presigned"}

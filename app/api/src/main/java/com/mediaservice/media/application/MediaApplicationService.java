@@ -228,6 +228,33 @@ public class MediaApplicationService {
     return mediaRepository.getMedia(mediaId).isPresent();
   }
 
+  /**
+   * Retry processing for media stuck in PROCESSING or ERROR status.
+   * Resets status to PENDING and re-publishes the process event.
+   *
+   * @param mediaId the media ID to retry
+   * @return the media if retry was initiated, empty if media not found or not
+   *         retryable
+   */
+  public Optional<Media> retryProcessing(String mediaId) {
+    return mediaRepository.getMedia(mediaId)
+        .filter(media -> media.getStatus() == MediaStatus.PROCESSING || media.getStatus() == MediaStatus.ERROR)
+        .flatMap(media -> {
+          boolean updated = mediaRepository.updateStatusConditionally(mediaId, MediaStatus.PENDING, media.getStatus());
+          if (!updated) {
+            log.warn("Failed to reset status for retry: mediaId={}", mediaId);
+            return Optional.empty();
+          }
+          String outputFormat = media.getOutputFormat() != null
+              ? media.getOutputFormat().getFormat()
+              : OutputFormat.JPEG.getFormat();
+          eventPublisher.publishProcessMediaEvent(mediaId, media.getWidth(), outputFormat);
+          cacheInvalidationService.invalidateMedia(mediaId);
+          log.info("Retry initiated for mediaId={}, previousStatus={}", mediaId, media.getStatus());
+          return Optional.of(media);
+        });
+  }
+
   public MediaDynamoDbRepository.MediaPagedResult getMediaPaginated(String cursor, Integer limit) {
     return mediaRepository.getMediaPaginated(cursor, limit);
   }
@@ -282,6 +309,47 @@ public class MediaApplicationService {
           .method("PUT")
           .headers(headers)
           .build();
+    } catch (Exception e) {
+      span.setStatus(StatusCode.ERROR, e.getMessage());
+      span.recordException(e);
+      throw e;
+    } finally {
+      span.end();
+    }
+  }
+
+  public Optional<InitUploadResponse> refreshPresignedUploadUrl(String mediaId) {
+    Span span = tracer.spanBuilder("refresh-presigned-upload-url")
+        .setSpanKind(SpanKind.INTERNAL)
+        .startSpan();
+    try (Scope scope = span.makeCurrent()) {
+      span.setAttribute("media.id", mediaId);
+
+      return mediaRepository.getMedia(mediaId)
+          .filter(media -> media.getStatus() == MediaStatus.PENDING_UPLOAD)
+          .map(media -> {
+            int expirationSeconds = mediaProperties.getUpload().getPresignedUrlExpirationSeconds();
+
+            String uploadUrl = s3Service.generatePresignedUploadUrl(
+                mediaId,
+                media.getName(),
+                media.getMimetype(),
+                Duration.ofSeconds(expirationSeconds));
+
+            var headers = new LinkedHashMap<String, String>();
+            headers.put("Content-Type", media.getMimetype());
+
+            span.setStatus(StatusCode.OK);
+            log.info("Presigned upload URL refreshed: mediaId={}", mediaId);
+
+            return InitUploadResponse.builder()
+                .mediaId(mediaId)
+                .uploadUrl(uploadUrl)
+                .expiresIn(expirationSeconds)
+                .method("PUT")
+                .headers(headers)
+                .build();
+          });
     } catch (Exception e) {
       span.setStatus(StatusCode.ERROR, e.getMessage());
       span.recordException(e);

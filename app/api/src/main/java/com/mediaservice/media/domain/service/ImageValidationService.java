@@ -22,8 +22,9 @@ import java.util.Set;
 public class ImageValidationService {
 
   private static final Set<String> SUPPORTED_FORMATS = Set.of("jpeg", "jpg", "png", "gif", "webp", "bmp");
-  private static final int MAX_DIMENSION = 16384; // 16K max dimension
+  private static final int MAX_DIMENSION = 8192;  // 8K max dimension (memory-safe for Lambda)
   private static final int MIN_DIMENSION = 1;
+  private static final long MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB max file size
 
   // Magic bytes for common image formats
   private static final byte[] JPEG_MAGIC = new byte[] { (byte) 0xFF, (byte) 0xD8, (byte) 0xFF };
@@ -52,6 +53,9 @@ public class ImageValidationService {
     }
   }
 
+  // Formats that Java's ImageIO can parse natively (without additional libraries)
+  private static final Set<String> IMAGEIO_NATIVE_FORMATS = Set.of("jpeg", "png", "gif", "bmp");
+
   /**
    * Validates image bytes (for presigned upload completion where we fetch from
    * S3).
@@ -65,6 +69,13 @@ public class ImageValidationService {
       throw new InvalidImageException("Image data is empty");
     }
 
+    // Step 0: Check file size
+    if (bytes.length > MAX_FILE_SIZE) {
+      throw new InvalidImageException(
+          "File size too large: %d bytes (maximum: %d bytes / %d MB)"
+              .formatted(bytes.length, MAX_FILE_SIZE, MAX_FILE_SIZE / (1024 * 1024)));
+    }
+
     // Step 1: Check magic bytes to verify file type matches content
     String detectedFormat = detectImageFormat(bytes);
     if (detectedFormat == null) {
@@ -72,13 +83,20 @@ public class ImageValidationService {
     }
     log.debug("Detected image format: {} for file: {}", detectedFormat, fileName);
 
-    // Step 2: Actually parse the image to verify it's valid
+    // Step 2: For formats ImageIO supports natively, do full parsing validation
+    // For other formats (WebP, etc.), trust magic byte detection
     BufferedImage image = parseImage(bytes);
     if (image == null) {
-      throw new InvalidImageException("File could not be parsed as a valid image");
+      if (IMAGEIO_NATIVE_FORMATS.contains(detectedFormat)) {
+        // Native format should parse - if it doesn't, file is corrupted
+        throw new InvalidImageException("File could not be parsed as a valid image");
+      }
+      // Non-native format (WebP, etc.) - trust magic bytes, skip dimension check
+      log.info("Image validation passed (magic bytes only): file={}, format={}", fileName, detectedFormat);
+      return;
     }
 
-    // Step 3: Validate dimensions
+    // Step 3: Validate dimensions (only if we could parse the image)
     validateDimensions(image, fileName);
 
     log.info("Image validation passed: file={}, format={}, dimensions={}x{}",

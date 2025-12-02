@@ -1,7 +1,7 @@
 <script lang="ts">
   import { formatFileSize, formatDateTime } from "../lib/utils";
-  import { getDownloadUrl, getOriginalUrl, pollForStatus } from "../lib/api";
-  import { createMediaListQuery, createResizeMutation } from "../lib/queries";
+  import { getDownloadUrl, getOriginalUrl, pollForStatus, refreshPresignedUploadUrl, uploadToPresignedUrl, completePresignedUpload } from "../lib/api";
+  import { createMediaListQuery, createResizeMutation, createRetryMutation } from "../lib/queries";
   import { currentMediaId, isProcessing } from "../lib/stores";
   import { invalidateMediaList } from "../lib/query";
   import type { OutputFormat } from "../lib/types";
@@ -9,9 +9,14 @@
   let resizeWidth = $state(500);
   let resizeFormat = $state<OutputFormat>("jpeg");
   let isResizing = $state(false);
+  let isResuming = $state(false);
+  let isRetrying = $state(false);
+  let resumeProgress = $state(0);
+  let resumeFileInput: HTMLInputElement;
 
   const mediaListQuery = createMediaListQuery();
   const resizeMutation = createResizeMutation();
+  const retryMutation = createRetryMutation();
 
   const formatOptions: { value: OutputFormat; label: string }[] = [
     { value: "jpeg", label: "JPEG" },
@@ -48,6 +53,76 @@
       alert("Resize failed: " + (error instanceof Error ? error.message : "Unknown error"));
     } finally {
       isResizing = false;
+    }
+  }
+
+  function triggerResumeFileSelect() {
+    if (isResuming || $isProcessing) return;
+    resumeFileInput?.click();
+  }
+
+  async function handleResumeUpload(e: Event) {
+    const target = e.target as HTMLInputElement;
+    const file = target.files?.[0];
+    if (!file || !currentMedia || isResuming) return;
+
+    // Validate file type matches original
+    if (file.type !== currentMedia.mimetype) {
+      alert(`File type mismatch. Expected ${currentMedia.mimetype}, got ${file.type}`);
+      target.value = "";
+      return;
+    }
+
+    isResuming = true;
+    resumeProgress = 0;
+    isProcessing.set(true);
+
+    try {
+      // Get fresh presigned URL
+      const uploadInfo = await refreshPresignedUploadUrl(currentMedia.mediaId);
+
+      // Upload to S3
+      await uploadToPresignedUrl(uploadInfo.uploadUrl, file, uploadInfo.headers, (progress) => {
+        resumeProgress = progress;
+      });
+
+      // Complete the upload
+      await completePresignedUpload(currentMedia.mediaId);
+
+      // Poll for completion
+      await pollForStatus(currentMedia.mediaId, ["COMPLETE", "ERROR"], () => {
+        invalidateMediaList();
+      });
+    } catch (error) {
+      console.error("Resume upload error:", error);
+      alert("Resume upload failed: " + (error instanceof Error ? error.message : "Unknown error"));
+    } finally {
+      isResuming = false;
+      resumeProgress = 0;
+      isProcessing.set(false);
+      target.value = "";
+    }
+  }
+
+  async function handleRetry() {
+    if (!currentMedia || isRetrying || $isProcessing) return;
+
+    isRetrying = true;
+    isProcessing.set(true);
+
+    try {
+      await retryMutation.mutateAsync(currentMedia.mediaId);
+
+      // Poll for completion
+      await pollForStatus(currentMedia.mediaId, ["COMPLETE", "ERROR"], () => {
+        invalidateMediaList();
+      });
+    } catch (error) {
+      console.error("Retry error:", error);
+      alert("Retry failed: " + (error instanceof Error ? error.message : "Unknown error"));
+    } finally {
+      isRetrying = false;
+      isProcessing.set(false);
     }
   }
 </script>
@@ -132,11 +207,87 @@
       </div>
     {/if}
 
+    <!-- Resume Upload Controls for PENDING_UPLOAD -->
+    {#if currentMedia.status === "PENDING_UPLOAD"}
+      <div class="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+        <input type="file" accept={currentMedia.mimetype} class="hidden" bind:this={resumeFileInput} onchange={handleResumeUpload} />
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-amber-800">Upload incomplete</p>
+            <p class="text-xs text-amber-600 mt-1">Select the same file to resume upload</p>
+          </div>
+          <button
+            onclick={triggerResumeFileSelect}
+            disabled={isResuming}
+            class="btn-primary px-4 py-2 text-sm font-medium rounded-lg"
+          >
+            {#if isResuming}
+              <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Uploading...
+            {:else}
+              Resume Upload
+            {/if}
+          </button>
+        </div>
+        {#if isResuming && resumeProgress > 0}
+          <div class="mt-3">
+            <div class="flex justify-between text-xs text-amber-600 mb-1">
+              <span>Uploading to S3...</span>
+              <span>{resumeProgress.toFixed(0)}%</span>
+            </div>
+            <div class="h-2 bg-amber-200 rounded-full overflow-hidden">
+              <div class="h-full bg-amber-500 transition-all duration-300" style="width: {resumeProgress}%"></div>
+            </div>
+          </div>
+        {/if}
+      </div>
+    {/if}
+
+    <!-- Retry Controls for PROCESSING or ERROR status -->
+    {#if currentMedia.status === "PROCESSING" || currentMedia.status === "ERROR"}
+      <div class="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-red-800">
+              {currentMedia.status === "ERROR" ? "Processing failed" : "Stuck in processing"}
+            </p>
+            <p class="text-xs text-red-600 mt-1">
+              {currentMedia.status === "ERROR" ? "Click retry to reprocess this media" : "Processing is taking longer than expected. Try again?"}
+            </p>
+          </div>
+          <button
+            onclick={handleRetry}
+            disabled={isRetrying}
+            class="btn-primary px-4 py-2 text-sm font-medium rounded-lg"
+          >
+            {#if isRetrying}
+              <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Retrying...
+            {:else}
+              Retry
+            {/if}
+          </button>
+        </div>
+      </div>
+    {/if}
+
     <!-- Image Comparison -->
     <div class="grid grid-cols-2 gap-4 mb-4">
       <div class="image-box">
         <p class="text-xs font-medium text-gray-500 mb-2">Original</p>
-        <img src={getOriginalUrl(currentMedia.mediaId, currentMedia.name)} alt="Original" />
+        {#if currentMedia.status === "PENDING_UPLOAD"}
+          <div class="h-[180px] flex items-center justify-center text-gray-400 text-sm">
+            <span>Awaiting upload...</span>
+          </div>
+        {:else}
+          <img src={getOriginalUrl(currentMedia.mediaId, currentMedia.name)} alt="Original" />
+        {/if}
         <div class="mt-2 space-y-0.5">
           <p class="text-xs text-gray-500">Size: {formatFileSize(currentMedia.size)}</p>
         </div>
