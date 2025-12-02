@@ -193,6 +193,10 @@ resource "aws_lambda_function" "manage_media" {
         MEDIA_DYNAMODB_TABLE_NAME   = var.dynamodb_table_name
         OTEL_EXPORTER_OTLP_ENDPOINT = var.otel_exporter_endpoint
         OTEL_SERVICE_NAME           = "media-service-lambda"
+        OTEL_TRACES_EXPORTER        = "otlp"
+        OTEL_METRICS_EXPORTER       = "otlp"
+        OTEL_LOGS_EXPORTER          = "otlp"
+        OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf"
       },
       var.is_local ? {
         AWS_S3_ENDPOINT       = var.localstack_endpoint
@@ -286,6 +290,10 @@ resource "aws_lambda_function" "analytics_rollup" {
         MEDIA_DYNAMODB_TABLE_NAME   = var.dynamodb_table_name
         OTEL_EXPORTER_OTLP_ENDPOINT = var.otel_exporter_endpoint
         OTEL_SERVICE_NAME           = "media-service-analytics-lambda"
+        OTEL_TRACES_EXPORTER        = "otlp"
+        OTEL_METRICS_EXPORTER       = "otlp"
+        OTEL_LOGS_EXPORTER          = "otlp"
+        OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf"
         JAVA_TOOL_OPTIONS           = "-XX:+TieredCompilation -XX:TieredStopAtLevel=1"
       },
       var.is_local ? {
