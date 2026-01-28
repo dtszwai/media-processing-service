@@ -33,6 +33,7 @@ help:
 	@echo ""
 	@echo "Dev:"
 	@echo "  run-api        - Run API locally (outside Docker)"
+	@echo "  run-web        - Run web app"
 	@echo "  test-api       - Run API tests"
 	@echo "  test-lambdas   - Run Lambda tests"
 	@echo "  clean          - Clean build artifacts"
@@ -83,23 +84,34 @@ local-clean:
 # Build
 # =============================================================================
 
+MAVEN_IMAGE := maven:3.9.6-eclipse-temurin-21
+MAVEN_DOCKER := docker run --rm -v "$(PWD)":/workspace -v maven-repo:/root/.m2 -w /workspace $(MAVEN_IMAGE)
+
 .PHONY: build-common
 build-common:
-	@echo "Building Common module..."
-	@cd app/common && mvn clean install -DskipTests -q
+	@echo "Building Common module (Java 21 via Docker)..."
+	@$(MAVEN_DOCKER) mvn -f app/common/pom.xml clean install -DskipTests -q
 
 .PHONY: build-api
 build-api: build-common
-	@echo "Building API..."
-	@cd app/api && mvn clean package -DskipTests -q
+	@echo "Building API (Java 21 via Docker)..."
+	@$(MAVEN_DOCKER) mvn -f app/api/pom.xml clean package -DskipTests -q
 
 .PHONY: build-lambdas
 build-lambdas: build-common
-	@echo "Building Lambdas..."
-	@cd app/lambdas && mvn clean package -DskipTests -q
+	@echo "Building Lambdas (Java 21 via Docker)..."
+	@$(MAVEN_DOCKER) mvn -f app/lambdas/pom.xml clean package -DskipTests -q
 
 .PHONY: build-all
 build-all: build-common build-api build-lambdas
+
+# Build using local Maven
+.PHONY: build-local
+build-local:
+	@echo "Building with local Maven (requires Java 21)..."
+	@cd app/common && mvn clean install -DskipTests -q
+	@cd app/api && mvn clean package -DskipTests -q
+	@cd app/lambdas && mvn clean package -DskipTests -q
 
 # =============================================================================
 # Docker
@@ -164,21 +176,29 @@ tf-output:
 
 .PHONY: run-api
 run-api:
-	@cd app/api && mvn spring-boot:run
+	@echo "Running API locally (Java 21 via Docker)..."
+	@$(MAVEN_DOCKER) mvn -f app/api/pom.xml spring-boot:run
+
+.PHONY: run-web
+run-web:
+	@echo "Running web app..."
+	@cd app/web && pnpm dev
 
 .PHONY: test-api
 test-api:
-	@cd app/api && mvn test
+	@echo "Running API tests (Java 21 via Docker)..."
+	@$(MAVEN_DOCKER) mvn -f app/api/pom.xml test
 
 .PHONY: test-lambdas
 test-lambdas:
-	@cd app/lambdas && mvn test
+	@echo "Running Lambda tests (Java 21 via Docker)..."
+	@$(MAVEN_DOCKER) mvn -f app/lambdas/pom.xml test
 
 .PHONY: clean
 clean:
-	@cd app/common && mvn clean
-	@cd app/api && mvn clean
-	@cd app/lambdas && mvn clean
+	@$(MAVEN_DOCKER) mvn -f app/common/pom.xml clean -q
+	@$(MAVEN_DOCKER) mvn -f app/api/pom.xml clean -q
+	@$(MAVEN_DOCKER) mvn -f app/lambdas/pom.xml clean -q
 	@rm -rf terraform/.terraform
 	@rm -f terraform/.terraform.lock.hcl
 	@rm -f terraform/terraform.tfstate*
