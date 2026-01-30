@@ -14,6 +14,7 @@ import {
   resizeMedia,
   deleteMedia,
   retryProcessing,
+  generateIdempotencyKey,
 } from "../services";
 import { PagedMediaResponseSchema, StatusResponseSchema } from "../../../shared/types";
 import type { OutputFormat, InitUploadRequest, ResizeRequest, PagedMediaResponse, StatusResponse } from "../../../shared/types";
@@ -86,6 +87,7 @@ export function createUploadMutation() {
 
 /**
  * Mutation for presigned URL upload (large files)
+ * Supports optional webhookUrl for processing completion notification
  */
 export function createPresignedUploadMutation() {
   return createMutation(() => ({
@@ -93,11 +95,13 @@ export function createPresignedUploadMutation() {
       file,
       width,
       outputFormat = "jpeg",
+      webhookUrl,
       onProgress,
     }: {
       file: File;
       width: number;
       outputFormat?: OutputFormat;
+      webhookUrl?: string;
       onProgress?: (progress: number) => void;
     }) => {
       const request: InitUploadRequest = {
@@ -106,10 +110,14 @@ export function createPresignedUploadMutation() {
         contentType: file.type,
         width,
         outputFormat,
+        webhookUrl,
       };
 
-      // Step 1: Initialize presigned upload
-      const initResponse = await initPresignedUpload(request);
+      // Generate idempotency key for retry safety
+      const idempotencyKey = generateIdempotencyKey(file);
+
+      // Step 1: Initialize presigned upload with idempotency
+      const initResponse = await initPresignedUpload(request, idempotencyKey);
 
       // Step 2: Upload to presigned URL
       await uploadToPresignedUrl(initResponse.uploadUrl, file, initResponse.headers, onProgress);

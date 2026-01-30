@@ -21,3 +21,15 @@ variable "additional_tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "dlq_alarm_enabled" {
+  description = "Enable CloudWatch alarm for DLQ"
+  type        = bool
+  default     = true
+}
+
+variable "dlq_alarm_threshold" {
+  description = "Number of messages in DLQ to trigger alarm"
+  type        = number
+  default     = 1
+}

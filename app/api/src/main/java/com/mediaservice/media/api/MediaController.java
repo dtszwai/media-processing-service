@@ -14,6 +14,7 @@ import com.mediaservice.media.application.mapper.MediaMapper;
 import com.mediaservice.media.application.MediaApplicationService;
 import com.mediaservice.analytics.application.AnalyticsService;
 import com.mediaservice.common.model.MediaStatus;
+import com.mediaservice.shared.idempotency.IdempotencyService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -49,6 +50,7 @@ public class MediaController {
   private final MediaMapper mediaMapper;
   private final MediaProperties mediaProperties;
   private final AnalyticsService analyticsService;
+  private final IdempotencyService idempotencyService;
 
   @GetMapping("/health")
   public ResponseEntity<String> health() {
@@ -71,33 +73,81 @@ public class MediaController {
         .build());
   }
 
-  @Operation(summary = "Upload media file")
+  @Operation(summary = "Upload media file", description = "Upload a media file for processing. Supports idempotency via Idempotency-Key header.")
   @ApiResponses({
       @ApiResponse(responseCode = "202", description = "Upload accepted for processing"),
-      @ApiResponse(responseCode = "400", description = "Invalid file")
+      @ApiResponse(responseCode = "400", description = "Invalid file"),
+      @ApiResponse(responseCode = "409", description = "Request with same idempotency key already in progress")
   })
   @PostMapping("/upload")
   public ResponseEntity<MediaResponse> uploadMedia(
       @RequestParam("file") MultipartFile file,
       @RequestParam(required = false) Integer width,
-      @RequestParam(required = false) String outputFormat) throws IOException {
-    log.info("Upload request received: fileName={}, size={}, outputFormat={}",
-        file.getOriginalFilename(), file.getSize(), outputFormat);
+      @RequestParam(required = false) String outputFormat,
+      @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) throws IOException {
+    log.info("Upload request received: fileName={}, size={}, outputFormat={}, idempotencyKey={}",
+        file.getOriginalFilename(), file.getSize(), outputFormat, idempotencyKey);
+
+    // Check idempotency if key provided
+    if (idempotencyKey != null && !idempotencyKey.isEmpty()) {
+      var result = idempotencyService.checkAndSet(idempotencyKey, "upload", MediaResponse.class);
+      if (result.isDuplicate()) {
+        if (result.cachedResponse() != null) {
+          log.info("Returning cached response for idempotency key: {}", idempotencyKey);
+          return ResponseEntity.accepted().body(result.cachedResponse());
+        }
+        // Request in progress - return 409 Conflict
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+            .body(MediaResponse.builder().message("Request already in progress").build());
+      }
+    }
+
     validateUploadFile(file);
-    return ResponseEntity.accepted().body(mediaService.uploadMedia(file, width, outputFormat));
+    MediaResponse response = mediaService.uploadMedia(file, width, outputFormat);
+
+    // Store response for idempotency
+    if (idempotencyKey != null && !idempotencyKey.isEmpty()) {
+      idempotencyService.storeResponse(idempotencyKey, "upload", response);
+    }
+
+    return ResponseEntity.accepted().body(response);
   }
 
-  @Operation(summary = "Initialize presigned upload")
+  @Operation(summary = "Initialize presigned upload", description = "Initialize a presigned upload. Supports idempotency via Idempotency-Key header.")
   @ApiResponses({
       @ApiResponse(responseCode = "201", description = "Presigned upload initialized"),
-      @ApiResponse(responseCode = "400", description = "Invalid request")
+      @ApiResponse(responseCode = "400", description = "Invalid request"),
+      @ApiResponse(responseCode = "409", description = "Request with same idempotency key already in progress")
   })
   @PostMapping("/upload/init")
-  public ResponseEntity<InitUploadResponse> initPresignedUpload(@Valid @RequestBody InitUploadRequest request) {
-    log.info("Init presigned upload request: fileName={}, size={}, contentType={}",
-        request.getFileName(), request.getFileSize(), request.getContentType());
+  public ResponseEntity<InitUploadResponse> initPresignedUpload(
+      @Valid @RequestBody InitUploadRequest request,
+      @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+    log.info("Init presigned upload request: fileName={}, size={}, contentType={}, idempotencyKey={}",
+        request.getFileName(), request.getFileSize(), request.getContentType(), idempotencyKey);
+
+    // Check idempotency if key provided
+    if (idempotencyKey != null && !idempotencyKey.isEmpty()) {
+      var result = idempotencyService.checkAndSet(idempotencyKey, "init-upload", InitUploadResponse.class);
+      if (result.isDuplicate()) {
+        if (result.cachedResponse() != null) {
+          log.info("Returning cached init-upload response for key: {}", idempotencyKey);
+          return ResponseEntity.status(HttpStatus.CREATED).body(result.cachedResponse());
+        }
+        // Request in progress - return 409 Conflict
+        return ResponseEntity.status(HttpStatus.CONFLICT).build();
+      }
+    }
+
     validatePresignedUploadRequest(request);
-    return ResponseEntity.status(HttpStatus.CREATED).body(mediaService.initPresignedUpload(request));
+    InitUploadResponse response = mediaService.initPresignedUpload(request);
+
+    // Store response for idempotency
+    if (idempotencyKey != null && !idempotencyKey.isEmpty()) {
+      idempotencyService.storeResponse(idempotencyKey, "init-upload", response);
+    }
+
+    return ResponseEntity.status(HttpStatus.CREATED).body(response);
   }
 
   @Operation(summary = "Complete presigned upload")
@@ -161,6 +211,28 @@ public class MediaController {
             throw new MediaGoneException("Media has been deleted");
           }
           return ResponseEntity.ok(mediaMapper.toStatusResponse(status));
+        })
+        .orElse(ResponseEntity.notFound().build());
+  }
+
+  @Operation(summary = "Get preview image", description = "Redirects to CDN URL for watermarked preview image")
+  @ApiResponses({
+      @ApiResponse(responseCode = "302", description = "Redirect to preview URL"),
+      @ApiResponse(responseCode = "404", description = "Media not found"),
+      @ApiResponse(responseCode = "202", description = "Media still processing")
+  })
+  @GetMapping("/{mediaId}/preview")
+  public ResponseEntity<Void> getPreviewUrl(@PathVariable String mediaId) {
+    log.info("Preview URL request: mediaId={}", mediaId);
+
+    if (mediaService.isMediaProcessing(mediaId)) {
+      return ResponseEntity.accepted().build();
+    }
+
+    return mediaService.getPreviewUrl(mediaId)
+        .<ResponseEntity<Void>>map(url -> {
+          analyticsService.recordView(mediaId);
+          return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(url)).build();
         })
         .orElse(ResponseEntity.notFound().build());
   }

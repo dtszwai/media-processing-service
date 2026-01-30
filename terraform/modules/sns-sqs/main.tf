@@ -67,3 +67,27 @@ resource "aws_sns_topic_subscription" "sqs_sns_subscription" {
   protocol  = "sqs"
   endpoint  = aws_sqs_queue.media_management_sqs_queue.arn
 }
+
+# CloudWatch alarm for DLQ monitoring
+resource "aws_cloudwatch_metric_alarm" "dlq_not_empty" {
+  count = var.dlq_alarm_enabled ? 1 : 0
+
+  alarm_name          = "media-dlq-not-empty"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = var.dlq_alarm_threshold
+  alarm_description   = "Alarm when messages appear in the DLQ"
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    QueueName = aws_sqs_queue.media_management_sqs_dlq.name
+  }
+
+  tags = merge(var.additional_tags, {
+    Name = "media-dlq-alarm"
+  })
+}

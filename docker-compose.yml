@@ -28,7 +28,7 @@ services:
     environment:
       - DEBUG=1
       - PERSISTENCE=1
-      - SERVICES=s3,dynamodb,sns,sqs,lambda,iam,events
+      - SERVICES=s3,dynamodb,sns,sqs,lambda,iam,events,cloudwatch
       - AWS_DEFAULT_REGION=us-west-2
       - LAMBDA_DOCKER_NETWORK=media-processing-service_default
       - LAMBDA_RUNTIME_ENVIRONMENT_TIMEOUT=120
@@ -79,6 +79,9 @@ services:
       - AWS_S3_ENDPOINT=http://localstack:4566
       - AWS_S3_PRESIGNER_ENDPOINT=http://127.0.0.1:4566
       - AWS_SNS_ENDPOINT=http://localstack:4566
+      - AWS_SQS_ENDPOINT=http://localstack:4566
+      - MEDIA_DLQ_URL=http://localstack:4566/000000000000/media-management-sqs-dlq
+      - CLOUDFRONT_ENABLED=false
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://grafana:4318

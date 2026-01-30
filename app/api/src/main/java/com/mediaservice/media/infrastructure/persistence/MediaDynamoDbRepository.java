@@ -67,6 +67,10 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
     if (outputFormat != null) {
       builder.outputFormat(OutputFormat.fromString(outputFormat));
     }
+    var webhookUrl = getString(item, "webhookUrl");
+    if (webhookUrl != null) {
+      builder.webhookUrl(webhookUrl);
+    }
     return builder.build();
   }
 
@@ -87,6 +91,9 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
     item.put("updatedAt", s(now.toString()));
     if (media.getDeletedAt() != null) {
       item.put("deletedAt", s(media.getDeletedAt().toString()));
+    }
+    if (media.getWebhookUrl() != null) {
+      item.put("webhookUrl", s(media.getWebhookUrl()));
     }
     return item;
   }

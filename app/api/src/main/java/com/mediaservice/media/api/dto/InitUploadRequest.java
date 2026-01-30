@@ -1,10 +1,12 @@
 package com.mediaservice.media.api.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
+import org.hibernate.validator.constraints.URL;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -30,4 +32,9 @@ public class InitUploadRequest {
 
   @Pattern(regexp = "^(jpeg|png|webp)?$", message = "outputFormat must be one of: jpeg, png, webp")
   private String outputFormat;
+
+  @URL(message = "webhookUrl must be a valid URL")
+  @Pattern(regexp = "^https://.*", message = "webhookUrl must use HTTPS")
+  @Schema(description = "Optional HTTPS URL to receive webhook notification when processing completes")
+  private String webhookUrl;
 }

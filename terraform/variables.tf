@@ -60,3 +60,10 @@ variable "enable_snapstart" {
   type        = bool
   default     = true
 }
+
+variable "webhook_secret" {
+  description = "Secret for HMAC-signing webhook payloads"
+  type        = string
+  default     = ""
+  sensitive   = true
+}

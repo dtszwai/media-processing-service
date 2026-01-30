@@ -12,6 +12,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.sns.SnsClient;
+import software.amazon.awssdk.services.sqs.SqsClient;
 
 import java.net.URI;
 
@@ -28,6 +29,9 @@ public class AwsConfig {
 
   @Value("${aws.sns.endpoint:}")
   private String snsEndpoint;
+
+  @Value("${aws.sqs.endpoint:}")
+  private String sqsEndpoint;
 
   @Value("${AWS_ACCESS_KEY_ID:test}")
   private String accessKeyId;
@@ -91,6 +95,17 @@ public class AwsConfig {
         .credentialsProvider(credentialsProvider());
     if (snsEndpoint != null && !snsEndpoint.isEmpty()) {
       builder.endpointOverride(URI.create(snsEndpoint));
+    }
+    return builder.build();
+  }
+
+  @Bean
+  public SqsClient sqsClient() {
+    var builder = SqsClient.builder()
+        .region(Region.of(awsRegion))
+        .credentialsProvider(credentialsProvider());
+    if (sqsEndpoint != null && !sqsEndpoint.isEmpty()) {
+      builder.endpointOverride(URI.create(sqsEndpoint));
     }
     return builder.build();
   }

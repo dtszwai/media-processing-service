@@ -29,6 +29,12 @@ public class S3Service {
     this.bucketName = LambdaConfig.getInstance().getBucketName();
   }
 
+  /** Constructor for testing. */
+  S3Service(S3Client client, String bucketName) {
+    this.client = client;
+    this.bucketName = bucketName;
+  }
+
   /**
    * Get the original uploaded media file.
    *
@@ -90,6 +96,42 @@ public class S3Service {
   public void deleteProcessedFile(String mediaId, OutputFormat outputFormat) {
     OutputFormat format = (outputFormat != null) ? outputFormat : OutputFormat.JPEG;
     String key = StorageConstants.buildS3Key(mediaId, StorageConstants.S3_VARIANT_PROCESSED, format.getExtension());
+    var request = DeleteObjectRequest.builder()
+        .bucket(bucketName)
+        .key(key)
+        .build();
+    client.deleteObject(request);
+  }
+
+  /**
+   * Upload a preview image for CDN distribution.
+   * Preview has 1-year cache control for efficient CDN caching.
+   *
+   * @param mediaId      The media ID
+   * @param previewData  The preview image data
+   * @param outputFormat The output format (determines extension)
+   */
+  public void uploadPreview(String mediaId, byte[] previewData, OutputFormat outputFormat) {
+    OutputFormat format = (outputFormat != null) ? outputFormat : OutputFormat.JPEG;
+    String key = StorageConstants.buildS3Key(mediaId, StorageConstants.VARIANT_PREVIEW, format.getExtension());
+    var request = PutObjectRequest.builder()
+        .bucket(bucketName)
+        .key(key)
+        .contentType(format.getContentType())
+        .cacheControl("public, max-age=31536000")  // 1 year cache for CDN
+        .build();
+    client.putObject(request, RequestBody.fromBytes(previewData));
+  }
+
+  /**
+   * Delete the preview media file.
+   *
+   * @param mediaId      The media ID
+   * @param outputFormat The output format (determines extension)
+   */
+  public void deletePreviewFile(String mediaId, OutputFormat outputFormat) {
+    OutputFormat format = (outputFormat != null) ? outputFormat : OutputFormat.JPEG;
+    String key = StorageConstants.buildS3Key(mediaId, StorageConstants.VARIANT_PREVIEW, format.getExtension());
     var request = DeleteObjectRequest.builder()
         .bucket(bucketName)
         .key(key)

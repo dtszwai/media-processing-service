@@ -25,6 +25,9 @@ public final class LambdaConfig {
   private final float jpegQuality;
   private final float webpQuality;
 
+  // Webhook Configuration
+  private final String webhookSecret;
+
   private LambdaConfig() {
     this.awsRegion = getEnv("AWS_REGION", "us-west-2");
     this.dynamoDbEndpoint = getEnv("AWS_DYNAMODB_ENDPOINT", null);
@@ -40,6 +43,8 @@ public final class LambdaConfig {
     this.watermarkWidthRatio = getEnvFloat("IMAGE_WATERMARK_WIDTH_RATIO", 1.0f / 7.0f);
     this.jpegQuality = getEnvFloat("IMAGE_JPEG_QUALITY", 0.9f);
     this.webpQuality = getEnvFloat("IMAGE_WEBP_QUALITY", 0.85f);
+
+    this.webhookSecret = getEnv("WEBHOOK_SECRET", null);
   }
 
   public static LambdaConfig getInstance() {

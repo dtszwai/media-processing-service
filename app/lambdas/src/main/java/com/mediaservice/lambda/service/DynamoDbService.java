@@ -101,6 +101,15 @@ public class DynamoDbService {
     if (attrs.containsKey("deletedAt")) {
       builder.deletedAt(Instant.parse(attrs.get("deletedAt").s()));
     }
+    if (attrs.containsKey("webhookUrl")) {
+      builder.webhookUrl(attrs.get("webhookUrl").s());
+    }
+    if (attrs.containsKey("mimetype")) {
+      builder.mimetype(attrs.get("mimetype").s());
+    }
+    if (attrs.containsKey("size")) {
+      builder.size(Long.parseLong(attrs.get("size").n()));
+    }
     return Optional.of(builder.build());
   }
 

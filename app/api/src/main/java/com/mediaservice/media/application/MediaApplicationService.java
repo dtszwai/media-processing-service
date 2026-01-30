@@ -52,6 +52,12 @@ public class MediaApplicationService {
   private final LongCounter uploadSuccessCounter;
   private final LongCounter uploadFailureCounter;
 
+  @org.springframework.beans.factory.annotation.Value("${aws.cloudfront.domain:}")
+  private String cloudfrontDomain;
+
+  @org.springframework.beans.factory.annotation.Value("${aws.cloudfront.enabled:false}")
+  private boolean cloudfrontEnabled;
+
   public MediaApplicationService(MediaDynamoDbRepository mediaRepository, S3StorageService s3Service,
       MediaEventPublisher eventPublisher, MediaProperties mediaProperties,
       ImageValidationService imageValidationService, CacheInvalidationService cacheInvalidationService,
@@ -184,6 +190,25 @@ public class MediaApplicationService {
         });
   }
 
+  /**
+   * Get preview URL for CDN-served watermarked preview image.
+   * Returns CloudFront URL if enabled, otherwise falls back to S3 presigned URL.
+   */
+  public Optional<String> getPreviewUrl(String mediaId) {
+    return cacheOrchestrator.getMedia(mediaId)
+        .filter(media -> media.getStatus() == MediaStatus.COMPLETE)
+        .map(media -> {
+          var format = media.getOutputFormat() != null ? media.getOutputFormat() : OutputFormat.JPEG;
+          String key = mediaId + "/preview." + format.getExtension();
+
+          if (cloudfrontEnabled && cloudfrontDomain != null && !cloudfrontDomain.isEmpty()) {
+            return "https://" + cloudfrontDomain + "/" + key;
+          }
+          // Fallback to S3 presigned URL if CloudFront not configured
+          return s3Service.getPreviewPresignedUrl(mediaId, format).orElse(null);
+        });
+  }
+
   public boolean isMediaProcessing(String mediaId) {
     return mediaRepository.getMedia(mediaId)
         .map(media -> media.getStatus() != MediaStatus.COMPLETE)
@@ -293,6 +318,7 @@ public class MediaApplicationService {
           .status(MediaStatus.PENDING_UPLOAD)
           .width(targetWidth)
           .outputFormat(targetFormat)
+          .webhookUrl(request.getWebhookUrl())
           .build(), ttl);
 
       var headers = new LinkedHashMap<String, String>();

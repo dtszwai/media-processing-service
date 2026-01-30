@@ -125,8 +125,23 @@ resource "aws_dynamodb_table" "media_table_local" {
 # =============================================================================
 
 module "sns-sqs" {
-  source          = "./modules/sns-sqs"
-  additional_tags = local.common_tags
+  source            = "./modules/sns-sqs"
+  additional_tags   = local.common_tags
+  dlq_alarm_enabled = var.is_local ? false : true
+}
+
+# =============================================================================
+# CDN (AWS only - CloudFront for preview images)
+# =============================================================================
+
+module "cloudfront" {
+  count  = var.is_local ? 0 : 1
+  source = "./modules/cloudfront"
+
+  additional_tags                = local.common_tags
+  s3_bucket_id                   = module.s3.media_bucket_id
+  s3_bucket_arn                  = module.s3.media_bucket_arn
+  s3_bucket_regional_domain_name = module.s3.media_bucket_regional_domain_name
 }
 
 # =============================================================================
@@ -267,6 +282,9 @@ module "lambda" {
 
   # SnapStart disabled for LocalStack
   enable_snapstart = var.is_local ? false : var.enable_snapstart
+
+  # Webhook HMAC signing secret
+  webhook_secret = var.webhook_secret
 }
 
 # =============================================================================
@@ -295,4 +313,18 @@ output "lambda_function_name" {
 
 output "analytics_lambda_function_name" {
   value = module.lambda.analytics_rollup_function_name
+}
+
+output "cloudfront_domain" {
+  value = var.is_local ? "" : module.cloudfront[0].distribution_domain_name
+}
+
+output "dlq_queue_url" {
+  description = "URL of the dead-letter queue"
+  value       = module.sns-sqs.dlq_queue_url
+}
+
+output "dlq_queue_arn" {
+  description = "ARN of the dead-letter queue"
+  value       = module.sns-sqs.dlq_queue_arn
 }

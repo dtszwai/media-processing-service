@@ -102,4 +102,43 @@ public class ImageProcessingService {
     Iterator<ImageWriter> writers = ImageIO.getImageWritersByFormatName(formatName);
     return writers.hasNext();
   }
+
+  private static final int PREVIEW_MAX_WIDTH = 800;
+  private static final float PREVIEW_QUALITY = 0.6f;
+
+  /**
+   * Generate a preview image with heavy watermark for CDN distribution.
+   * Preview is lower quality and smaller for efficient CDN caching.
+   *
+   * @param imageData Original image bytes
+   * @param outputFormat Desired output format (defaults to JPEG if null/unsupported)
+   * @return Preview image bytes
+   * @throws IOException If image processing fails
+   */
+  public byte[] generatePreview(byte[] imageData, OutputFormat outputFormat) throws IOException {
+    OutputFormat format = (outputFormat != null) ? outputFormat : OutputFormat.JPEG;
+
+    if (!isFormatSupported(format.getFormat())) {
+      format = OutputFormat.JPEG;
+    }
+
+    logger.info("Generating preview with format: {}", format.getFormat());
+
+    var inputStream = new ByteArrayInputStream(imageData);
+    var outputStream = new ByteArrayOutputStream();
+
+    // Heavier watermark for preview - center position, more visible
+    int watermarkWidth = Math.max(200, config.getMinWatermarkWidth() * 2);
+    var resizedWatermark = Thumbnails.of(watermarkImage).width(watermarkWidth).asBufferedImage();
+
+    var builder = Thumbnails.of(inputStream)
+        .width(PREVIEW_MAX_WIDTH)
+        .outputFormat(format.getFormat())
+        .watermark(Positions.CENTER, resizedWatermark, 0.5f)  // Center, more visible
+        .outputQuality(PREVIEW_QUALITY);
+
+    builder.toOutputStream(outputStream);
+    logger.info("Preview generated, size: {} bytes", outputStream.size());
+    return outputStream.toByteArray();
+  }
 }

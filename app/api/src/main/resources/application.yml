@@ -54,6 +54,12 @@ aws:
   sns:
     topic-arn: ${MEDIA_MANAGEMENT_TOPIC_ARN:}
     endpoint: ${AWS_SNS_ENDPOINT:}
+  sqs:
+    dlq-url: ${MEDIA_DLQ_URL:}
+    endpoint: ${AWS_SQS_ENDPOINT:}
+  cloudfront:
+    domain: ${CLOUDFRONT_DOMAIN:}
+    enabled: ${CLOUDFRONT_ENABLED:false}
 
 # Media Configuration
 media:

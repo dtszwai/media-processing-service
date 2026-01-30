@@ -72,3 +72,10 @@ variable "localstack_endpoint" {
   type        = string
   default     = ""
 }
+
+variable "webhook_secret" {
+  description = "Secret for HMAC-signing webhook payloads"
+  type        = string
+  default     = ""
+  sensitive   = true
+}

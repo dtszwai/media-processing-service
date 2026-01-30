@@ -70,11 +70,21 @@ export async function uploadMedia(
 
 /**
  * Initialize presigned upload (for large files)
+ * @param request - Upload initialization request
+ * @param idempotencyKey - Optional idempotency key for retry safety
  */
-export async function initPresignedUpload(request: InitUploadRequest): Promise<InitUploadResponse> {
+export async function initPresignedUpload(
+  request: InitUploadRequest,
+  idempotencyKey?: string,
+): Promise<InitUploadResponse> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (idempotencyKey) {
+    headers["Idempotency-Key"] = idempotencyKey;
+  }
+
   const response = await fetch(`${API_BASE}/upload/init`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(request),
   });
 
@@ -166,6 +176,30 @@ export function getDownloadUrl(mediaId: string): string {
 export function getOriginalUrl(mediaId: string, fileName: string): string {
   const extension = fileName.includes(".") ? fileName.substring(fileName.lastIndexOf(".")) : "";
   return `http://127.0.0.1:4566/media-bucket/${mediaId}/original${extension}`;
+}
+
+/**
+ * Get preview URL for processed media (via CDN in production)
+ */
+export function getPreviewUrl(mediaId: string): string {
+  return `${API_BASE}/${mediaId}/preview`;
+}
+
+/**
+ * Generate idempotency key for upload requests
+ * Uses file name, size, and timestamp to create unique key
+ */
+export function generateIdempotencyKey(file: File): string {
+  const timestamp = Date.now();
+  const data = `${file.name}-${file.size}-${timestamp}`;
+  // Simple hash function for browser compatibility
+  let hash = 0;
+  for (let i = 0; i < data.length; i++) {
+    const char = data.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return `idem-${Math.abs(hash).toString(36)}-${timestamp.toString(36)}`;
 }
 
 /**

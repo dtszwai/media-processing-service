@@ -110,6 +110,49 @@ class ImageProcessingServiceTest {
         }
     }
 
+    @Nested
+    @DisplayName("generatePreview")
+    class GeneratePreview {
+        @Test
+        @DisplayName("should create watermarked low quality image")
+        void generatePreview_createsWatermarkedLowQualityImage() throws IOException {
+            byte[] testImage = createTestImage(1200, 900);
+
+            byte[] preview = service.generatePreview(testImage, OutputFormat.JPEG);
+
+            assertThat(preview).isNotNull();
+            assertThat(preview.length).isLessThan(testImage.length); // Lower quality = smaller
+
+            // Verify dimensions
+            BufferedImage img = ImageIO.read(new ByteArrayInputStream(preview));
+            assertThat(img.getWidth()).isLessThanOrEqualTo(800);
+        }
+
+        @Test
+        @DisplayName("should handle null output format")
+        void shouldHandleNullOutputFormat() throws IOException {
+            byte[] testImage = createTestImage(1000, 800);
+
+            byte[] preview = service.generatePreview(testImage, null);
+
+            assertThat(preview).isNotNull();
+            // Should default to JPEG
+            assertThat(preview[0] & 0xFF).isEqualTo(0xFF);
+            assertThat(preview[1] & 0xFF).isEqualTo(0xD8);
+        }
+
+        @Test
+        @DisplayName("should not exceed max width")
+        void shouldNotExceedMaxWidth() throws IOException {
+            byte[] testImage = createTestImage(2000, 1600);
+
+            byte[] preview = service.generatePreview(testImage, OutputFormat.JPEG);
+
+            BufferedImage img = ImageIO.read(new ByteArrayInputStream(preview));
+            assertThat(img.getWidth()).isEqualTo(800); // PREVIEW_MAX_WIDTH
+        }
+    }
+
     private byte[] createTestImage(int width, int height) throws IOException {
         var image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
         // Fill with a gradient for visual testing

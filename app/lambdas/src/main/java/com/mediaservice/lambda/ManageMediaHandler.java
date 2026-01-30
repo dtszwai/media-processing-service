@@ -13,6 +13,7 @@ import com.mediaservice.common.model.OutputFormat;
 import com.mediaservice.lambda.service.DynamoDbService;
 import com.mediaservice.lambda.service.ImageProcessingService;
 import com.mediaservice.lambda.service.S3Service;
+import com.mediaservice.lambda.service.WebhookService;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongCounter;
@@ -35,6 +36,7 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
   private final DynamoDbService dynamoDbService;
   private final S3Service s3Service;
   private final ImageProcessingService imageProcessingService;
+  private final WebhookService webhookService;
   private final ObjectMapper objectMapper;
   private final Tracer tracer;
   private final LongCounter deleteSuccessCounter, deleteFailureCounter;
@@ -46,17 +48,18 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
    * Creates all dependencies with default implementations.
    */
   public ManageMediaHandler() {
-    this(new DynamoDbService(), new S3Service(), new ImageProcessingService(), new ObjectMapper());
+    this(new DynamoDbService(), new S3Service(), new ImageProcessingService(), new WebhookService(), new ObjectMapper());
   }
 
   /**
    * Constructor for testing - allows injection of mock/stub dependencies.
    */
   ManageMediaHandler(DynamoDbService dynamoDbService, S3Service s3Service,
-      ImageProcessingService imageProcessingService, ObjectMapper objectMapper) {
+      ImageProcessingService imageProcessingService, WebhookService webhookService, ObjectMapper objectMapper) {
     this.dynamoDbService = dynamoDbService;
     this.s3Service = s3Service;
     this.imageProcessingService = imageProcessingService;
+    this.webhookService = webhookService;
     this.objectMapper = objectMapper;
 
     var otel = OpenTelemetryInitializer.initialize();
@@ -214,10 +217,28 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
           Attributes.of(AttributeKey.longKey("media.processing.duration"), duration));
       logger.info("Processed media in {} ms with format: {}", duration, targetFormat.getFormat());
 
+      // Generate and upload preview (only for new uploads, not resizes)
+      if (!isResize) {
+        byte[] preview = imageProcessingService.generatePreview(imageData, targetFormat);
+        s3Service.uploadPreview(mediaId, preview, targetFormat);
+        logger.info("Preview generated and uploaded for media: {}", mediaId);
+      }
+
       s3Service.uploadProcessedMedia(mediaId, media.getName(), processed, targetFormat);
-      dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.COMPLETE, MediaStatus.PROCESSING, targetWidth);
+      var completedMedia = dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.COMPLETE, MediaStatus.PROCESSING, targetWidth);
 
       logger.info("Media operation complete for: {}", mediaId);
+
+      // Send webhook notification if configured
+      if (completedMedia.isPresent() && completedMedia.get().getWebhookUrl() != null) {
+        try {
+          webhookService.sendCompletionNotification(completedMedia.get(), completedMedia.get().getWebhookUrl());
+        } catch (Exception webhookErr) {
+          // Log but don't fail the processing - webhook is best-effort
+          logger.warn("Webhook notification failed for media {}: {}", mediaId, webhookErr.getMessage());
+        }
+      }
+
       span.setStatus(StatusCode.OK);
       successCounter.add(1);
     } catch (ConditionalCheckFailedException e) {

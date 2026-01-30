@@ -18,6 +18,8 @@
   let dragover = $state(false);
   let width = $state(500);
   let outputFormat = $state<OutputFormat>("jpeg");
+  let webhookUrl = $state("");
+  let showAdvanced = $state(false);
   let uploadProgress = $state(0);
   let uploadMethod = $state<"direct" | "presigned" | null>(null);
 
@@ -101,12 +103,13 @@
     try {
       let mediaId: string;
 
-      if (selectedFile.size > PRESIGNED_UPLOAD_THRESHOLD) {
-        // Use presigned URL upload for large files
+      if (selectedFile.size > PRESIGNED_UPLOAD_THRESHOLD || webhookUrl.trim()) {
+        // Use presigned URL upload for large files or when webhook URL is provided
         const result = await presignedUploadMutation.mutateAsync({
           file: selectedFile,
           width,
           outputFormat,
+          webhookUrl: webhookUrl.trim() || undefined,
           onProgress: (progress: number) => {
             uploadProgress = progress;
           },
@@ -256,5 +259,46 @@
         Process Image
       {/if}
     </button>
+  </div>
+
+  <!-- Advanced Options -->
+  <div class="mt-4">
+    <button
+      type="button"
+      onclick={() => (showAdvanced = !showAdvanced)}
+      class="flex items-center text-xs text-gray-500 hover:text-gray-700 transition-colors"
+    >
+      <svg
+        class="w-3 h-3 mr-1 transition-transform {showAdvanced ? 'rotate-90' : ''}"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+      </svg>
+      Advanced Options
+    </button>
+
+    {#if showAdvanced}
+      <div class="mt-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
+        <div>
+          <label for="webhookUrl" class="block text-xs font-medium text-gray-600 mb-1">
+            Webhook URL
+            <span class="text-gray-400 font-normal">(optional)</span>
+          </label>
+          <input
+            type="url"
+            id="webhookUrl"
+            bind:value={webhookUrl}
+            disabled={$isProcessing}
+            placeholder="https://api.example.com/webhooks/media"
+            class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 placeholder:text-gray-400"
+          />
+          <p class="mt-1 text-xs text-gray-400">
+            Receive a POST notification when processing completes. HTTPS required.
+          </p>
+        </div>
+      </div>
+    {/if}
   </div>
 </div>

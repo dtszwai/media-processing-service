@@ -27,6 +27,11 @@ public final class StorageConstants {
   // S3 variant names (flat structure: {mediaId}/{variant}.{ext})
   public static final String S3_VARIANT_ORIGINAL = "original";
   public static final String S3_VARIANT_PROCESSED = "processed";
+  public static final String VARIANT_PREVIEW = "preview";
+
+  // Preview generation settings
+  public static final int PREVIEW_MAX_WIDTH = 800;
+  public static final float PREVIEW_QUALITY = 0.6f;
 
   // DynamoDB key patterns
   public static final String DYNAMO_PK_PREFIX = "MEDIA#";

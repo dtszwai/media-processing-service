@@ -29,6 +29,7 @@ export const InitUploadRequestSchema = z.object({
   contentType: z.string(),
   width: z.number().optional(),
   outputFormat: OutputFormatSchema.optional(),
+  webhookUrl: z.string().url().optional(),
 });
 
 export const InitUploadResponseSchema = z.object({

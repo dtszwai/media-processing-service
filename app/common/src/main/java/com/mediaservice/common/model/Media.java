@@ -31,4 +31,6 @@ public class Media {
   private Instant updatedAt;
   /** Timestamp when media was soft deleted, null if active */
   private Instant deletedAt;
+  /** Optional webhook URL to call when processing completes */
+  private String webhookUrl;
 }

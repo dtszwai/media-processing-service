@@ -12,8 +12,12 @@ BUCKET_NAME="media-bucket"
 TABLE_NAME="media"
 TOPIC_NAME="media-management-topic"
 QUEUE_NAME="media-management-sqs-queue"
+DLQ_NAME="media-management-sqs-dlq"
 LAMBDA_NAME="media-service-manage-media-handler"
 LAMBDA_JAR_PATH="/opt/lambdas/media-service-lambdas-1.1.0.jar"
+
+# Webhook secret for HMAC signing
+WEBHOOK_SECRET="local-dev-webhook-secret-change-in-prod"
 
 log() {
     echo "[init] $1"
@@ -63,13 +67,31 @@ create_sns_topic() {
     log "SNS topic created: ${TOPIC_NAME}"
 }
 
+create_dlq() {
+    awslocal sqs create-queue \
+        --queue-name "${DLQ_NAME}" \
+        --region "${AWS_REGION}"
+    log "DLQ created: ${DLQ_NAME}"
+}
+
 create_sqs_queue() {
-    # Visibility timeout = 6x Lambda timeout (30s * 6 = 180s)
+    local dlq_arn
+
+    # Get DLQ ARN for redrive policy
+    dlq_arn=$(awslocal sqs get-queue-attributes \
+        --queue-url "http://localhost:4566/000000000000/${DLQ_NAME}" \
+        --attribute-names QueueArn \
+        --query 'Attributes.QueueArn' \
+        --output text \
+        --region "${AWS_REGION}")
+
+    # Visibility timeout = 6x Lambda timeout (60s * 6 = 360s)
+    # Redrive policy: after 5 failed attempts, move to DLQ
     awslocal sqs create-queue \
         --queue-name "${QUEUE_NAME}" \
-        --attributes "VisibilityTimeout=180" \
+        --attributes "VisibilityTimeout=360,RedrivePolicy={\"deadLetterTargetArn\":\"${dlq_arn}\",\"maxReceiveCount\":\"5\"}" \
         --region "${AWS_REGION}"
-    log "SQS queue created: ${QUEUE_NAME}"
+    log "SQS queue created with DLQ redrive policy: ${QUEUE_NAME}"
 }
 
 subscribe_sqs_to_sns() {
@@ -119,7 +141,7 @@ create_lambda_function() {
         --zip-file "fileb://${LAMBDA_JAR_PATH}" \
         --timeout 60 \
         --memory-size 3072 \
-        --environment "Variables={AWS_REGION=${AWS_REGION},MEDIA_BUCKET_NAME=${BUCKET_NAME},MEDIA_DYNAMODB_TABLE_NAME=${TABLE_NAME},AWS_S3_ENDPOINT=http://host.docker.internal:4566,AWS_DYNAMODB_ENDPOINT=http://host.docker.internal:4566,OTEL_EXPORTER_OTLP_ENDPOINT=http://grafana-lgtm:4318,OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf,OTEL_SERVICE_NAME=media-service-lambda,OTEL_LOGS_EXPORTER=otlp}" \
+        --environment "Variables={AWS_REGION=${AWS_REGION},MEDIA_BUCKET_NAME=${BUCKET_NAME},MEDIA_DYNAMODB_TABLE_NAME=${TABLE_NAME},AWS_S3_ENDPOINT=http://host.docker.internal:4566,AWS_DYNAMODB_ENDPOINT=http://host.docker.internal:4566,WEBHOOK_SECRET=${WEBHOOK_SECRET},OTEL_EXPORTER_OTLP_ENDPOINT=http://grafana-lgtm:4318,OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf,OTEL_SERVICE_NAME=media-service-lambda,OTEL_LOGS_EXPORTER=otlp}" \
         --region "${AWS_REGION}"
     log "Lambda function created: ${LAMBDA_NAME}"
 }
@@ -150,6 +172,7 @@ main() {
     create_s3_bucket
     create_dynamodb_table
     create_sns_topic
+    create_dlq
     create_sqs_queue
     subscribe_sqs_to_sns
     create_lambda_function

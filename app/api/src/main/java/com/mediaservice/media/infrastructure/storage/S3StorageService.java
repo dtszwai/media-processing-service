@@ -13,6 +13,7 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.Optional;
 
 /**
  * S3 storage service for Media files.
@@ -60,6 +61,14 @@ public class S3StorageService extends AbstractS3StorageRepository {
    */
   private String buildProcessedKey(String mediaId, OutputFormat format) {
     return StorageConstants.buildS3Key(mediaId, StorageConstants.S3_VARIANT_PROCESSED, format.getExtension());
+  }
+
+  /**
+   * Build the S3 key for a preview media file.
+   * Format: {mediaId}/preview.{ext}
+   */
+  private String buildPreviewKey(String mediaId, OutputFormat format) {
+    return StorageConstants.buildS3Key(mediaId, StorageConstants.VARIANT_PREVIEW, format.getExtension());
   }
 
   /**
@@ -130,5 +139,27 @@ public class S3StorageService extends AbstractS3StorageRepository {
     String key = buildOriginalKey(mediaId, fileName);
     delete(key);
     log.info("Deleted upload from S3: {}", key);
+  }
+
+  /**
+   * Get a presigned download URL for a preview media file.
+   * Used as fallback when CloudFront is not configured.
+   *
+   * @param mediaId      The media ID
+   * @param outputFormat The output format (determines file extension)
+   * @return The presigned download URL, or empty if not available
+   */
+  public Optional<String> getPreviewPresignedUrl(String mediaId, OutputFormat outputFormat) {
+    try {
+      OutputFormat format = outputFormat != null ? outputFormat : OutputFormat.JPEG;
+      String key = buildPreviewKey(mediaId, format);
+      Duration expiration = Duration.ofSeconds(mediaProperties.getDownload().getPresignedUrlExpirationSeconds());
+      String url = generatePresignedDownloadUrl(key, expiration);
+      log.info("Generated presigned preview URL for: {}", key);
+      return Optional.of(url);
+    } catch (Exception e) {
+      log.warn("Failed to generate preview presigned URL for mediaId={}: {}", mediaId, e.getMessage());
+      return Optional.empty();
+    }
   }
 }

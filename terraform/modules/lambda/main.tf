@@ -197,6 +197,7 @@ resource "aws_lambda_function" "manage_media" {
         OTEL_METRICS_EXPORTER       = "otlp"
         OTEL_LOGS_EXPORTER          = "otlp"
         OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf"
+        WEBHOOK_SECRET              = var.webhook_secret
       },
       var.is_local ? {
         AWS_S3_ENDPOINT       = var.localstack_endpoint

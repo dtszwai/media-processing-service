@@ -82,6 +82,22 @@ class ManageMediaHandlerTest {
           .isInstanceOf(RuntimeException.class);
       assertThat(dynamoDbService.getLastSetStatus()).isEqualTo(MediaStatus.ERROR);
     }
+
+    @Test
+    @DisplayName("should generate and upload preview during processing")
+    void shouldGeneratePreviewDuringProcessing() throws Exception {
+      var media = Media.builder().mediaId("media-123").name("test.jpg").width(500).status(MediaStatus.PENDING)
+          .build();
+      dynamoDbService.setMediaToReturn(media);
+      s3Service.setFileContent(new byte[100]);
+      imageProcessingService.setProcessedOutput(new byte[50]);
+      imageProcessingService.setPreviewOutput(new byte[30]);
+      var sqsEvent = createSqsEvent("media.v1.process", "media-123", 500);
+      String result = handler.handleRequest(sqsEvent, null);
+      assertThat(result).isEqualTo("OK");
+      assertThat(s3Service.wasPreviewUploadCalled()).isTrue();
+      assertThat(imageProcessingService.wasGeneratePreviewCalled()).isTrue();
+    }
   }
 
   @Nested
@@ -109,6 +125,21 @@ class ManageMediaHandlerTest {
       String result = handler.handleRequest(sqsEvent, null);
       assertThat(result).isEqualTo("OK");
       assertThat(dynamoDbService.wasSetStatusCalled()).isFalse();
+    }
+
+    @Test
+    @DisplayName("should NOT generate preview during resize")
+    void shouldNotGeneratePreviewDuringResize() throws Exception {
+      var media = Media.builder().mediaId("media-123").name("test.jpg").width(500).status(MediaStatus.PENDING)
+          .build();
+      dynamoDbService.setMediaToReturn(media);
+      s3Service.setFileContent(new byte[100]);
+      imageProcessingService.setProcessedOutput(new byte[50]);
+      var sqsEvent = createSqsEvent("media.v1.resize", "media-123", 800);
+      String result = handler.handleRequest(sqsEvent, null);
+      assertThat(result).isEqualTo("OK");
+      assertThat(s3Service.wasPreviewUploadCalled()).isFalse();
+      assertThat(imageProcessingService.wasGeneratePreviewCalled()).isFalse();
     }
   }
 
@@ -255,6 +286,7 @@ class ManageMediaHandlerTest {
     private boolean shouldThrowOnGet;
     private boolean getFileCalled;
     private boolean uploadCalled;
+    private boolean previewUploadCalled;
     private final java.util.List<String> deletedKeys = new java.util.ArrayList<>();
 
     void setFileContent(byte[] content) {
@@ -277,6 +309,10 @@ class ManageMediaHandlerTest {
       uploadCalled = true;
     }
 
+    void uploadPreview(String mediaId, byte[] data, OutputFormat outputFormat) {
+      previewUploadCalled = true;
+    }
+
     void deleteOriginalFile(String mediaId, String mediaName) {
       deletedKeys.add("original");
     }
@@ -293,6 +329,10 @@ class ManageMediaHandlerTest {
       return uploadCalled;
     }
 
+    boolean wasPreviewUploadCalled() {
+      return previewUploadCalled;
+    }
+
     java.util.List<String> getDeletedKeys() {
       return deletedKeys;
     }
@@ -300,9 +340,15 @@ class ManageMediaHandlerTest {
 
   static class StubImageProcessingService {
     private byte[] processedOutput;
+    private byte[] previewOutput;
+    private boolean generatePreviewCalled;
 
     void setProcessedOutput(byte[] output) {
       this.processedOutput = output;
+    }
+
+    void setPreviewOutput(byte[] output) {
+      this.previewOutput = output;
     }
 
     byte[] processImage(byte[] data, Integer width, OutputFormat outputFormat) throws IOException {
@@ -311,6 +357,15 @@ class ManageMediaHandlerTest {
 
     byte[] resizeImage(byte[] data, Integer width, OutputFormat outputFormat) throws IOException {
       return processedOutput;
+    }
+
+    byte[] generatePreview(byte[] data, OutputFormat outputFormat) throws IOException {
+      generatePreviewCalled = true;
+      return previewOutput != null ? previewOutput : new byte[20];
+    }
+
+    boolean wasGeneratePreviewCalled() {
+      return generatePreviewCalled;
     }
   }
 
@@ -393,6 +448,12 @@ class ManageMediaHandlerTest {
         byte[] processedImage = isResize
             ? imageProcessingService.resizeImage(imageData, targetWidth, OutputFormat.JPEG)
             : imageProcessingService.processImage(imageData, targetWidth, OutputFormat.JPEG);
+
+        // Generate and upload preview (only for new uploads, not resizes)
+        if (!isResize) {
+          byte[] preview = imageProcessingService.generatePreview(imageData, OutputFormat.JPEG);
+          s3Service.uploadPreview(mediaId, preview, OutputFormat.JPEG);
+        }
 
         s3Service.uploadProcessedMedia(mediaId, media.getName(), processedImage, OutputFormat.JPEG);
         dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.COMPLETE, MediaStatus.PROCESSING,
