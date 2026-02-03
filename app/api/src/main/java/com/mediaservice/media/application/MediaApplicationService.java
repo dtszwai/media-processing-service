@@ -182,7 +182,7 @@ public class MediaApplicationService {
     return cacheOrchestrator.getMedia(mediaId)
         .filter(media -> media.getStatus() == MediaStatus.COMPLETE)
         .flatMap(media -> {
-          var format = media.getOutputFormat() != null ? media.getOutputFormat() : OutputFormat.JPEG;
+          var format = media.getOutputFormatOrDefault();
           return cacheOrchestrator.getPresignedUrl(
               mediaId,
               format.getFormat(),
@@ -198,7 +198,7 @@ public class MediaApplicationService {
     return cacheOrchestrator.getMedia(mediaId)
         .filter(media -> media.getStatus() == MediaStatus.COMPLETE)
         .map(media -> {
-          var format = media.getOutputFormat() != null ? media.getOutputFormat() : OutputFormat.JPEG;
+          var format = media.getOutputFormatOrDefault();
           String key = mediaId + "/preview." + format.getExtension();
 
           if (cloudfrontEnabled && cloudfrontDomain != null && !cloudfrontDomain.isEmpty()) {
@@ -225,7 +225,7 @@ public class MediaApplicationService {
           }
           OutputFormat targetFormat = outputFormat != null
               ? OutputFormat.fromString(outputFormat)
-              : (media.getOutputFormat() != null ? media.getOutputFormat() : OutputFormat.JPEG);
+              : media.getOutputFormatOrDefault();
           eventPublisher.publishResizeMediaEvent(mediaId, width, targetFormat.getFormat());
           cacheInvalidationService.invalidateMedia(mediaId);
           log.info("Resize request submitted for mediaId: {} with outputFormat: {}", mediaId, targetFormat.getFormat());
@@ -270,10 +270,7 @@ public class MediaApplicationService {
             log.warn("Failed to reset status for retry: mediaId={}", mediaId);
             return Optional.empty();
           }
-          String outputFormat = media.getOutputFormat() != null
-              ? media.getOutputFormat().getFormat()
-              : OutputFormat.JPEG.getFormat();
-          eventPublisher.publishProcessMediaEvent(mediaId, media.getWidth(), outputFormat);
+          eventPublisher.publishProcessMediaEvent(mediaId, media.getWidth(), media.getOutputFormatOrDefault().getFormat());
           cacheInvalidationService.invalidateMedia(mediaId);
           log.info("Retry initiated for mediaId={}, previousStatus={}", mediaId, media.getStatus());
           return Optional.of(media);
@@ -407,10 +404,7 @@ public class MediaApplicationService {
               return Optional.empty();
             }
 
-            String outputFormat = media.getOutputFormat() != null
-                ? media.getOutputFormat().getFormat()
-                : OutputFormat.JPEG.getFormat();
-            eventPublisher.publishProcessMediaEvent(mediaId, media.getWidth(), outputFormat);
+            eventPublisher.publishProcessMediaEvent(mediaId, media.getWidth(), media.getOutputFormatOrDefault().getFormat());
             uploadSuccessCounter.add(1);
             span.setStatus(StatusCode.OK);
             log.info("Presigned upload completed: mediaId={}", mediaId);

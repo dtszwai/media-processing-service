@@ -151,7 +151,7 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
         return;
       }
       var media = mediaOpt.get();
-      var outputFormat = media.getOutputFormat() != null ? media.getOutputFormat() : OutputFormat.JPEG;
+      var outputFormat = media.getOutputFormatOrDefault();
 
       // Delete original file from S3
       s3Service.deleteOriginalFile(mediaId, media.getName());
@@ -204,8 +204,7 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
       byte[] imageData = s3Service.getMediaFile(mediaId, media.getName());
 
       var targetWidth = requestedWidth != null ? requestedWidth : media.getWidth();
-      var targetFormat = outputFormat != null ? outputFormat
-          : (media.getOutputFormat() != null ? media.getOutputFormat() : OutputFormat.JPEG);
+      var targetFormat = outputFormat != null ? outputFormat : media.getOutputFormatOrDefault();
 
       long start = System.currentTimeMillis();
       byte[] processed = isResize

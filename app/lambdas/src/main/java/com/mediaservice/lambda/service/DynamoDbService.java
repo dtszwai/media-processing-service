@@ -92,24 +92,12 @@ public class DynamoDbService {
         .mediaId(mediaId)
         .name(attrs.get("name").s())
         .status(MediaStatus.valueOf(attrs.get("status").s()));
-    if (attrs.containsKey("width")) {
-      builder.width(Integer.parseInt(attrs.get("width").n()));
-    }
-    if (attrs.containsKey("outputFormat")) {
-      builder.outputFormat(OutputFormat.fromString(attrs.get("outputFormat").s()));
-    }
-    if (attrs.containsKey("deletedAt")) {
-      builder.deletedAt(Instant.parse(attrs.get("deletedAt").s()));
-    }
-    if (attrs.containsKey("webhookUrl")) {
-      builder.webhookUrl(attrs.get("webhookUrl").s());
-    }
-    if (attrs.containsKey("mimetype")) {
-      builder.mimetype(attrs.get("mimetype").s());
-    }
-    if (attrs.containsKey("size")) {
-      builder.size(Long.parseLong(attrs.get("size").n()));
-    }
+    getInt(attrs, "width").ifPresent(builder::width);
+    getString(attrs, "outputFormat").map(OutputFormat::fromString).ifPresent(builder::outputFormat);
+    getString(attrs, "deletedAt").map(Instant::parse).ifPresent(builder::deletedAt);
+    getString(attrs, "webhookUrl").ifPresent(builder::webhookUrl);
+    getString(attrs, "mimetype").ifPresent(builder::mimetype);
+    getLong(attrs, "size").ifPresent(builder::size);
     return Optional.of(builder.build());
   }
 
@@ -119,5 +107,17 @@ public class DynamoDbService {
 
   private AttributeValue n(Integer value) {
     return AttributeValue.builder().n(String.valueOf(value)).build();
+  }
+
+  private Optional<String> getString(Map<String, AttributeValue> attrs, String key) {
+    return attrs.containsKey(key) ? Optional.of(attrs.get(key).s()) : Optional.empty();
+  }
+
+  private Optional<Integer> getInt(Map<String, AttributeValue> attrs, String key) {
+    return attrs.containsKey(key) ? Optional.of(Integer.parseInt(attrs.get(key).n())) : Optional.empty();
+  }
+
+  private Optional<Long> getLong(Map<String, AttributeValue> attrs, String key) {
+    return attrs.containsKey(key) ? Optional.of(Long.parseLong(attrs.get(key).n())) : Optional.empty();
   }
 }

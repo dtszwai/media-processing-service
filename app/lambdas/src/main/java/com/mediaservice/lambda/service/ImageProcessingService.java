@@ -64,13 +64,7 @@ public class ImageProcessingService {
   private byte[] processImageInternal(byte[] imageData, Integer targetWidth, Position watermarkPosition,
       OutputFormat outputFormat) throws IOException {
     int width = (targetWidth != null && targetWidth > 0) ? targetWidth : config.getDefaultWidth();
-    OutputFormat format = (outputFormat != null) ? outputFormat : OutputFormat.JPEG;
-
-    // Check if the format is supported
-    if (!isFormatSupported(format.getFormat())) {
-      logger.warn("Output format '{}' is not supported, falling back to JPEG", format.getFormat());
-      format = OutputFormat.JPEG;
-    }
+    OutputFormat format = resolveOutputFormat(outputFormat);
 
     logger.info("Processing image with format: {}, width: {}", format.getFormat(), width);
 
@@ -103,6 +97,18 @@ public class ImageProcessingService {
     return writers.hasNext();
   }
 
+  /**
+   * Resolves the output format, defaulting to JPEG if null or unsupported.
+   */
+  private OutputFormat resolveOutputFormat(OutputFormat requested) {
+    OutputFormat format = (requested != null) ? requested : OutputFormat.JPEG;
+    if (!isFormatSupported(format.getFormat())) {
+      logger.warn("Output format '{}' is not supported, falling back to JPEG", format.getFormat());
+      return OutputFormat.JPEG;
+    }
+    return format;
+  }
+
   private static final int PREVIEW_MAX_WIDTH = 800;
   private static final float PREVIEW_QUALITY = 0.6f;
 
@@ -116,11 +122,7 @@ public class ImageProcessingService {
    * @throws IOException If image processing fails
    */
   public byte[] generatePreview(byte[] imageData, OutputFormat outputFormat) throws IOException {
-    OutputFormat format = (outputFormat != null) ? outputFormat : OutputFormat.JPEG;
-
-    if (!isFormatSupported(format.getFormat())) {
-      format = OutputFormat.JPEG;
-    }
+    OutputFormat format = resolveOutputFormat(outputFormat);
 
     logger.info("Generating preview with format: {}", format.getFormat());
 

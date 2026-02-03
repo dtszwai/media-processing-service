@@ -33,4 +33,13 @@ public class Media {
   private Instant deletedAt;
   /** Optional webhook URL to call when processing completes */
   private String webhookUrl;
+
+  /**
+   * Returns the output format, defaulting to JPEG if not set.
+   *
+   * @return the output format or JPEG as default
+   */
+  public OutputFormat getOutputFormatOrDefault() {
+    return outputFormat != null ? outputFormat : OutputFormat.JPEG;
+  }
 }
