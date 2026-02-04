@@ -10,11 +10,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
-import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -156,26 +154,6 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
         .toList();
     log.info("Retrieved {} media records (hasMore={})", activeItems.size(), result.hasMore());
     return new MediaPagedResult(activeItems, result.nextCursor(), result.hasMore());
-  }
-
-  /**
-   * Get all media records (deprecated - use pagination).
-   */
-  @Deprecated
-  public List<Media> getAllMedia() {
-    var mediaList = new ArrayList<Media>();
-    var request = ScanRequest.builder()
-        .tableName(tableName)
-        .filterExpression("SK = :sk")
-        .expressionAttributeValues(Map.of(":sk", s(StorageConstants.DYNAMO_SK_METADATA)))
-        .build();
-    var response = dynamoDbClient.scan(request);
-    for (var item : response.items()) {
-      mediaList.add(mapFromItem(item));
-    }
-    mediaList.sort((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()));
-    log.info("Retrieved {} media records", mediaList.size());
-    return mediaList;
   }
 
   /**

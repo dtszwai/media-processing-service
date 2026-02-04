@@ -4,6 +4,7 @@
   import Header from "./shared/components/Header.svelte";
   import MediaPage from "./features/media/pages/MediaPage.svelte";
   import AnalyticsPage from "./features/analytics/pages/AnalyticsPage.svelte";
+  import DlqPage from "./features/admin/pages/DlqPage.svelte";
 
   let currentPath = $state(window.location.pathname);
 
@@ -36,10 +37,10 @@
   <div class="min-h-screen bg-gray-50">
     <Header {currentPath} {navigate} />
     <main class="max-w-5xl mx-auto px-6 py-8">
-      {#if currentPath === "/" || currentPath === ""}
-        <MediaPage />
-      {:else if currentPath === "/analytics"}
+      {#if currentPath === "/analytics"}
         <AnalyticsPage />
+      {:else if currentPath === "/admin/dlq"}
+        <DlqPage />
       {:else}
         <MediaPage />
       {/if}

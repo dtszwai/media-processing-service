@@ -23,6 +23,14 @@ export const queryKeys = {
     formatUsage: (period: string) => ["analytics", "formatUsage", period] as const,
     downloadStats: (period: string) => ["analytics", "downloadStats", period] as const,
   },
+  admin: {
+    all: ["admin"] as const,
+    dlq: {
+      all: ["admin", "dlq"] as const,
+      status: () => ["admin", "dlq", "status"] as const,
+      messages: (limit?: number) => ["admin", "dlq", "messages", { limit }] as const,
+    },
+  },
 } as const;
 
 /**

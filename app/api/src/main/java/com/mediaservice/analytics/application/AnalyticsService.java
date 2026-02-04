@@ -228,72 +228,97 @@ public class AnalyticsService {
    */
   public List<EntityViewCount> getTopMedia(Period period, int limit) {
     try {
-      Map<String, Long> viewCounts;
-
-      switch (period) {
-        case TODAY -> {
-          // Fast path: directly from Redis daily key
-          viewCounts = getTopFromRedis(VIEWS_DAILY_PREFIX + LocalDate.now().format(DATE_FORMATTER), limit);
-        }
-        case ALL_TIME -> {
-          // Fast path: directly from Redis all-time key
-          viewCounts = getTopFromRedis(VIEWS_TOTAL_KEY, limit);
-        }
-        case THIS_WEEK, THIS_MONTH, THIS_YEAR -> {
-          // Roll-Up Pattern: aggregate from DynamoDB + add today's Redis data
-          var today = LocalDate.now();
-          LocalDate startDate = switch (period) {
-            case THIS_WEEK -> today.with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
-            case THIS_MONTH -> today.withDayOfMonth(1);
-            case THIS_YEAR -> today.withDayOfYear(1);
-            default -> today;
-          };
-
-          // Get historical data from DynamoDB (excludes today)
-          viewCounts = new HashMap<>(
-              persistenceService.aggregateDailyAnalytics(startDate, today.minusDays(1), limit * 2));
-
-          // Add today's data from Redis
-          var todayData = getTopFromRedis(VIEWS_DAILY_PREFIX + today.format(DATE_FORMATTER), limit * 2);
-          for (var entry : todayData.entrySet()) {
-            viewCounts.merge(entry.getKey(), entry.getValue(), Long::sum);
-          }
-
-          // Re-sort and limit
-          viewCounts = viewCounts.entrySet().stream()
-              .sorted((a, b) -> Long.compare(b.getValue(), a.getValue()))
-              .limit(limit)
-              .collect(java.util.stream.Collectors.toMap(
-                  Map.Entry::getKey,
-                  Map.Entry::getValue,
-                  (e1, e2) -> e1,
-                  LinkedHashMap::new));
-        }
-        default -> {
-          return Collections.emptyList();
-        }
-      }
+      Map<String, Long> viewCounts = fetchViewCountsForPeriod(period, limit);
 
       if (viewCounts.isEmpty()) {
         return Collections.emptyList();
       }
 
-      // Build result with media names and deleted status
-      var result = new ArrayList<EntityViewCount>();
-      int rank = 1;
-      for (var entry : viewCounts.entrySet()) {
-        var mediaOpt = dynamoDbService.getMedia(entry.getKey());
-        var name = mediaOpt.map(media -> media.getName()).orElse("Unknown");
-        var deleted = mediaOpt.map(media -> media.getStatus() == MediaStatus.DELETED).orElse(false);
-        var deletedAt = mediaOpt.filter(media -> media.getStatus() == MediaStatus.DELETED)
-            .map(media -> media.getDeletedAt()).orElse(null);
-        result.add(EntityViewCount.forMedia(entry.getKey(), name, entry.getValue(), rank++, deleted, deletedAt));
-      }
-      return result;
+      return buildEntityViewCountList(viewCounts);
     } catch (Exception e) {
       log.error("Failed to get top media for period {}: {}", period, e.getMessage());
       return Collections.emptyList();
     }
+  }
+
+  /**
+   * Fetch view counts for a specific period using appropriate data source.
+   */
+  private Map<String, Long> fetchViewCountsForPeriod(Period period, int limit) {
+    var today = LocalDate.now();
+
+    return switch (period) {
+      case TODAY -> getTopFromRedis(VIEWS_DAILY_PREFIX + today.format(DATE_FORMATTER), limit);
+      case ALL_TIME -> getTopFromRedis(VIEWS_TOTAL_KEY, limit);
+      case THIS_WEEK, THIS_MONTH, THIS_YEAR -> aggregateWithTodayData(
+          getPeriodStartDate(period, today), today, limit);
+      default -> Collections.emptyMap();
+    };
+  }
+
+  /**
+   * Get the start date for a period-based query.
+   */
+  private LocalDate getPeriodStartDate(Period period, LocalDate today) {
+    return switch (period) {
+      case THIS_WEEK -> today.with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
+      case THIS_MONTH -> today.withDayOfMonth(1);
+      case THIS_YEAR -> today.withDayOfYear(1);
+      default -> today;
+    };
+  }
+
+  /**
+   * Aggregate historical data from DynamoDB with today's Redis data.
+   * Implements the Roll-Up Pattern for weekly/monthly/yearly views.
+   */
+  private Map<String, Long> aggregateWithTodayData(LocalDate startDate, LocalDate today, int limit) {
+    // Get historical data from DynamoDB (excludes today)
+    var viewCounts = new HashMap<>(
+        persistenceService.aggregateDailyAnalytics(startDate, today.minusDays(1), limit * 2));
+
+    // Add today's data from Redis
+    var todayData = getTopFromRedis(VIEWS_DAILY_PREFIX + today.format(DATE_FORMATTER), limit * 2);
+    todayData.forEach((mediaId, count) -> viewCounts.merge(mediaId, count, Long::sum));
+
+    // Re-sort and limit
+    return sortAndLimit(viewCounts, limit);
+  }
+
+  /**
+   * Sort view counts by value descending and limit results.
+   */
+  private Map<String, Long> sortAndLimit(Map<String, Long> viewCounts, int limit) {
+    return viewCounts.entrySet().stream()
+        .sorted((a, b) -> Long.compare(b.getValue(), a.getValue()))
+        .limit(limit)
+        .collect(java.util.stream.Collectors.toMap(
+            Map.Entry::getKey,
+            Map.Entry::getValue,
+            (e1, e2) -> e1,
+            LinkedHashMap::new));
+  }
+
+  /**
+   * Build EntityViewCount list from view counts map, enriching with media metadata.
+   */
+  private List<EntityViewCount> buildEntityViewCountList(Map<String, Long> viewCounts) {
+    var result = new ArrayList<EntityViewCount>();
+    int rank = 1;
+
+    for (var entry : viewCounts.entrySet()) {
+      var mediaOpt = dynamoDbService.getMedia(entry.getKey());
+      var name = mediaOpt.map(media -> media.getName()).orElse("Unknown");
+      var deleted = mediaOpt.map(media -> media.getStatus() == MediaStatus.DELETED).orElse(false);
+      var deletedAt = mediaOpt
+          .filter(media -> media.getStatus() == MediaStatus.DELETED)
+          .map(media -> media.getDeletedAt())
+          .orElse(null);
+
+      result.add(EntityViewCount.forMedia(entry.getKey(), name, entry.getValue(), rank++, deleted, deletedAt));
+    }
+
+    return result;
   }
 
   /**

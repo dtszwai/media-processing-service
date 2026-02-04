@@ -65,6 +65,25 @@
       return "";
     }
   }
+
+  function getRankBadgeClass(rank: number): string {
+    switch (rank) {
+      case 1:
+        return "bg-yellow-100 text-yellow-700";
+      case 2:
+        return "bg-gray-100 text-gray-600";
+      case 3:
+        return "bg-orange-100 text-orange-700";
+      default:
+        return "bg-gray-50 text-gray-500";
+    }
+  }
+
+  function getRankLabel(rank: number): string {
+    if (rank === 1) return "Top Performer";
+    if (rank <= 3) return "Top 3";
+    return "Ranked";
+  }
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -89,14 +108,16 @@
             {media.name}
           </h2>
           {#if media.deleted}
-            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 flex-shrink-0">
+            <span
+              class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 shrink-0"
+            >
               Deleted
             </span>
           {/if}
         </div>
         <button
           onclick={onclose}
-          class="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors flex-shrink-0"
+          class="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors shrink-0"
           aria-label="Close modal"
         >
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -111,7 +132,12 @@
         {#if media.deleted}
           <div class="bg-gray-100 rounded-lg overflow-hidden mb-6 flex flex-col items-center justify-center py-12">
             <svg class="w-16 h-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              ></path>
             </svg>
             <p class="text-gray-500 font-medium">This media has been deleted</p>
             {#if media.deletedAt}
@@ -130,40 +156,48 @@
         {/if}
 
         <!-- View Statistics -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-          <div class="bg-gray-50 rounded-lg p-4 text-center">
-            <p class="text-2xl font-bold text-gray-900">{formatNumber(media.viewCount)}</p>
-            <p class="text-xs text-gray-500 mt-1">Total Views</p>
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
+          <div class="bg-gray-50 rounded-lg p-3 text-center">
+            <p class="text-xl font-bold text-gray-900">{formatNumber(media.viewCount)}</p>
+            <p class="text-xs text-gray-500 mt-1">Total</p>
           </div>
           {#if viewsQuery}
             {#if viewsQuery.isLoading}
-              <div class="bg-gray-50 rounded-lg p-4 text-center animate-pulse">
-                <div class="h-8 bg-gray-200 rounded w-16 mx-auto"></div>
+              <div class="bg-gray-50 rounded-lg p-3 text-center animate-pulse">
+                <div class="h-7 bg-gray-200 rounded w-12 mx-auto"></div>
                 <p class="text-xs text-gray-500 mt-1">Today</p>
               </div>
-              <div class="bg-gray-50 rounded-lg p-4 text-center animate-pulse">
-                <div class="h-8 bg-gray-200 rounded w-16 mx-auto"></div>
-                <p class="text-xs text-gray-500 mt-1">This Week</p>
+              <div class="bg-gray-50 rounded-lg p-3 text-center animate-pulse">
+                <div class="h-7 bg-gray-200 rounded w-12 mx-auto"></div>
+                <p class="text-xs text-gray-500 mt-1">Week</p>
               </div>
-              <div class="bg-gray-50 rounded-lg p-4 text-center animate-pulse">
-                <div class="h-8 bg-gray-200 rounded w-16 mx-auto"></div>
-                <p class="text-xs text-gray-500 mt-1">This Month</p>
+              <div class="bg-gray-50 rounded-lg p-3 text-center animate-pulse">
+                <div class="h-7 bg-gray-200 rounded w-12 mx-auto"></div>
+                <p class="text-xs text-gray-500 mt-1">Month</p>
+              </div>
+              <div class="bg-gray-50 rounded-lg p-3 text-center animate-pulse">
+                <div class="h-7 bg-gray-200 rounded w-12 mx-auto"></div>
+                <p class="text-xs text-gray-500 mt-1">Year</p>
               </div>
             {:else if viewsQuery.data}
-              <div class="bg-blue-50 rounded-lg p-4 text-center">
-                <p class="text-2xl font-bold text-blue-600">{formatNumber(viewsQuery.data.today)}</p>
+              <div class="bg-blue-50 rounded-lg p-3 text-center">
+                <p class="text-xl font-bold text-blue-600">{formatNumber(viewsQuery.data.today)}</p>
                 <p class="text-xs text-gray-500 mt-1">Today</p>
               </div>
-              <div class="bg-green-50 rounded-lg p-4 text-center">
-                <p class="text-2xl font-bold text-green-600">{formatNumber(viewsQuery.data.thisWeek)}</p>
-                <p class="text-xs text-gray-500 mt-1">This Week</p>
+              <div class="bg-green-50 rounded-lg p-3 text-center">
+                <p class="text-xl font-bold text-green-600">{formatNumber(viewsQuery.data.thisWeek)}</p>
+                <p class="text-xs text-gray-500 mt-1">Week</p>
               </div>
-              <div class="bg-purple-50 rounded-lg p-4 text-center">
-                <p class="text-2xl font-bold text-purple-600">{formatNumber(viewsQuery.data.thisMonth)}</p>
-                <p class="text-xs text-gray-500 mt-1">This Month</p>
+              <div class="bg-purple-50 rounded-lg p-3 text-center">
+                <p class="text-xl font-bold text-purple-600">{formatNumber(viewsQuery.data.thisMonth)}</p>
+                <p class="text-xs text-gray-500 mt-1">Month</p>
+              </div>
+              <div class="bg-orange-50 rounded-lg p-3 text-center">
+                <p class="text-xl font-bold text-orange-600">{formatNumber(viewsQuery.data.thisYear)}</p>
+                <p class="text-xs text-gray-500 mt-1">Year</p>
               </div>
             {:else}
-              <div class="bg-gray-50 rounded-lg p-4 text-center col-span-3">
+              <div class="bg-gray-50 rounded-lg p-3 text-center col-span-4">
                 <p class="text-sm text-gray-400">Stats unavailable</p>
               </div>
             {/if}
@@ -172,20 +206,9 @@
 
         <!-- Rank Badge -->
         <div class="flex items-center justify-center mb-6">
-          <div
-            class="inline-flex items-center space-x-2 px-4 py-2 rounded-full
-            {media.rank === 1
-              ? 'bg-yellow-100 text-yellow-700'
-              : media.rank === 2
-                ? 'bg-gray-100 text-gray-600'
-                : media.rank === 3
-                  ? 'bg-orange-100 text-orange-700'
-                  : 'bg-gray-50 text-gray-500'}"
-          >
+          <div class="inline-flex items-center space-x-2 px-4 py-2 rounded-full {getRankBadgeClass(media.rank)}">
             <span class="text-lg font-bold">#{media.rank}</span>
-            <span class="text-sm">
-              {media.rank === 1 ? "Top Performer" : media.rank <= 3 ? "Top 3" : "Ranked"}
-            </span>
+            <span class="text-sm">{getRankLabel(media.rank)}</span>
           </div>
         </div>
       </div>

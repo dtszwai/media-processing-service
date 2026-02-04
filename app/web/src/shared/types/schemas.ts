@@ -101,7 +101,7 @@ export const HealthResponseSchema = z.object({
 
 // ============= Analytics Schemas =============
 
-export const PeriodSchema = z.enum(["TODAY", "THIS_WEEK", "THIS_MONTH", "ALL_TIME"]);
+export const PeriodSchema = z.enum(["TODAY", "THIS_WEEK", "THIS_MONTH", "THIS_YEAR", "ALL_TIME"]);
 
 export const EntityTypeSchema = z.enum(["MEDIA", "THREAD", "COMMENT", "USER"]);
 
@@ -148,6 +148,23 @@ export const AnalyticsSummarySchema = z.object({
   formatUsage: z.record(z.string(), z.number()),
 });
 
+// ============= Admin DLQ Schemas =============
+
+export const DlqMessageSchema = z.object({
+  messageId: z.string(),
+  receiptHandle: z.string(),
+  body: z.string(),
+  attributes: z.record(z.string(), z.string()).optional(),
+  sentTimestamp: z.string().optional(),
+  approximateReceiveCount: z.number().optional(),
+});
+
+export const DlqStatusSchema = z.object({
+  configured: z.boolean(),
+  queueUrl: z.string().optional(),
+  approximateMessageCount: z.number().optional(),
+});
+
 // ============= Inferred Types =============
 
 // Media types
@@ -177,3 +194,7 @@ export type ViewStats = z.infer<typeof ViewStatsSchema>;
 export type FormatUsageStats = z.infer<typeof FormatUsageStatsSchema>;
 export type DownloadStats = z.infer<typeof DownloadStatsSchema>;
 export type AnalyticsSummary = z.infer<typeof AnalyticsSummarySchema>;
+
+// DLQ types
+export type DlqMessage = z.infer<typeof DlqMessageSchema>;
+export type DlqStatus = z.infer<typeof DlqStatusSchema>;

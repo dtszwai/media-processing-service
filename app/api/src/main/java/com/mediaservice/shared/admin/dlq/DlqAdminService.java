@@ -1,5 +1,7 @@
 package com.mediaservice.shared.admin.dlq;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -22,16 +24,19 @@ public class DlqAdminService {
 
     private final SqsClient sqsClient;
     private final SnsClient snsClient;
+    private final ObjectMapper objectMapper;
     private final String dlqUrl;
     private final String snsTopicArn;
 
     public DlqAdminService(
             SqsClient sqsClient,
             SnsClient snsClient,
+            ObjectMapper objectMapper,
             @Value("${aws.sqs.dlq-url:}") String dlqUrl,
             @Value("${aws.sns.topic-arn:}") String snsTopicArn) {
         this.sqsClient = sqsClient;
         this.snsClient = snsClient;
+        this.objectMapper = objectMapper;
         this.dlqUrl = dlqUrl;
         this.snsTopicArn = snsTopicArn;
     }
@@ -226,42 +231,27 @@ public class DlqAdminService {
                 .build();
     }
 
+    /**
+     * Extract the actual message payload from an SNS envelope.
+     * SNS wraps messages in an envelope when delivering to SQS.
+     *
+     * @param body the raw message body (potentially SNS-wrapped)
+     * @return the extracted message payload, or original body if not wrapped
+     */
     private String extractPayloadFromSnsEnvelope(String body) {
-        // SNS wraps messages in an envelope when delivering to SQS
-        // Try to extract the actual message if it's wrapped
         try {
-            if (body.contains("\"Message\"") && body.contains("\"Type\"")) {
-                // Simple extraction - in production, use proper JSON parsing
-                int start = body.indexOf("\"Message\"");
-                if (start >= 0) {
-                    int valueStart = body.indexOf(":", start) + 1;
-                    // Find the message value (handles escaped JSON)
-                    int quoteStart = body.indexOf("\"", valueStart);
-                    if (quoteStart >= 0) {
-                        int quoteEnd = findClosingQuote(body, quoteStart + 1);
-                        if (quoteEnd > quoteStart) {
-                            String extracted = body.substring(quoteStart + 1, quoteEnd);
-                            // Unescape the JSON
-                            return extracted.replace("\\\"", "\"").replace("\\\\", "\\");
-                        }
-                    }
+            JsonNode envelope = objectMapper.readTree(body);
+
+            // Check if this is an SNS envelope (has Type and Message fields)
+            if (envelope.has("Type") && envelope.has("Message")) {
+                String messageType = envelope.get("Type").asText();
+                if ("Notification".equals(messageType)) {
+                    return envelope.get("Message").asText();
                 }
             }
         } catch (Exception e) {
-            log.debug("Could not extract SNS envelope, using original body");
+            log.debug("Could not parse as SNS envelope, using original body: {}", e.getMessage());
         }
         return body;
-    }
-
-    private int findClosingQuote(String s, int start) {
-        for (int i = start; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (c == '\\' && i + 1 < s.length()) {
-                i++; // Skip escaped character
-            } else if (c == '"') {
-                return i;
-            }
-        }
-        return -1;
     }
 }

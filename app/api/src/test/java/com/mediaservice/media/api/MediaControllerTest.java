@@ -1,17 +1,20 @@
 package com.mediaservice.media.api;
 
-import com.mediaservice.shared.config.properties.MediaProperties;
 import com.mediaservice.shared.cache.config.RateLimitingConfig;
 import com.mediaservice.media.api.dto.InitUploadResponse;
 import com.mediaservice.media.api.dto.MediaResponse;
 import com.mediaservice.media.api.dto.StatusResponse;
+import com.mediaservice.media.application.DownloadResult;
+import com.mediaservice.media.application.MediaOperationResult;
+import com.mediaservice.media.application.PreviewResult;
+import com.mediaservice.shared.http.error.MediaGoneException;
 import com.mediaservice.shared.http.filter.RateLimitingFilter;
 import com.mediaservice.shared.http.filter.RequestIdFilter;
 import com.mediaservice.shared.http.filter.SecurityHeadersFilter;
 import com.mediaservice.media.application.mapper.MediaMapper;
 import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaStatus;
-import com.mediaservice.analytics.application.AnalyticsService;
+import com.mediaservice.common.model.OutputFormat;
 import com.mediaservice.media.infrastructure.persistence.MediaDynamoDbRepository;
 import com.mediaservice.media.application.MediaApplicationService;
 
@@ -34,6 +37,9 @@ import java.util.Optional;
 
 import static org.hamcrest.Matchers.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -58,13 +64,7 @@ class MediaControllerTest {
   private MediaMapper mediaMapper;
 
   @MockBean
-  private MediaProperties mediaProperties;
-
-  @MockBean
   private RateLimitingConfig rateLimitingConfig;
-
-  @MockBean
-  private AnalyticsService analyticsService;
 
   @Nested
   @DisplayName("GET /v1/media/health")
@@ -89,7 +89,7 @@ class MediaControllerTest {
       var file = new MockMultipartFile("file", "test.jpg", "image/jpeg", "test-content".getBytes());
       var response = MediaResponse.builder().mediaId("media-123").build();
 
-      when(mediaProperties.getMaxFileSize()).thenReturn(100L * 1024 * 1024);
+      doNothing().when(mediaService).validateUploadFile(anyLong(), anyBoolean());
       when(mediaService.uploadMedia(any(), any(), any())).thenReturn(response);
 
       mockMvc.perform(multipart("/v1/media/upload").file(file))
@@ -102,7 +102,8 @@ class MediaControllerTest {
     void shouldRejectLargeFile() throws Exception {
       var file = new MockMultipartFile("file", "test.jpg", "image/jpeg", new byte[101 * 1024 * 1024]);
 
-      when(mediaProperties.getMaxFileSize()).thenReturn(100L * 1024 * 1024);
+      doThrow(new IllegalArgumentException("Failed to upload media. Check the file size. Max size is 100 MB."))
+          .when(mediaService).validateUploadFile(anyLong(), anyBoolean());
 
       mockMvc.perform(multipart("/v1/media/upload").file(file))
           .andExpect(status().isBadRequest())
@@ -114,7 +115,8 @@ class MediaControllerTest {
     void shouldRejectEmptyFile() throws Exception {
       var file = new MockMultipartFile("file", "test.jpg", "image/jpeg", new byte[0]);
 
-      when(mediaProperties.getMaxFileSize()).thenReturn(100L * 1024 * 1024);
+      doThrow(new IllegalArgumentException("Malformed multipart form data."))
+          .when(mediaService).validateUploadFile(anyLong(), eq(true));
 
       mockMvc.perform(multipart("/v1/media/upload").file(file))
           .andExpect(status().isBadRequest())
@@ -132,7 +134,7 @@ class MediaControllerTest {
       var media = createMedia();
       var response = MediaResponse.builder().mediaId("media-123").build();
 
-      when(mediaService.getMedia("media-123")).thenReturn(Optional.of(media));
+      when(mediaService.getActiveMedia("media-123")).thenReturn(Optional.of(media));
       when(mediaMapper.toResponse(media)).thenReturn(response);
 
       mockMvc.perform(get("/v1/media/{mediaId}", "media-123"))
@@ -143,10 +145,21 @@ class MediaControllerTest {
     @Test
     @DisplayName("should return 404 when not found")
     void shouldReturn404WhenNotFound() throws Exception {
-      when(mediaService.getMedia("nonexistent")).thenReturn(Optional.empty());
+      when(mediaService.getActiveMedia("nonexistent")).thenReturn(Optional.empty());
 
       mockMvc.perform(get("/v1/media/{mediaId}", "nonexistent"))
           .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("should return 410 when deleted")
+    void shouldReturn410WhenDeleted() throws Exception {
+      when(mediaService.getActiveMedia("media-123"))
+          .thenThrow(new MediaGoneException("Media has been deleted", Instant.now()));
+
+      mockMvc.perform(get("/v1/media/{mediaId}", "media-123"))
+          .andExpect(status().isGone())
+          .andExpect(jsonPath("$.message").value("Media has been deleted"));
     }
   }
 
@@ -159,12 +172,23 @@ class MediaControllerTest {
     void shouldReturnStatus() throws Exception {
       var statusResponse = StatusResponse.builder().status(MediaStatus.PROCESSING).build();
 
-      when(mediaService.getMediaStatus("media-123")).thenReturn(Optional.of(MediaStatus.PROCESSING));
+      when(mediaService.getActiveMediaStatus("media-123")).thenReturn(Optional.of(MediaStatus.PROCESSING));
       when(mediaMapper.toStatusResponse(MediaStatus.PROCESSING)).thenReturn(statusResponse);
 
       mockMvc.perform(get("/v1/media/{mediaId}/status", "media-123"))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.status").value("PROCESSING"));
+    }
+
+    @Test
+    @DisplayName("should return 410 when deleted")
+    void shouldReturn410WhenDeleted() throws Exception {
+      when(mediaService.getActiveMediaStatus("media-123"))
+          .thenThrow(new MediaGoneException("Media has been deleted"));
+
+      mockMvc.perform(get("/v1/media/{mediaId}/status", "media-123"))
+          .andExpect(status().isGone())
+          .andExpect(jsonPath("$.message").value("Media has been deleted"));
     }
   }
 
@@ -176,9 +200,8 @@ class MediaControllerTest {
     @DisplayName("should redirect when media is complete")
     void shouldRedirectWhenComplete() throws Exception {
       var media = createMedia();
-      when(mediaService.getMedia("media-123")).thenReturn(Optional.of(media));
-      when(mediaService.isMediaProcessing("media-123")).thenReturn(false);
-      when(mediaService.getDownloadUrl("media-123")).thenReturn(Optional.of("https://s3.example.com/file"));
+      when(mediaService.prepareDownload("media-123"))
+          .thenReturn(new DownloadResult.Ready("https://s3.example.com/file", media));
 
       mockMvc.perform(get("/v1/media/{mediaId}/download", "media-123"))
           .andExpect(status().isFound())
@@ -188,12 +211,11 @@ class MediaControllerTest {
     @Test
     @DisplayName("should return 202 when still processing")
     void shouldReturn202WhenProcessing() throws Exception {
-      var media = createMedia(MediaStatus.PROCESSING);
       var messageResponse = MediaResponse.builder()
           .message("Media processing in progress.").build();
 
-      when(mediaService.getMedia("media-123")).thenReturn(Optional.of(media));
-      when(mediaService.isMediaProcessing("media-123")).thenReturn(true);
+      when(mediaService.prepareDownload("media-123"))
+          .thenReturn(new DownloadResult.Processing("media-123"));
       when(mediaMapper.toMessageResponse(any())).thenReturn(messageResponse);
 
       mockMvc.perform(get("/v1/media/{mediaId}/download", "media-123"))
@@ -205,7 +227,8 @@ class MediaControllerTest {
     @Test
     @DisplayName("should return 404 when not found")
     void shouldReturn404WhenNotFound() throws Exception {
-      when(mediaService.getMedia("nonexistent")).thenReturn(Optional.empty());
+      when(mediaService.prepareDownload("nonexistent"))
+          .thenReturn(new DownloadResult.NotFound());
 
       mockMvc.perform(get("/v1/media/{mediaId}/download", "nonexistent"))
           .andExpect(status().isNotFound());
@@ -214,12 +237,48 @@ class MediaControllerTest {
     @Test
     @DisplayName("should return 410 when media is deleted")
     void shouldReturn410WhenDeleted() throws Exception {
-      var media = createMedia(MediaStatus.DELETED);
-      when(mediaService.getMedia("media-123")).thenReturn(Optional.of(media));
+      when(mediaService.prepareDownload("media-123"))
+          .thenThrow(new MediaGoneException("Media has been deleted", Instant.now()));
 
       mockMvc.perform(get("/v1/media/{mediaId}/download", "media-123"))
           .andExpect(status().isGone())
           .andExpect(jsonPath("$.message").value("Media has been deleted"));
+    }
+  }
+
+  @Nested
+  @DisplayName("GET /v1/media/{mediaId}/preview")
+  class Preview {
+
+    @Test
+    @DisplayName("should redirect when preview is ready")
+    void shouldRedirectWhenReady() throws Exception {
+      when(mediaService.preparePreview("media-123"))
+          .thenReturn(new PreviewResult.Ready("https://cdn.example.com/preview"));
+
+      mockMvc.perform(get("/v1/media/{mediaId}/preview", "media-123"))
+          .andExpect(status().isFound())
+          .andExpect(header().string("Location", "https://cdn.example.com/preview"));
+    }
+
+    @Test
+    @DisplayName("should return 202 when still processing")
+    void shouldReturn202WhenProcessing() throws Exception {
+      when(mediaService.preparePreview("media-123"))
+          .thenReturn(new PreviewResult.Processing("media-123"));
+
+      mockMvc.perform(get("/v1/media/{mediaId}/preview", "media-123"))
+          .andExpect(status().isAccepted());
+    }
+
+    @Test
+    @DisplayName("should return 404 when not found")
+    void shouldReturn404WhenNotFound() throws Exception {
+      when(mediaService.preparePreview("nonexistent"))
+          .thenReturn(new PreviewResult.NotFound());
+
+      mockMvc.perform(get("/v1/media/{mediaId}/preview", "nonexistent"))
+          .andExpect(status().isNotFound());
     }
   }
 
@@ -233,8 +292,8 @@ class MediaControllerTest {
       var media = createMedia();
       var response = MediaResponse.builder().mediaId("media-123").build();
 
-      when(mediaService.mediaExists("media-123")).thenReturn(true);
-      when(mediaService.resizeMedia(eq("media-123"), eq(800), any())).thenReturn(Optional.of(media));
+      when(mediaService.resizeMedia(eq("media-123"), eq(800), any()))
+          .thenReturn(new MediaOperationResult.Success(media));
       when(mediaMapper.toIdResponse(media)).thenReturn(response);
 
       mockMvc.perform(put("/v1/media/{mediaId}/resize", "media-123")
@@ -245,15 +304,39 @@ class MediaControllerTest {
     }
 
     @Test
+    @DisplayName("should return 404 when media not found")
+    void shouldReturn404WhenNotFound() throws Exception {
+      when(mediaService.resizeMedia(eq("media-123"), eq(800), any()))
+          .thenReturn(new MediaOperationResult.NotFound("media-123"));
+
+      mockMvc.perform(put("/v1/media/{mediaId}/resize", "media-123")
+          .contentType(MediaType.APPLICATION_JSON)
+          .content("{\"width\": 800}"))
+          .andExpect(status().isNotFound());
+    }
+
+    @Test
     @DisplayName("should return 409 when resize not allowed")
     void shouldReturn409WhenNotAllowed() throws Exception {
-      when(mediaService.mediaExists("media-123")).thenReturn(true);
-      when(mediaService.resizeMedia(eq("media-123"), eq(800), any())).thenReturn(Optional.empty());
+      when(mediaService.resizeMedia(eq("media-123"), eq(800), any()))
+          .thenReturn(new MediaOperationResult.NotAllowed("media-123", "Not in COMPLETE status"));
 
       mockMvc.perform(put("/v1/media/{mediaId}/resize", "media-123")
           .contentType(MediaType.APPLICATION_JSON)
           .content("{\"width\": 800}"))
           .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("should return 410 when media is deleted")
+    void shouldReturn410WhenDeleted() throws Exception {
+      when(mediaService.resizeMedia(eq("media-123"), eq(800), any()))
+          .thenReturn(new MediaOperationResult.Deleted("media-123", Instant.now()));
+
+      mockMvc.perform(put("/v1/media/{mediaId}/resize", "media-123")
+          .contentType(MediaType.APPLICATION_JSON)
+          .content("{\"width\": 800}"))
+          .andExpect(status().isGone());
     }
   }
 
@@ -347,9 +430,6 @@ class MediaControllerTest {
     @Test
     @DisplayName("should initialize presigned upload")
     void shouldInitializePresignedUpload() throws Exception {
-      var uploadConfig = new MediaProperties.Upload();
-      uploadConfig.setMaxPresignedUploadSize(5L * 1024 * 1024 * 1024);
-
       var response = InitUploadResponse.builder()
           .mediaId("media-123")
           .uploadUrl("https://s3.example.com/presigned-url")
@@ -358,7 +438,7 @@ class MediaControllerTest {
           .headers(Map.of("Content-Type", "image/jpeg"))
           .build();
 
-      when(mediaProperties.getUpload()).thenReturn(uploadConfig);
+      doNothing().when(mediaService).validatePresignedUploadRequest(anyLong(), anyString());
       when(mediaService.initPresignedUpload(any())).thenReturn(response);
 
       mockMvc.perform(post("/v1/media/upload/init")
@@ -381,10 +461,8 @@ class MediaControllerTest {
     @Test
     @DisplayName("should reject file exceeding size limit")
     void shouldRejectLargeFile() throws Exception {
-      var uploadConfig = new MediaProperties.Upload();
-      uploadConfig.setMaxPresignedUploadSize(5L * 1024 * 1024 * 1024);
-
-      when(mediaProperties.getUpload()).thenReturn(uploadConfig);
+      doThrow(new IllegalArgumentException("File size exceeds maximum allowed size of 5 GB."))
+          .when(mediaService).validatePresignedUploadRequest(anyLong(), anyString());
 
       mockMvc.perform(post("/v1/media/upload/init")
           .contentType(MediaType.APPLICATION_JSON)
@@ -402,10 +480,8 @@ class MediaControllerTest {
     @Test
     @DisplayName("should reject non-image content type")
     void shouldRejectNonImageContentType() throws Exception {
-      var uploadConfig = new MediaProperties.Upload();
-      uploadConfig.setMaxPresignedUploadSize(5L * 1024 * 1024 * 1024);
-
-      when(mediaProperties.getUpload()).thenReturn(uploadConfig);
+      doThrow(new IllegalArgumentException("Invalid content type. Only images are supported."))
+          .when(mediaService).validatePresignedUploadRequest(anyLong(), anyString());
 
       mockMvc.perform(post("/v1/media/upload/init")
           .contentType(MediaType.APPLICATION_JSON)
@@ -423,15 +499,60 @@ class MediaControllerTest {
     @Test
     @DisplayName("should reject missing required fields")
     void shouldRejectMissingFields() throws Exception {
-      var uploadConfig = new MediaProperties.Upload();
-      uploadConfig.setMaxPresignedUploadSize(5L * 1024 * 1024 * 1024);
-
-      when(mediaProperties.getUpload()).thenReturn(uploadConfig);
-
       mockMvc.perform(post("/v1/media/upload/init")
           .contentType(MediaType.APPLICATION_JSON)
           .content("{}"))
           .andExpect(status().isBadRequest());
+    }
+  }
+
+  @Nested
+  @DisplayName("POST /v1/media/{mediaId}/retry")
+  class Retry {
+
+    @Test
+    @DisplayName("should accept retry request")
+    void shouldAcceptRetry() throws Exception {
+      var media = createMedia(MediaStatus.ERROR);
+      var response = MediaResponse.builder().mediaId("media-123").build();
+
+      when(mediaService.retryProcessing("media-123"))
+          .thenReturn(new MediaOperationResult.Success(media));
+      when(mediaMapper.toIdResponse(media)).thenReturn(response);
+
+      mockMvc.perform(post("/v1/media/{mediaId}/retry", "media-123"))
+          .andExpect(status().isAccepted())
+          .andExpect(jsonPath("$.mediaId").value("media-123"));
+    }
+
+    @Test
+    @DisplayName("should return 404 when media not found")
+    void shouldReturn404WhenNotFound() throws Exception {
+      when(mediaService.retryProcessing("nonexistent"))
+          .thenReturn(new MediaOperationResult.NotFound("nonexistent"));
+
+      mockMvc.perform(post("/v1/media/{mediaId}/retry", "nonexistent"))
+          .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("should return 409 when retry not allowed")
+    void shouldReturn409WhenNotAllowed() throws Exception {
+      when(mediaService.retryProcessing("media-123"))
+          .thenReturn(new MediaOperationResult.NotAllowed("media-123", "Not in ERROR status"));
+
+      mockMvc.perform(post("/v1/media/{mediaId}/retry", "media-123"))
+          .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("should return 410 when media is deleted")
+    void shouldReturn410WhenDeleted() throws Exception {
+      when(mediaService.retryProcessing("media-123"))
+          .thenReturn(new MediaOperationResult.Deleted("media-123", Instant.now()));
+
+      mockMvc.perform(post("/v1/media/{mediaId}/retry", "media-123"))
+          .andExpect(status().isGone());
     }
   }
 
@@ -476,6 +597,7 @@ class MediaControllerTest {
         .mimetype("image/jpeg")
         .status(status)
         .width(500)
+        .outputFormat(OutputFormat.JPEG)
         .createdAt(Instant.now())
         .updatedAt(Instant.now())
         .deletedAt(status == MediaStatus.DELETED ? Instant.now() : null)

@@ -32,6 +32,22 @@ export async function getAllMedia(cursor?: string, limit?: number): Promise<Page
 }
 
 /**
+ * Get media by ID
+ * @throws Error with message "NOT_FOUND" if media doesn't exist
+ * @throws Error with message "DELETED" if media was deleted
+ */
+export async function getMedia(mediaId: string): Promise<Media> {
+  const response = await fetch(`${API_BASE}/${mediaId}`);
+  if (response.status === 404) {
+    throw new Error("NOT_FOUND");
+  }
+  if (response.status === 410) {
+    throw new Error("DELETED");
+  }
+  return handleResponse<Media>(response);
+}
+
+/**
  * Get media status by ID
  * @throws Error with message "NOT_FOUND" if media doesn't exist
  * @throws Error with message "DELETED" if media was deleted

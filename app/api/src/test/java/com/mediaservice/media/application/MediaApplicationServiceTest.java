@@ -1,5 +1,6 @@
 package com.mediaservice.media.application;
 
+import com.mediaservice.analytics.application.AnalyticsService;
 import com.mediaservice.media.domain.service.ImageValidationService;
 import com.mediaservice.media.infrastructure.messaging.MediaEventPublisher;
 import com.mediaservice.media.infrastructure.persistence.MediaDynamoDbRepository;
@@ -55,6 +56,8 @@ class MediaApplicationServiceTest {
   @Mock
   private MultiLevelCacheOrchestrator cacheOrchestrator;
   @Mock
+  private AnalyticsService analyticsService;
+  @Mock
   private Tracer tracer;
   @Mock
   private Meter meter;
@@ -96,7 +99,7 @@ class MediaApplicationServiceTest {
 
     mediaService = new MediaApplicationService(dynamoDbService, s3Service, snsService, mediaProperties,
         imageValidationService,
-        cacheInvalidationService, cacheOrchestrator, tracer, meter);
+        cacheInvalidationService, cacheOrchestrator, analyticsService, tracer, meter);
   }
 
   @Nested
@@ -207,19 +210,19 @@ class MediaApplicationServiceTest {
       when(dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.COMPLETE))
           .thenReturn(true);
       var result = mediaService.resizeMedia("media-123", 800, "jpeg");
-      assertThat(result).isPresent();
+      assertThat(result).isInstanceOf(MediaOperationResult.Success.class);
       verify(snsService).publishResizeMediaEvent("media-123", 800, "jpeg");
     }
 
     @Test
-    @DisplayName("should return empty when status update fails")
-    void shouldReturnEmptyWhenStatusUpdateFails() {
+    @DisplayName("should return NotAllowed when status update fails")
+    void shouldReturnNotAllowedWhenStatusUpdateFails() {
       var media = createMedia(MediaStatus.PROCESSING);
       when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
       when(dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.COMPLETE))
           .thenReturn(false);
       var result = mediaService.resizeMedia("media-123", 800, null);
-      assertThat(result).isEmpty();
+      assertThat(result).isInstanceOf(MediaOperationResult.NotAllowed.class);
       verify(snsService, never()).publishResizeMediaEvent(anyString(), any(), any());
     }
   }

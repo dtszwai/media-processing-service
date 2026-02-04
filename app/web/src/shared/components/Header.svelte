@@ -99,6 +99,15 @@
           >
             Analytics
           </a>
+          <a
+            href="/admin/dlq"
+            onclick={(e) => handleNavClick(e, "/admin/dlq")}
+            class="text-sm font-medium transition-colors {currentPath === '/admin/dlq'
+              ? 'text-gray-900'
+              : 'text-gray-500 hover:text-gray-700'}"
+          >
+            Admin
+          </a>
         </nav>
 
         <div class="relative" bind:this={dropdownRef}>

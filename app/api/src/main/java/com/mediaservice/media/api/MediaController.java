@@ -1,20 +1,20 @@
 package com.mediaservice.media.api;
 
-import com.mediaservice.shared.config.properties.MediaProperties;
 import com.mediaservice.shared.http.error.ErrorResponse;
+import com.mediaservice.shared.http.error.MediaConflictException;
+import com.mediaservice.shared.http.error.MediaGoneException;
 import com.mediaservice.shared.http.PagedResponse;
+import com.mediaservice.shared.idempotency.Idempotent;
 import com.mediaservice.media.api.dto.InitUploadRequest;
 import com.mediaservice.media.api.dto.InitUploadResponse;
 import com.mediaservice.media.api.dto.MediaResponse;
 import com.mediaservice.media.api.dto.ResizeRequest;
 import com.mediaservice.media.api.dto.StatusResponse;
-import com.mediaservice.shared.http.error.MediaConflictException;
-import com.mediaservice.shared.http.error.MediaGoneException;
+import com.mediaservice.media.application.DownloadResult;
+import com.mediaservice.media.application.MediaOperationResult;
+import com.mediaservice.media.application.PreviewResult;
 import com.mediaservice.media.application.mapper.MediaMapper;
 import com.mediaservice.media.application.MediaApplicationService;
-import com.mediaservice.analytics.application.AnalyticsService;
-import com.mediaservice.common.model.MediaStatus;
-import com.mediaservice.shared.idempotency.IdempotencyService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -48,9 +48,6 @@ import java.net.URI;
 public class MediaController {
   private final MediaApplicationService mediaService;
   private final MediaMapper mediaMapper;
-  private final MediaProperties mediaProperties;
-  private final AnalyticsService analyticsService;
-  private final IdempotencyService idempotencyService;
 
   @GetMapping("/health")
   public ResponseEntity<String> health() {
@@ -79,37 +76,17 @@ public class MediaController {
       @ApiResponse(responseCode = "400", description = "Invalid file"),
       @ApiResponse(responseCode = "409", description = "Request with same idempotency key already in progress")
   })
+  @Idempotent(scope = "upload")
   @PostMapping("/upload")
   public ResponseEntity<MediaResponse> uploadMedia(
       @RequestParam("file") MultipartFile file,
       @RequestParam(required = false) Integer width,
-      @RequestParam(required = false) String outputFormat,
-      @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) throws IOException {
-    log.info("Upload request received: fileName={}, size={}, outputFormat={}, idempotencyKey={}",
-        file.getOriginalFilename(), file.getSize(), outputFormat, idempotencyKey);
+      @RequestParam(required = false) String outputFormat) throws IOException {
+    log.info("Upload request received: fileName={}, size={}, outputFormat={}",
+        file.getOriginalFilename(), file.getSize(), outputFormat);
 
-    // Check idempotency if key provided
-    if (idempotencyKey != null && !idempotencyKey.isEmpty()) {
-      var result = idempotencyService.checkAndSet(idempotencyKey, "upload", MediaResponse.class);
-      if (result.isDuplicate()) {
-        if (result.cachedResponse() != null) {
-          log.info("Returning cached response for idempotency key: {}", idempotencyKey);
-          return ResponseEntity.accepted().body(result.cachedResponse());
-        }
-        // Request in progress - return 409 Conflict
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-            .body(MediaResponse.builder().message("Request already in progress").build());
-      }
-    }
-
-    validateUploadFile(file);
+    mediaService.validateUploadFile(file.getSize(), file.isEmpty());
     MediaResponse response = mediaService.uploadMedia(file, width, outputFormat);
-
-    // Store response for idempotency
-    if (idempotencyKey != null && !idempotencyKey.isEmpty()) {
-      idempotencyService.storeResponse(idempotencyKey, "upload", response);
-    }
-
     return ResponseEntity.accepted().body(response);
   }
 
@@ -119,34 +96,15 @@ public class MediaController {
       @ApiResponse(responseCode = "400", description = "Invalid request"),
       @ApiResponse(responseCode = "409", description = "Request with same idempotency key already in progress")
   })
+  @Idempotent(scope = "init-upload")
   @PostMapping("/upload/init")
   public ResponseEntity<InitUploadResponse> initPresignedUpload(
-      @Valid @RequestBody InitUploadRequest request,
-      @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
-    log.info("Init presigned upload request: fileName={}, size={}, contentType={}, idempotencyKey={}",
-        request.getFileName(), request.getFileSize(), request.getContentType(), idempotencyKey);
+      @Valid @RequestBody InitUploadRequest request) {
+    log.info("Init presigned upload request: fileName={}, size={}, contentType={}",
+        request.getFileName(), request.getFileSize(), request.getContentType());
 
-    // Check idempotency if key provided
-    if (idempotencyKey != null && !idempotencyKey.isEmpty()) {
-      var result = idempotencyService.checkAndSet(idempotencyKey, "init-upload", InitUploadResponse.class);
-      if (result.isDuplicate()) {
-        if (result.cachedResponse() != null) {
-          log.info("Returning cached init-upload response for key: {}", idempotencyKey);
-          return ResponseEntity.status(HttpStatus.CREATED).body(result.cachedResponse());
-        }
-        // Request in progress - return 409 Conflict
-        return ResponseEntity.status(HttpStatus.CONFLICT).build();
-      }
-    }
-
-    validatePresignedUploadRequest(request);
+    mediaService.validatePresignedUploadRequest(request.getFileSize(), request.getContentType());
     InitUploadResponse response = mediaService.initPresignedUpload(request);
-
-    // Store response for idempotency
-    if (idempotencyKey != null && !idempotencyKey.isEmpty()) {
-      idempotencyService.storeResponse(idempotencyKey, "init-upload", response);
-    }
-
     return ResponseEntity.status(HttpStatus.CREATED).body(response);
   }
 
@@ -186,13 +144,8 @@ public class MediaController {
   @GetMapping("/{mediaId}")
   public ResponseEntity<MediaResponse> getMedia(@PathVariable String mediaId) {
     log.info("Get media request: mediaId={}", mediaId);
-    return mediaService.getMedia(mediaId)
-        .<ResponseEntity<MediaResponse>>map(media -> {
-          if (media.getStatus() == MediaStatus.DELETED) {
-            throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
-          }
-          return ResponseEntity.ok(mediaMapper.toResponse(media));
-        })
+    return mediaService.getActiveMedia(mediaId)
+        .map(media -> ResponseEntity.ok(mediaMapper.toResponse(media)))
         .orElse(ResponseEntity.notFound().build());
   }
 
@@ -205,13 +158,8 @@ public class MediaController {
   @GetMapping("/{mediaId}/status")
   public ResponseEntity<StatusResponse> getMediaStatus(@PathVariable String mediaId) {
     log.info("Status request: mediaId={}", mediaId);
-    return mediaService.getMediaStatus(mediaId)
-        .<ResponseEntity<StatusResponse>>map(status -> {
-          if (status == MediaStatus.DELETED) {
-            throw new MediaGoneException("Media has been deleted");
-          }
-          return ResponseEntity.ok(mediaMapper.toStatusResponse(status));
-        })
+    return mediaService.getActiveMediaStatus(mediaId)
+        .map(status -> ResponseEntity.ok(mediaMapper.toStatusResponse(status)))
         .orElse(ResponseEntity.notFound().build());
   }
 
@@ -225,16 +173,14 @@ public class MediaController {
   public ResponseEntity<Void> getPreviewUrl(@PathVariable String mediaId) {
     log.info("Preview URL request: mediaId={}", mediaId);
 
-    if (mediaService.isMediaProcessing(mediaId)) {
-      return ResponseEntity.accepted().build();
-    }
-
-    return mediaService.getPreviewUrl(mediaId)
-        .<ResponseEntity<Void>>map(url -> {
-          analyticsService.recordView(mediaId);
-          return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(url)).build();
-        })
-        .orElse(ResponseEntity.notFound().build());
+    return switch (mediaService.preparePreview(mediaId)) {
+      case PreviewResult.Ready ready ->
+          ResponseEntity.status(HttpStatus.FOUND).location(URI.create(ready.url())).build();
+      case PreviewResult.Processing ignored ->
+          ResponseEntity.accepted().build();
+      case PreviewResult.NotFound ignored ->
+          ResponseEntity.notFound().build();
+    };
   }
 
   @Operation(summary = "Download processed media", description = "Redirects to presigned S3 URL")
@@ -247,48 +193,45 @@ public class MediaController {
   @GetMapping("/{mediaId}/download")
   public ResponseEntity<MediaResponse> downloadMedia(@PathVariable String mediaId, HttpServletRequest request) {
     log.info("Download request: mediaId={}", mediaId);
-    var mediaOpt = mediaService.getMedia(mediaId);
-    if (mediaOpt.isEmpty()) {
-      return ResponseEntity.notFound().build();
-    }
-    var media = mediaOpt.get();
-    if (media.getStatus() == MediaStatus.DELETED) {
-      throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
-    }
-    if (mediaService.isMediaProcessing(mediaId)) {
-      var headers = new HttpHeaders();
-      headers.add("Retry-After", "60");
-      headers.add("Location", "%s://%s:%d/v1/media/%s/status"
-          .formatted(request.getScheme(), request.getServerName(), request.getServerPort(), mediaId));
-      return ResponseEntity.accepted()
-          .headers(headers)
-          .body(mediaMapper.toMessageResponse("Media processing in progress."));
-    }
-    return mediaService.getDownloadUrl(mediaId)
-        .<ResponseEntity<MediaResponse>>map(url -> {
-          analyticsService.recordView(mediaId);
-          analyticsService.recordDownload(mediaId, media.getOutputFormat(), media.getWidth());
-          return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(url)).build();
-        })
-        .orElse(ResponseEntity.notFound().build());
+
+    return switch (mediaService.prepareDownload(mediaId)) {
+      case DownloadResult.Ready ready ->
+          ResponseEntity.status(HttpStatus.FOUND).location(URI.create(ready.url())).build();
+      case DownloadResult.Processing processing -> {
+        var headers = new HttpHeaders();
+        headers.add("Retry-After", "60");
+        headers.add("Location", "%s://%s:%d/v1/media/%s/status"
+            .formatted(request.getScheme(), request.getServerName(), request.getServerPort(), processing.mediaId()));
+        yield ResponseEntity.accepted()
+            .headers(headers)
+            .body(mediaMapper.toMessageResponse("Media processing in progress."));
+      }
+      case DownloadResult.NotFound ignored -> ResponseEntity.notFound().build();
+    };
   }
 
   @Operation(summary = "Resize media")
   @ApiResponses({
       @ApiResponse(responseCode = "202", description = "Resize request accepted", content = @Content(schema = @Schema(implementation = MediaResponse.class))),
       @ApiResponse(responseCode = "404", description = "Media not found"),
-      @ApiResponse(responseCode = "409", description = "Media not in COMPLETE status", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+      @ApiResponse(responseCode = "409", description = "Media not in COMPLETE status", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+      @ApiResponse(responseCode = "410", description = "Media has been deleted")
   })
   @PutMapping("/{mediaId}/resize")
   public ResponseEntity<MediaResponse> resizeMedia(@PathVariable String mediaId,
       @Valid @RequestBody ResizeRequest resizeRequest) {
     log.info("Resize request: mediaId={}", mediaId);
-    if (!mediaService.mediaExists(mediaId)) {
-      return ResponseEntity.notFound().build();
-    }
-    return mediaService.resizeMedia(mediaId, resizeRequest.getWidth(), resizeRequest.getOutputFormat())
-        .map(media -> ResponseEntity.accepted().body(mediaMapper.toIdResponse(media)))
-        .orElseThrow(() -> new MediaConflictException("Cannot resize: media is not in COMPLETE status"));
+
+    return switch (mediaService.resizeMedia(mediaId, resizeRequest.getWidth(), resizeRequest.getOutputFormat())) {
+      case MediaOperationResult.Success success ->
+          ResponseEntity.accepted().body(mediaMapper.toIdResponse(success.media()));
+      case MediaOperationResult.NotFound ignored ->
+          ResponseEntity.notFound().build();
+      case MediaOperationResult.Deleted deleted ->
+          throw new MediaGoneException("Media has been deleted", deleted.deletedAt());
+      case MediaOperationResult.NotAllowed notAllowed ->
+          throw new MediaConflictException(notAllowed.reason());
+    };
   }
 
   @Operation(summary = "Delete media")
@@ -308,38 +251,22 @@ public class MediaController {
   @ApiResponses({
       @ApiResponse(responseCode = "202", description = "Retry initiated"),
       @ApiResponse(responseCode = "404", description = "Media not found"),
-      @ApiResponse(responseCode = "409", description = "Media not in retryable status (PROCESSING or ERROR)", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+      @ApiResponse(responseCode = "409", description = "Media not in retryable status (PROCESSING or ERROR)", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+      @ApiResponse(responseCode = "410", description = "Media has been deleted")
   })
   @PostMapping("/{mediaId}/retry")
   public ResponseEntity<MediaResponse> retryProcessing(@PathVariable String mediaId) {
     log.info("Retry request: mediaId={}", mediaId);
-    if (!mediaService.mediaExists(mediaId)) {
-      return ResponseEntity.notFound().build();
-    }
-    return mediaService.retryProcessing(mediaId)
-        .map(media -> ResponseEntity.accepted().body(mediaMapper.toIdResponse(media)))
-        .orElseThrow(() -> new MediaConflictException("Cannot retry: media is not in PROCESSING or ERROR status"));
-  }
 
-  private void validateUploadFile(MultipartFile file) {
-    long maxFileSize = mediaProperties.getMaxFileSize();
-    if (file.getSize() > maxFileSize) {
-      throw new IllegalArgumentException(
-          "Failed to upload media. Check the file size. Max size is " + (maxFileSize / (1024 * 1024)) + " MB.");
-    }
-    if (file.isEmpty()) {
-      throw new IllegalArgumentException("Malformed multipart form data.");
-    }
-  }
-
-  private void validatePresignedUploadRequest(InitUploadRequest request) {
-    long maxUploadSize = mediaProperties.getUpload().getMaxPresignedUploadSize();
-    if (request.getFileSize() > maxUploadSize) {
-      throw new IllegalArgumentException(
-          "File size exceeds maximum allowed size of " + (maxUploadSize / (1024 * 1024 * 1024)) + " GB.");
-    }
-    if (!request.getContentType().startsWith("image/")) {
-      throw new IllegalArgumentException("Invalid content type. Only images are supported.");
-    }
+    return switch (mediaService.retryProcessing(mediaId)) {
+      case MediaOperationResult.Success success ->
+          ResponseEntity.accepted().body(mediaMapper.toIdResponse(success.media()));
+      case MediaOperationResult.NotFound ignored ->
+          ResponseEntity.notFound().build();
+      case MediaOperationResult.Deleted deleted ->
+          throw new MediaGoneException("Media has been deleted", deleted.deletedAt());
+      case MediaOperationResult.NotAllowed notAllowed ->
+          throw new MediaConflictException(notAllowed.reason());
+    };
   }
 }

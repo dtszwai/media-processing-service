@@ -12,6 +12,7 @@
     { value: "TODAY", label: "Today" },
     { value: "THIS_WEEK", label: "This Week" },
     { value: "THIS_MONTH", label: "This Month" },
+    { value: "THIS_YEAR", label: "This Year" },
     { value: "ALL_TIME", label: "All Time" },
   ];
 </script>

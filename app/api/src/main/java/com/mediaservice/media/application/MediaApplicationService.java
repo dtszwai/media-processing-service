@@ -13,6 +13,9 @@ import com.mediaservice.media.infrastructure.persistence.MediaDynamoDbRepository
 import com.mediaservice.media.infrastructure.storage.S3StorageService;
 import com.mediaservice.shared.cache.CacheInvalidationService;
 import com.mediaservice.shared.cache.MultiLevelCacheOrchestrator;
+import com.mediaservice.shared.config.properties.MediaProperties.Upload;
+import com.mediaservice.shared.http.error.MediaGoneException;
+import com.mediaservice.analytics.application.AnalyticsService;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.trace.Span;
@@ -48,6 +51,7 @@ public class MediaApplicationService {
   private final ImageValidationService imageValidationService;
   private final CacheInvalidationService cacheInvalidationService;
   private final MultiLevelCacheOrchestrator cacheOrchestrator;
+  private final AnalyticsService analyticsService;
   private final Tracer tracer;
   private final LongCounter uploadSuccessCounter;
   private final LongCounter uploadFailureCounter;
@@ -61,7 +65,8 @@ public class MediaApplicationService {
   public MediaApplicationService(MediaDynamoDbRepository mediaRepository, S3StorageService s3Service,
       MediaEventPublisher eventPublisher, MediaProperties mediaProperties,
       ImageValidationService imageValidationService, CacheInvalidationService cacheInvalidationService,
-      MultiLevelCacheOrchestrator cacheOrchestrator, Tracer tracer, Meter meter) {
+      MultiLevelCacheOrchestrator cacheOrchestrator, AnalyticsService analyticsService,
+      Tracer tracer, Meter meter) {
     this.mediaRepository = mediaRepository;
     this.s3Service = s3Service;
     this.eventPublisher = eventPublisher;
@@ -69,6 +74,7 @@ public class MediaApplicationService {
     this.imageValidationService = imageValidationService;
     this.cacheInvalidationService = cacheInvalidationService;
     this.cacheOrchestrator = cacheOrchestrator;
+    this.analyticsService = analyticsService;
     this.tracer = tracer;
     this.uploadSuccessCounter = meter.counterBuilder("media.upload.success")
         .setDescription("Count of successful media uploads")
@@ -176,6 +182,100 @@ public class MediaApplicationService {
   }
 
   /**
+   * Get media, throwing MediaGoneException if deleted.
+   * Use this for API endpoints that should return 410 for deleted media.
+   *
+   * @param mediaId the media ID
+   * @return the media if found and not deleted, empty if not found
+   * @throws MediaGoneException if media is deleted
+   */
+  public Optional<Media> getActiveMedia(String mediaId) {
+    return getMedia(mediaId).map(media -> {
+      if (media.getStatus() == MediaStatus.DELETED) {
+        throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
+      }
+      return media;
+    });
+  }
+
+  /**
+   * Get media status, throwing MediaGoneException if deleted.
+   *
+   * @param mediaId the media ID
+   * @return the status if found and not deleted, empty if not found
+   * @throws MediaGoneException if media is deleted
+   */
+  public Optional<MediaStatus> getActiveMediaStatus(String mediaId) {
+    return getActiveMedia(mediaId).map(Media::getStatus);
+  }
+
+  /**
+   * Prepare download for media.
+   * Handles all business logic: not found, deleted, processing, and ready states.
+   * Records analytics (view + download) when download is ready.
+   *
+   * @param mediaId the media ID
+   * @return DownloadResult indicating the state and data
+   * @throws MediaGoneException if media is deleted
+   */
+  public DownloadResult prepareDownload(String mediaId) {
+    var mediaOpt = getMedia(mediaId);
+    if (mediaOpt.isEmpty()) {
+      return new DownloadResult.NotFound();
+    }
+
+    var media = mediaOpt.get();
+    if (media.getStatus() == MediaStatus.DELETED) {
+      throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
+    }
+
+    if (media.getStatus() != MediaStatus.COMPLETE) {
+      return new DownloadResult.Processing(mediaId);
+    }
+
+    return getDownloadUrl(mediaId)
+        .map(url -> {
+          // Record analytics in application layer
+          analyticsService.recordView(mediaId);
+          analyticsService.recordDownload(mediaId, media.getOutputFormatOrDefault(), media.getWidth());
+          return (DownloadResult) new DownloadResult.Ready(url, media);
+        })
+        .orElse(new DownloadResult.NotFound());
+  }
+
+  /**
+   * Prepare preview for media.
+   * Handles all business logic: not found, processing, and ready states.
+   * Records view analytics when preview is ready.
+   *
+   * @param mediaId the media ID
+   * @return PreviewResult indicating the state and data
+   */
+  public PreviewResult preparePreview(String mediaId) {
+    var mediaOpt = getMedia(mediaId);
+    if (mediaOpt.isEmpty()) {
+      return new PreviewResult.NotFound();
+    }
+
+    var media = mediaOpt.get();
+    if (media.getStatus() == MediaStatus.DELETED) {
+      return new PreviewResult.NotFound();
+    }
+
+    if (media.getStatus() != MediaStatus.COMPLETE) {
+      return new PreviewResult.Processing(mediaId);
+    }
+
+    return getPreviewUrl(mediaId)
+        .map(url -> {
+          // Record view analytics in application layer
+          analyticsService.recordView(mediaId);
+          return (PreviewResult) new PreviewResult.Ready(url);
+        })
+        .orElse(new PreviewResult.NotFound());
+  }
+
+  /**
    * Get presigned download URL with multi-level caching.
    */
   public Optional<String> getDownloadUrl(String mediaId) {
@@ -215,22 +315,40 @@ public class MediaApplicationService {
         .orElse(false);
   }
 
-  public Optional<Media> resizeMedia(String mediaId, Integer width, String outputFormat) {
-    return mediaRepository.getMedia(mediaId)
-        .flatMap(media -> {
-          var updated = mediaRepository.updateStatusConditionally(mediaId, MediaStatus.PENDING, MediaStatus.COMPLETE);
-          if (!updated) {
-            log.warn("Cannot resize mediaId: {}, not in COMPLETE status", mediaId);
-            return Optional.empty();
-          }
-          OutputFormat targetFormat = outputFormat != null
-              ? OutputFormat.fromString(outputFormat)
-              : media.getOutputFormatOrDefault();
-          eventPublisher.publishResizeMediaEvent(mediaId, width, targetFormat.getFormat());
-          cacheInvalidationService.invalidateMedia(mediaId);
-          log.info("Resize request submitted for mediaId: {} with outputFormat: {}", mediaId, targetFormat.getFormat());
-          return Optional.of(media);
-        });
+  /**
+   * Resize media to a new width/format.
+   *
+   * @param mediaId      the media ID
+   * @param width        target width
+   * @param outputFormat target format (optional)
+   * @return MediaOperationResult indicating success or failure reason
+   */
+  public MediaOperationResult resizeMedia(String mediaId, Integer width, String outputFormat) {
+    var mediaOpt = mediaRepository.getMedia(mediaId);
+    if (mediaOpt.isEmpty()) {
+      return new MediaOperationResult.NotFound(mediaId);
+    }
+
+    var media = mediaOpt.get();
+    if (media.getStatus() == MediaStatus.DELETED) {
+      return new MediaOperationResult.Deleted(mediaId, media.getDeletedAt());
+    }
+
+    var updated = mediaRepository.updateStatusConditionally(mediaId, MediaStatus.PENDING, MediaStatus.COMPLETE);
+    if (!updated) {
+      log.warn("Cannot resize mediaId: {}, not in COMPLETE status (current: {})", mediaId, media.getStatus());
+      return new MediaOperationResult.NotAllowed(mediaId,
+          "Media must be in COMPLETE status to resize. Current status: " + media.getStatus());
+    }
+
+    OutputFormat targetFormat = outputFormat != null
+        ? OutputFormat.fromString(outputFormat)
+        : media.getOutputFormatOrDefault();
+    eventPublisher.publishResizeMediaEvent(mediaId, width, targetFormat.getFormat());
+    cacheInvalidationService.invalidateMedia(mediaId);
+    log.info("Resize request submitted for mediaId: {} with outputFormat: {}", mediaId, targetFormat.getFormat());
+
+    return new MediaOperationResult.Success(media);
   }
 
   /**
@@ -258,32 +376,39 @@ public class MediaApplicationService {
    * Resets status to PENDING and re-publishes the process event.
    *
    * @param mediaId the media ID to retry
-   * @return the media if retry was initiated, empty if media not found or not
-   *         retryable
+   * @return MediaOperationResult indicating success or failure reason
    */
-  public Optional<Media> retryProcessing(String mediaId) {
-    return mediaRepository.getMedia(mediaId)
-        .filter(media -> media.getStatus() == MediaStatus.PROCESSING || media.getStatus() == MediaStatus.ERROR)
-        .flatMap(media -> {
-          boolean updated = mediaRepository.updateStatusConditionally(mediaId, MediaStatus.PENDING, media.getStatus());
-          if (!updated) {
-            log.warn("Failed to reset status for retry: mediaId={}", mediaId);
-            return Optional.empty();
-          }
-          eventPublisher.publishProcessMediaEvent(mediaId, media.getWidth(), media.getOutputFormatOrDefault().getFormat());
-          cacheInvalidationService.invalidateMedia(mediaId);
-          log.info("Retry initiated for mediaId={}, previousStatus={}", mediaId, media.getStatus());
-          return Optional.of(media);
-        });
+  public MediaOperationResult retryProcessing(String mediaId) {
+    var mediaOpt = mediaRepository.getMedia(mediaId);
+    if (mediaOpt.isEmpty()) {
+      return new MediaOperationResult.NotFound(mediaId);
+    }
+
+    var media = mediaOpt.get();
+    if (media.getStatus() == MediaStatus.DELETED) {
+      return new MediaOperationResult.Deleted(mediaId, media.getDeletedAt());
+    }
+
+    if (media.getStatus() != MediaStatus.PROCESSING && media.getStatus() != MediaStatus.ERROR) {
+      return new MediaOperationResult.NotAllowed(mediaId,
+          "Retry only allowed for PROCESSING or ERROR status. Current status: " + media.getStatus());
+    }
+
+    boolean updated = mediaRepository.updateStatusConditionally(mediaId, MediaStatus.PENDING, media.getStatus());
+    if (!updated) {
+      log.warn("Failed to reset status for retry: mediaId={}", mediaId);
+      return new MediaOperationResult.NotAllowed(mediaId, "Failed to update status (concurrent modification)");
+    }
+
+    eventPublisher.publishProcessMediaEvent(mediaId, media.getWidth(), media.getOutputFormatOrDefault().getFormat());
+    cacheInvalidationService.invalidateMedia(mediaId);
+    log.info("Retry initiated for mediaId={}, previousStatus={}", mediaId, media.getStatus());
+
+    return new MediaOperationResult.Success(media);
   }
 
   public MediaDynamoDbRepository.MediaPagedResult getMediaPaginated(String cursor, Integer limit) {
     return mediaRepository.getMediaPaginated(cursor, limit);
-  }
-
-  @Deprecated
-  public List<Media> getAllMedia() {
-    return mediaRepository.getAllMedia();
   }
 
   public InitUploadResponse initPresignedUpload(InitUploadRequest request) {
@@ -417,6 +542,43 @@ public class MediaApplicationService {
       throw e;
     } finally {
       span.end();
+    }
+  }
+
+  /**
+   * Validate an upload file for size and content.
+   *
+   * @param fileSize the file size in bytes
+   * @param isEmpty whether the file is empty
+   * @throws IllegalArgumentException if validation fails
+   */
+  public void validateUploadFile(long fileSize, boolean isEmpty) {
+    long maxFileSize = mediaProperties.getMaxFileSize();
+    if (fileSize > maxFileSize) {
+      throw new IllegalArgumentException(
+          "Failed to upload media. Check the file size. Max size is " + (maxFileSize / (1024 * 1024)) + " MB.");
+    }
+    if (isEmpty) {
+      throw new IllegalArgumentException("Malformed multipart form data.");
+    }
+  }
+
+  /**
+   * Validate a presigned upload request.
+   *
+   * @param fileSize the file size in bytes
+   * @param contentType the content type
+   * @throws IllegalArgumentException if validation fails
+   */
+  public void validatePresignedUploadRequest(long fileSize, String contentType) {
+    Upload uploadConfig = mediaProperties.getUpload();
+    long maxUploadSize = uploadConfig.getMaxPresignedUploadSize();
+    if (fileSize > maxUploadSize) {
+      throw new IllegalArgumentException(
+          "File size exceeds maximum allowed size of " + (maxUploadSize / (1024 * 1024 * 1024)) + " GB.");
+    }
+    if (contentType == null || !contentType.startsWith("image/")) {
+      throw new IllegalArgumentException("Invalid content type. Only images are supported.");
     }
   }
 }

@@ -15,6 +15,8 @@ import java.util.Map;
 /**
  * Admin controller for Dead Letter Queue management.
  * Provides endpoints to view, replay, and delete failed messages.
+ *
+ * <p>All endpoints require DLQ to be configured (via @RequiresDlqConfigured aspect).
  */
 @Slf4j
 @RestController
@@ -30,14 +32,9 @@ public class DlqAdminController {
             @ApiResponse(responseCode = "200", description = "DLQ status retrieved"),
             @ApiResponse(responseCode = "503", description = "DLQ not configured")
     })
+    @RequiresDlqConfigured
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> getStatus() {
-        if (!dlqAdminService.isConfigured()) {
-            return ResponseEntity.status(503).body(Map.of(
-                    "configured", false,
-                    "message", "DLQ URL not configured"
-            ));
-        }
         return ResponseEntity.ok(Map.of(
                 "configured", true,
                 "approximateMessageCount", dlqAdminService.getApproximateMessageCount()
@@ -49,12 +46,10 @@ public class DlqAdminController {
             @ApiResponse(responseCode = "200", description = "Messages retrieved"),
             @ApiResponse(responseCode = "503", description = "DLQ not configured")
     })
+    @RequiresDlqConfigured
     @GetMapping("/messages")
     public ResponseEntity<List<DlqMessage>> listMessages(
             @RequestParam(defaultValue = "10") int limit) {
-        if (!dlqAdminService.isConfigured()) {
-            return ResponseEntity.status(503).build();
-        }
         return ResponseEntity.ok(dlqAdminService.listMessages(limit));
     }
 
@@ -64,11 +59,9 @@ public class DlqAdminController {
             @ApiResponse(responseCode = "404", description = "Message not found"),
             @ApiResponse(responseCode = "503", description = "DLQ not configured")
     })
+    @RequiresDlqConfigured
     @GetMapping("/messages/{messageId}")
     public ResponseEntity<DlqMessage> getMessage(@PathVariable String messageId) {
-        if (!dlqAdminService.isConfigured()) {
-            return ResponseEntity.status(503).build();
-        }
         return dlqAdminService.getMessage(messageId)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -80,14 +73,9 @@ public class DlqAdminController {
             @ApiResponse(responseCode = "400", description = "Replay failed"),
             @ApiResponse(responseCode = "503", description = "DLQ not configured")
     })
+    @RequiresDlqConfigured
     @PostMapping("/messages/{receiptHandle}/replay")
     public ResponseEntity<Map<String, Object>> replayMessage(@PathVariable String receiptHandle) {
-        if (!dlqAdminService.isConfigured()) {
-            return ResponseEntity.status(503).body(Map.of(
-                    "success", false,
-                    "message", "DLQ not configured"
-            ));
-        }
         boolean success = dlqAdminService.replayMessage(receiptHandle);
         if (success) {
             return ResponseEntity.ok(Map.of(
@@ -107,14 +95,9 @@ public class DlqAdminController {
             @ApiResponse(responseCode = "400", description = "Delete failed"),
             @ApiResponse(responseCode = "503", description = "DLQ not configured")
     })
+    @RequiresDlqConfigured
     @DeleteMapping("/messages/{receiptHandle}")
     public ResponseEntity<Map<String, Object>> deleteMessage(@PathVariable String receiptHandle) {
-        if (!dlqAdminService.isConfigured()) {
-            return ResponseEntity.status(503).body(Map.of(
-                    "success", false,
-                    "message", "DLQ not configured"
-            ));
-        }
         boolean success = dlqAdminService.deleteMessage(receiptHandle);
         if (success) {
             return ResponseEntity.ok(Map.of(
@@ -134,14 +117,9 @@ public class DlqAdminController {
             @ApiResponse(responseCode = "400", description = "Purge failed"),
             @ApiResponse(responseCode = "503", description = "DLQ not configured")
     })
+    @RequiresDlqConfigured
     @DeleteMapping("/purge")
     public ResponseEntity<Map<String, Object>> purgeQueue() {
-        if (!dlqAdminService.isConfigured()) {
-            return ResponseEntity.status(503).body(Map.of(
-                    "success", false,
-                    "message", "DLQ not configured"
-            ));
-        }
         boolean success = dlqAdminService.purgeQueue();
         if (success) {
             return ResponseEntity.ok(Map.of(

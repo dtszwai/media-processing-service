@@ -1,15 +1,16 @@
 <script lang="ts">
-  import type { Period, EntityViewCount } from "../../../shared/types";
+  import type { Period, EntityViewCount, DownloadStats } from "../../../shared/types";
   import { createQuery } from "@tanstack/svelte-query";
   import { createAnalyticsSummaryQuery } from "../queries";
   import { queryKeys } from "../../../shared/queries";
-  import { getTopMedia } from "../services";
-  import { EntityViewCountSchema } from "../../../shared/types";
+  import { getTopMedia, getDownloadStats } from "../services";
+  import { EntityViewCountSchema, DownloadStatsSchema } from "../../../shared/types";
   import { z } from "zod";
   import StatCard from "./StatCard.svelte";
   import PeriodSelector from "./PeriodSelector.svelte";
   import TopMediaTable from "./TopMediaTable.svelte";
   import FormatUsageChart from "./FormatUsageChart.svelte";
+  import DownloadStatsChart from "./DownloadStatsChart.svelte";
   import MediaPreviewModal from "./MediaPreviewModal.svelte";
 
   let selectedPeriod = $state<Period>("TODAY");
@@ -27,6 +28,31 @@
     staleTime: 30 * 1000,
   }));
 
+  // Download stats query based on selected period
+  const downloadStatsQuery = createQuery(() => ({
+    queryKey: queryKeys.analytics.downloadStats(selectedPeriod),
+    queryFn: async (): Promise<DownloadStats> => {
+      const data = await getDownloadStats(selectedPeriod);
+      return DownloadStatsSchema.parse(data);
+    },
+    staleTime: 30 * 1000,
+  }));
+
+  function getPeriodLabel(period: Period): string {
+    switch (period) {
+      case "TODAY":
+        return "Today";
+      case "THIS_WEEK":
+        return "This Week";
+      case "THIS_MONTH":
+        return "This Month";
+      case "THIS_YEAR":
+        return "This Year";
+      case "ALL_TIME":
+        return "All Time";
+    }
+  }
+
   function handlePeriodChange(period: Period) {
     selectedPeriod = period;
   }
@@ -34,6 +60,7 @@
   function handleRefresh() {
     summaryQuery.refetch();
     topMediaQuery.refetch();
+    downloadStatsQuery.refetch();
   }
 
   function handleMediaClick(media: EntityViewCount) {
@@ -96,24 +123,21 @@
       <PeriodSelector selected={selectedPeriod} onchange={handlePeriodChange} />
     </div>
 
-    <!-- Charts Grid -->
+    <!-- Charts Grid: Top Media left, Bar Charts right -->
     <div class="grid md:grid-cols-2 gap-6">
       <!-- Top Media by Selected Period -->
       <TopMediaTable
-        title="Top Media ({selectedPeriod === 'TODAY'
-          ? 'Today'
-          : selectedPeriod === 'THIS_WEEK'
-            ? 'This Week'
-            : selectedPeriod === 'THIS_MONTH'
-              ? 'This Month'
-              : 'All Time'})"
+        title="Top Media ({getPeriodLabel(selectedPeriod)})"
         data={topMediaQuery.data ?? []}
         loading={topMediaQuery.isLoading}
         onitemclick={handleMediaClick}
       />
 
-      <!-- Format Usage -->
-      <FormatUsageChart data={summary.formatUsage} loading={summaryQuery.isFetching} />
+      <!-- Bar Charts stacked vertically -->
+      <div class="space-y-6">
+        <FormatUsageChart data={summary.formatUsage} loading={summaryQuery.isFetching} />
+        <DownloadStatsChart data={downloadStatsQuery.data ?? null} loading={downloadStatsQuery.isLoading} />
+      </div>
     </div>
 
     <!-- All Time Top Media -->

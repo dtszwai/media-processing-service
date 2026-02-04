@@ -6,6 +6,7 @@ import type { Query } from "@tanstack/svelte-query";
 import { queryClient, queryKeys } from "../../../shared/queries";
 import {
   getAllMedia,
+  getMedia,
   getMediaStatus,
   uploadMedia,
   initPresignedUpload,
@@ -16,8 +17,8 @@ import {
   retryProcessing,
   generateIdempotencyKey,
 } from "../services";
-import { PagedMediaResponseSchema, StatusResponseSchema } from "../../../shared/types";
-import type { OutputFormat, InitUploadRequest, ResizeRequest, PagedMediaResponse, StatusResponse } from "../../../shared/types";
+import { MediaSchema, PagedMediaResponseSchema, StatusResponseSchema } from "../../../shared/types";
+import type { Media, OutputFormat, InitUploadRequest, ResizeRequest, PagedMediaResponse, StatusResponse } from "../../../shared/types";
 import {
   PRESIGNED_UPLOAD_THRESHOLD,
   MAX_DIRECT_UPLOAD_SIZE,
@@ -38,6 +39,20 @@ export function createMediaListQuery(cursor?: string, limit?: number) {
       return PagedMediaResponseSchema.parse(data);
     },
     staleTime: 30 * 1000,
+  }));
+}
+
+/**
+ * Query for single media by ID
+ */
+export function createMediaQuery(mediaId: string, enabled = true) {
+  return createQuery(() => ({
+    queryKey: queryKeys.media.detail(mediaId),
+    queryFn: async (): Promise<Media> => {
+      const data = await getMedia(mediaId);
+      return MediaSchema.parse(data);
+    },
+    enabled,
   }));
 }
 
