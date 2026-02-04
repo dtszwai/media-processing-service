@@ -92,7 +92,8 @@ export function createUploadMutation() {
       width: number;
       outputFormat?: OutputFormat;
     }) => {
-      return uploadMedia(file, width, outputFormat);
+      const idempotencyKey = generateIdempotencyKey(file);
+      return uploadMedia(file, width, outputFormat, idempotencyKey);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.media.all });

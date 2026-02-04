@@ -65,19 +65,30 @@ export async function getMediaStatus(mediaId: string): Promise<StatusResponse> {
 
 /**
  * Upload media file directly (for files < 5MB)
+ * @param file - File to upload
+ * @param width - Target width
+ * @param outputFormat - Output format
+ * @param idempotencyKey - Optional idempotency key for retry safety
  */
 export async function uploadMedia(
   file: File,
   width: number,
   outputFormat: OutputFormat = "jpeg",
+  idempotencyKey?: string,
 ): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("width", width.toString());
   formData.append("outputFormat", outputFormat);
 
+  const headers: Record<string, string> = {};
+  if (idempotencyKey) {
+    headers["Idempotency-Key"] = idempotencyKey;
+  }
+
   const response = await fetch(`${API_BASE}/upload`, {
     method: "POST",
+    headers,
     body: formData,
   });
 
