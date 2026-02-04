@@ -57,6 +57,10 @@ services:
       - "4318:4318"
     environment:
       - GF_PATHS_DATA=/data/grafana
+    volumes:
+      - "./data/grafana/provisioning/dashboards/dashboards.yml:/otel-lgtm/grafana/conf/provisioning/dashboards/media-service.yaml"
+      - "./data/grafana/dashboards/media-service.json:/otel-lgtm/media-service-dashboard.json"
+      - grafana-data:/data/grafana
     networks:
       - default
 
@@ -101,6 +105,7 @@ services:
 
 volumes:
   redis-data:
+  grafana-data:
 
 networks:
   default:
