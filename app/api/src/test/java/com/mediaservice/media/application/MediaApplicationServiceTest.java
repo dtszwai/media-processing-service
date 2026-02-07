@@ -28,6 +28,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -237,7 +238,7 @@ class MediaApplicationServiceTest {
       when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
       var result = mediaService.deleteMedia("media-123");
       assertThat(result).isPresent();
-      verify(dynamoDbService).softDelete("media-123");
+      verify(dynamoDbService).softDelete(eq("media-123"), any(Duration.class));
       verify(snsService).publishDeleteMediaEvent("media-123");
     }
 
@@ -257,7 +258,7 @@ class MediaApplicationServiceTest {
       when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
       var result = mediaService.deleteMedia("media-123");
       assertThat(result).isEmpty();
-      verify(dynamoDbService, never()).softDelete(anyString());
+      verify(dynamoDbService, never()).softDelete(anyString(), any());
       verify(snsService, never()).publishDeleteMediaEvent(anyString());
     }
   }

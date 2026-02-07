@@ -58,6 +58,13 @@ create_dynamodb_table() {
         --billing-mode PAY_PER_REQUEST \
         --region "${AWS_REGION}"
     log "DynamoDB table created: ${TABLE_NAME}"
+
+    # Enable TTL on expiresAt attribute
+    awslocal dynamodb update-time-to-live \
+        --table-name "${TABLE_NAME}" \
+        --time-to-live-specification "Enabled=true,AttributeName=expiresAt" \
+        --region "${AWS_REGION}"
+    log "DynamoDB TTL enabled on expiresAt for table: ${TABLE_NAME}"
 }
 
 create_sns_topic() {

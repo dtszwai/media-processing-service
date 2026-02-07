@@ -359,7 +359,7 @@ public class MediaApplicationService {
     return mediaRepository.getMedia(mediaId)
         .filter(media -> media.getStatus() != MediaStatus.DELETED)
         .map(media -> {
-          mediaRepository.softDelete(mediaId);
+          mediaRepository.softDelete(mediaId, Duration.ofDays(mediaProperties.getSoftDeleteRetentionDays()));
           eventPublisher.publishDeleteMediaEvent(mediaId);
           cacheInvalidationService.invalidateMedia(mediaId);
           log.info("Soft delete completed for mediaId: {}", mediaId);

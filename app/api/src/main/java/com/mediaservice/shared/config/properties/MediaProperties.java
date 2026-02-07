@@ -11,6 +11,7 @@ public class MediaProperties {
   private Width width = new Width();
   private long maxFileSize;
   private Upload upload = new Upload();
+  private int softDeleteRetentionDays = 90;
 
   @Data
   public static class Width {

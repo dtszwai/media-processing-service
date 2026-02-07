@@ -211,20 +211,27 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
   }
 
   /**
-   * Soft delete a media record by setting status to DELETED and deletedAt timestamp.
+   * Soft delete a media record by setting status to DELETED, deletedAt timestamp,
+   * and expiresAt TTL for automatic hard deletion after the retention period.
    * The record is retained for analytics/audit purposes; S3 files are deleted separately.
+   *
+   * @param mediaId       The media ID to soft delete
+   * @param retentionDays Retention period before DynamoDB auto-deletes the record
    */
-  public void softDelete(String mediaId) {
+  public void softDelete(String mediaId, Duration retentionDays) {
+    var now = Instant.now();
+    long expiresAtEpoch = now.plus(retentionDays).getEpochSecond();
     updateAttributes(
         StorageConstants.DYNAMO_PK_PREFIX + mediaId,
         StorageConstants.DYNAMO_SK_METADATA,
-        "SET #status = :status, deletedAt = :deletedAt, updatedAt = :updatedAt",
+        "SET #status = :status, deletedAt = :deletedAt, updatedAt = :updatedAt, expiresAt = :expiresAt",
         Map.of("#status", "status"),
         Map.of(
             ":status", s(MediaStatus.DELETED.name()),
-            ":deletedAt", s(Instant.now().toString()),
-            ":updatedAt", s(Instant.now().toString())));
-    log.info("Soft deleted media record for mediaId: {}", mediaId);
+            ":deletedAt", s(now.toString()),
+            ":updatedAt", s(now.toString()),
+            ":expiresAt", n(String.valueOf(expiresAtEpoch))));
+    log.info("Soft deleted media record for mediaId: {} with TTL of {} days", mediaId, retentionDays.toDays());
   }
 
   /**
