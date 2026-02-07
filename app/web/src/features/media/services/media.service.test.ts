@@ -7,10 +7,14 @@ describe("retryProcessing", () => {
 
   beforeEach(() => {
     vi.stubGlobal("fetch", mockFetch);
+    // Set up auth tokens so authenticatedFetch works
+    localStorage.setItem("auth_access_token", "test-token");
+    localStorage.setItem("auth_token_expiry", String(Date.now() + 3600 * 1000));
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    localStorage.clear();
   });
 
   it("calls retry endpoint and returns mediaId on success", async () => {
@@ -23,9 +27,10 @@ describe("retryProcessing", () => {
 
     const result = await retryProcessing("test-media-id");
 
-    expect(mockFetch).toHaveBeenCalledWith("http://localhost:9000/v1/media/test-media-id/retry", {
-      method: "POST",
-    });
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:9000/v1/media/test-media-id/retry",
+      expect.objectContaining({ method: "POST" }),
+    );
     expect(result).toEqual(mockResponse);
   });
 

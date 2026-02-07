@@ -13,11 +13,12 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 /**
  * S3 service for Lambda media operations.
  *
- * <p>S3 Key Structure (flat, mediaId-first):
+ * <p>S3 Key Structure (tenant-scoped):
  * <pre>
- * {mediaId}/
+ * {tenantId}/{mediaId}/
  *   original.{ext}   - Original uploaded file
  *   processed.{ext}  - Processed/resized output
+ *   preview.{ext}    - Watermarked preview for CDN
  * </pre>
  */
 public class S3Service {
@@ -37,14 +38,10 @@ public class S3Service {
 
   /**
    * Get the original uploaded media file.
-   *
-   * @param mediaId   The media ID
-   * @param mediaName The original filename (used to determine extension)
-   * @return The file contents as byte array
    */
-  public byte[] getMediaFile(String mediaId, String mediaName) {
+  public byte[] getMediaFile(String tenantId, String mediaId, String mediaName) {
     String extension = StorageConstants.getFileExtension(mediaName);
-    String key = StorageConstants.buildS3Key(mediaId, StorageConstants.S3_VARIANT_ORIGINAL, extension);
+    String key = StorageConstants.buildS3Key(tenantId, mediaId, StorageConstants.S3_VARIANT_ORIGINAL, extension);
     var request = GetObjectRequest.builder()
         .bucket(bucketName)
         .key(key)
@@ -54,15 +51,10 @@ public class S3Service {
 
   /**
    * Upload a processed media file.
-   *
-   * @param mediaId      The media ID
-   * @param mediaName    The original filename (unused in new structure)
-   * @param data         The processed image data
-   * @param outputFormat The output format (determines extension)
    */
-  public void uploadProcessedMedia(String mediaId, String mediaName, byte[] data, OutputFormat outputFormat) {
+  public void uploadProcessedMedia(String tenantId, String mediaId, String mediaName, byte[] data, OutputFormat outputFormat) {
     OutputFormat format = (outputFormat != null) ? outputFormat : OutputFormat.JPEG;
-    String key = StorageConstants.buildS3Key(mediaId, StorageConstants.S3_VARIANT_PROCESSED, format.getExtension());
+    String key = StorageConstants.buildS3Key(tenantId, mediaId, StorageConstants.S3_VARIANT_PROCESSED, format.getExtension());
     var request = PutObjectRequest.builder()
         .bucket(bucketName)
         .key(key)
@@ -73,13 +65,10 @@ public class S3Service {
 
   /**
    * Delete the original uploaded media file.
-   *
-   * @param mediaId   The media ID
-   * @param mediaName The original filename (used to determine extension)
    */
-  public void deleteOriginalFile(String mediaId, String mediaName) {
+  public void deleteOriginalFile(String tenantId, String mediaId, String mediaName) {
     String extension = StorageConstants.getFileExtension(mediaName);
-    String key = StorageConstants.buildS3Key(mediaId, StorageConstants.S3_VARIANT_ORIGINAL, extension);
+    String key = StorageConstants.buildS3Key(tenantId, mediaId, StorageConstants.S3_VARIANT_ORIGINAL, extension);
     var request = DeleteObjectRequest.builder()
         .bucket(bucketName)
         .key(key)
@@ -89,13 +78,10 @@ public class S3Service {
 
   /**
    * Delete the processed media file.
-   *
-   * @param mediaId      The media ID
-   * @param outputFormat The output format (determines extension)
    */
-  public void deleteProcessedFile(String mediaId, OutputFormat outputFormat) {
+  public void deleteProcessedFile(String tenantId, String mediaId, OutputFormat outputFormat) {
     OutputFormat format = (outputFormat != null) ? outputFormat : OutputFormat.JPEG;
-    String key = StorageConstants.buildS3Key(mediaId, StorageConstants.S3_VARIANT_PROCESSED, format.getExtension());
+    String key = StorageConstants.buildS3Key(tenantId, mediaId, StorageConstants.S3_VARIANT_PROCESSED, format.getExtension());
     var request = DeleteObjectRequest.builder()
         .bucket(bucketName)
         .key(key)
@@ -106,14 +92,10 @@ public class S3Service {
   /**
    * Upload a preview image for CDN distribution.
    * Preview has 1-year cache control for efficient CDN caching.
-   *
-   * @param mediaId      The media ID
-   * @param previewData  The preview image data
-   * @param outputFormat The output format (determines extension)
    */
-  public void uploadPreview(String mediaId, byte[] previewData, OutputFormat outputFormat) {
+  public void uploadPreview(String tenantId, String mediaId, byte[] previewData, OutputFormat outputFormat) {
     OutputFormat format = (outputFormat != null) ? outputFormat : OutputFormat.JPEG;
-    String key = StorageConstants.buildS3Key(mediaId, StorageConstants.VARIANT_PREVIEW, format.getExtension());
+    String key = StorageConstants.buildS3Key(tenantId, mediaId, StorageConstants.VARIANT_PREVIEW, format.getExtension());
     var request = PutObjectRequest.builder()
         .bucket(bucketName)
         .key(key)
@@ -125,13 +107,10 @@ public class S3Service {
 
   /**
    * Delete the preview media file.
-   *
-   * @param mediaId      The media ID
-   * @param outputFormat The output format (determines extension)
    */
-  public void deletePreviewFile(String mediaId, OutputFormat outputFormat) {
+  public void deletePreviewFile(String tenantId, String mediaId, OutputFormat outputFormat) {
     OutputFormat format = (outputFormat != null) ? outputFormat : OutputFormat.JPEG;
-    String key = StorageConstants.buildS3Key(mediaId, StorageConstants.VARIANT_PREVIEW, format.getExtension());
+    String key = StorageConstants.buildS3Key(tenantId, mediaId, StorageConstants.VARIANT_PREVIEW, format.getExtension());
     var request = DeleteObjectRequest.builder()
         .bucket(bucketName)
         .key(key)

@@ -5,6 +5,7 @@ import com.mediaservice.media.domain.service.ImageValidationService;
 import com.mediaservice.media.infrastructure.messaging.MediaEventPublisher;
 import com.mediaservice.media.infrastructure.persistence.MediaDynamoDbRepository;
 import com.mediaservice.media.infrastructure.storage.S3StorageService;
+import com.mediaservice.shared.auth.AuthorizationService;
 import com.mediaservice.shared.config.properties.MediaProperties;
 import com.mediaservice.shared.cache.CacheInvalidationService;
 import com.mediaservice.media.api.dto.InitUploadRequest;
@@ -59,6 +60,8 @@ class MediaApplicationServiceTest {
   @Mock
   private AnalyticsService analyticsService;
   @Mock
+  private AuthorizationService authorizationService;
+  @Mock
   private Tracer tracer;
   @Mock
   private Meter meter;
@@ -100,7 +103,7 @@ class MediaApplicationServiceTest {
 
     mediaService = new MediaApplicationService(dynamoDbService, s3Service, snsService, mediaProperties,
         imageValidationService,
-        cacheInvalidationService, cacheOrchestrator, analyticsService, tracer, meter);
+        cacheInvalidationService, cacheOrchestrator, analyticsService, authorizationService, tracer, meter);
   }
 
   @Nested
@@ -112,9 +115,9 @@ class MediaApplicationServiceTest {
       var file = new MockMultipartFile("file", "test.jpg", "image/jpeg", "test-content".getBytes());
       var response = mediaService.uploadMedia(file, 500, "jpeg");
       assertThat(response.getMediaId()).isNotBlank();
-      verify(s3Service).uploadMedia(anyString(), eq("test.jpg"), eq(file));
+      verify(s3Service).uploadMedia(eq("default"), anyString(), eq("test.jpg"), eq(file));
       verify(dynamoDbService).createMedia(any(Media.class));
-      verify(snsService).publishProcessMediaEvent(anyString(), eq(500), eq("jpeg"));
+      verify(snsService).publishProcessMediaEvent(anyString(), eq("default"), eq(500), eq("jpeg"));
     }
 
     @Test
@@ -140,7 +143,7 @@ class MediaApplicationServiceTest {
     void shouldUseDefaultFilenameWhenEmpty() throws IOException {
       var file = new MockMultipartFile("file", "", "image/jpeg", "test".getBytes());
       mediaService.uploadMedia(file, null, null);
-      verify(s3Service).uploadMedia(anyString(), eq("image.jpg"), eq(file));
+      verify(s3Service).uploadMedia(eq("default"), anyString(), eq("image.jpg"), eq(file));
     }
 
     @Test
@@ -148,7 +151,7 @@ class MediaApplicationServiceTest {
     void shouldUseDefaultWidth() throws IOException {
       var file = new MockMultipartFile("file", "test.jpg", "image/jpeg", "test".getBytes());
       mediaService.uploadMedia(file, null, null);
-      verify(snsService).publishProcessMediaEvent(anyString(), eq(500), eq("jpeg"));
+      verify(snsService).publishProcessMediaEvent(anyString(), eq("default"), eq(500), eq("jpeg"));
     }
   }
 
@@ -212,7 +215,7 @@ class MediaApplicationServiceTest {
           .thenReturn(true);
       var result = mediaService.resizeMedia("media-123", 800, "jpeg");
       assertThat(result).isInstanceOf(MediaOperationResult.Success.class);
-      verify(snsService).publishResizeMediaEvent("media-123", 800, "jpeg");
+      verify(snsService).publishResizeMediaEvent("media-123", "default", 800, "jpeg");
     }
 
     @Test
@@ -224,7 +227,7 @@ class MediaApplicationServiceTest {
           .thenReturn(false);
       var result = mediaService.resizeMedia("media-123", 800, null);
       assertThat(result).isInstanceOf(MediaOperationResult.NotAllowed.class);
-      verify(snsService, never()).publishResizeMediaEvent(anyString(), any(), any());
+      verify(snsService, never()).publishResizeMediaEvent(anyString(), anyString(), any(), any());
     }
 
     @Test
@@ -235,7 +238,7 @@ class MediaApplicationServiceTest {
       when(dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.COMPLETE))
           .thenReturn(true);
       doThrow(new RuntimeException("SNS failure"))
-          .when(snsService).publishResizeMediaEvent("media-123", 800, "jpeg");
+          .when(snsService).publishResizeMediaEvent("media-123", "default", 800, "jpeg");
 
       assertThatThrownBy(() -> mediaService.resizeMedia("media-123", 800, "jpeg"))
           .isInstanceOf(RuntimeException.class)
@@ -257,7 +260,7 @@ class MediaApplicationServiceTest {
       var result = mediaService.deleteMedia("media-123");
       assertThat(result).isPresent();
       verify(dynamoDbService).softDelete(eq("media-123"), any(Duration.class));
-      verify(snsService).publishDeleteMediaEvent("media-123");
+      verify(snsService).publishDeleteMediaEvent("media-123", "default");
     }
 
     @Test
@@ -266,7 +269,7 @@ class MediaApplicationServiceTest {
       when(dynamoDbService.getMedia("nonexistent")).thenReturn(Optional.empty());
       var result = mediaService.deleteMedia("nonexistent");
       assertThat(result).isEmpty();
-      verify(snsService, never()).publishDeleteMediaEvent(anyString());
+      verify(snsService, never()).publishDeleteMediaEvent(anyString(), anyString());
     }
 
     @Test
@@ -277,7 +280,7 @@ class MediaApplicationServiceTest {
       var result = mediaService.deleteMedia("media-123");
       assertThat(result).isEmpty();
       verify(dynamoDbService, never()).softDelete(anyString(), any());
-      verify(snsService, never()).publishDeleteMediaEvent(anyString());
+      verify(snsService, never()).publishDeleteMediaEvent(anyString(), anyString());
     }
 
     @Test
@@ -286,7 +289,7 @@ class MediaApplicationServiceTest {
       var media = createMedia(MediaStatus.COMPLETE);
       when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
       doThrow(new RuntimeException("SNS failure"))
-          .when(snsService).publishDeleteMediaEvent("media-123");
+          .when(snsService).publishDeleteMediaEvent("media-123", "default");
 
       assertThatThrownBy(() -> mediaService.deleteMedia("media-123"))
           .isInstanceOf(RuntimeException.class)
@@ -340,7 +343,7 @@ class MediaApplicationServiceTest {
           .width(800)
           .build();
 
-      when(s3Service.generatePresignedUploadUrl(anyString(), eq("large-image.jpg"), eq("image/jpeg"), any()))
+      when(s3Service.generatePresignedUploadUrl(eq("default"), anyString(), eq("large-image.jpg"), eq("image/jpeg"), any()))
           .thenReturn("https://s3.example.com/presigned-upload-url");
 
       var response = mediaService.initPresignedUpload(request);
@@ -366,7 +369,7 @@ class MediaApplicationServiceTest {
           .contentType("image/jpeg")
           .build();
 
-      when(s3Service.generatePresignedUploadUrl(anyString(), anyString(), anyString(), any()))
+      when(s3Service.generatePresignedUploadUrl(anyString(), anyString(), anyString(), anyString(), any()))
           .thenReturn("https://s3.example.com/url");
 
       mediaService.initPresignedUpload(request);
@@ -384,7 +387,7 @@ class MediaApplicationServiceTest {
     void shouldCompleteUploadWhenFileExists() {
       var media = createMedia(MediaStatus.PENDING_UPLOAD);
       when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
-      when(s3Service.objectExists("media-123", "test.jpg")).thenReturn(true);
+      when(s3Service.objectExists("default", "media-123", "test.jpg")).thenReturn(true);
       when(
           dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.PENDING_UPLOAD, true))
           .thenReturn(true);
@@ -392,7 +395,7 @@ class MediaApplicationServiceTest {
       var result = mediaService.completePresignedUpload("media-123");
 
       assertThat(result).isPresent();
-      verify(snsService).publishProcessMediaEvent("media-123", 500, "jpeg");
+      verify(snsService).publishProcessMediaEvent("media-123", "default", 500, "jpeg");
     }
 
     @Test
@@ -403,8 +406,8 @@ class MediaApplicationServiceTest {
       var result = mediaService.completePresignedUpload("nonexistent");
 
       assertThat(result).isEmpty();
-      verify(s3Service, never()).objectExists(anyString(), anyString());
-      verify(snsService, never()).publishProcessMediaEvent(anyString(), any(), any());
+      verify(s3Service, never()).objectExists(anyString(), anyString(), anyString());
+      verify(snsService, never()).publishProcessMediaEvent(anyString(), anyString(), any(), any());
     }
 
     @Test
@@ -416,7 +419,7 @@ class MediaApplicationServiceTest {
       var result = mediaService.completePresignedUpload("media-123");
 
       assertThat(result).isEmpty();
-      verify(s3Service, never()).objectExists(anyString(), anyString());
+      verify(s3Service, never()).objectExists(anyString(), anyString(), anyString());
     }
 
     @Test
@@ -424,13 +427,13 @@ class MediaApplicationServiceTest {
     void shouldReturnEmptyWhenFileNotInS3() {
       var media = createMedia(MediaStatus.PENDING_UPLOAD);
       when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
-      when(s3Service.objectExists("media-123", "test.jpg")).thenReturn(false);
+      when(s3Service.objectExists("default", "media-123", "test.jpg")).thenReturn(false);
 
       var result = mediaService.completePresignedUpload("media-123");
 
       assertThat(result).isEmpty();
       verify(dynamoDbService, never()).updateStatusConditionally(anyString(), any(), any());
-      verify(snsService, never()).publishProcessMediaEvent(anyString(), any(), any());
+      verify(snsService, never()).publishProcessMediaEvent(anyString(), anyString(), any(), any());
     }
 
     @Test
@@ -438,7 +441,7 @@ class MediaApplicationServiceTest {
     void shouldReturnEmptyWhenStatusUpdateFails() {
       var media = createMedia(MediaStatus.PENDING_UPLOAD);
       when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
-      when(s3Service.objectExists("media-123", "test.jpg")).thenReturn(true);
+      when(s3Service.objectExists("default", "media-123", "test.jpg")).thenReturn(true);
       when(
           dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.PENDING_UPLOAD, true))
           .thenReturn(false);
@@ -446,7 +449,7 @@ class MediaApplicationServiceTest {
       var result = mediaService.completePresignedUpload("media-123");
 
       assertThat(result).isEmpty();
-      verify(snsService, never()).publishProcessMediaEvent(anyString(), any(), any());
+      verify(snsService, never()).publishProcessMediaEvent(anyString(), anyString(), any(), any());
     }
 
     @Test
@@ -454,11 +457,11 @@ class MediaApplicationServiceTest {
     void shouldRevertStatusWhenPublishFails() {
       var media = createMedia(MediaStatus.PENDING_UPLOAD);
       when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
-      when(s3Service.objectExists("media-123", "test.jpg")).thenReturn(true);
+      when(s3Service.objectExists("default", "media-123", "test.jpg")).thenReturn(true);
       when(dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.PENDING_UPLOAD, true))
           .thenReturn(true);
       doThrow(new RuntimeException("SNS failure"))
-          .when(snsService).publishProcessMediaEvent("media-123", 500, "jpeg");
+          .when(snsService).publishProcessMediaEvent("media-123", "default", 500, "jpeg");
 
       assertThatThrownBy(() -> mediaService.completePresignedUpload("media-123"))
           .isInstanceOf(RuntimeException.class)
@@ -483,7 +486,7 @@ class MediaApplicationServiceTest {
       var result = mediaService.retryProcessing("media-123");
 
       assertThat(result).isInstanceOf(MediaOperationResult.Success.class);
-      verify(snsService).publishProcessMediaEvent("media-123", 500, "jpeg");
+      verify(snsService).publishProcessMediaEvent("media-123", "default", 500, "jpeg");
       verify(cacheInvalidationService).invalidateMedia("media-123");
     }
 
@@ -495,7 +498,7 @@ class MediaApplicationServiceTest {
       var result = mediaService.retryProcessing("media-123");
 
       assertThat(result).isInstanceOf(MediaOperationResult.NotFound.class);
-      verify(snsService, never()).publishProcessMediaEvent(anyString(), any(), any());
+      verify(snsService, never()).publishProcessMediaEvent(anyString(), anyString(), any(), any());
     }
 
     @Test
@@ -507,7 +510,7 @@ class MediaApplicationServiceTest {
       var result = mediaService.retryProcessing("media-123");
 
       assertThat(result).isInstanceOf(MediaOperationResult.NotAllowed.class);
-      verify(snsService, never()).publishProcessMediaEvent(anyString(), any(), any());
+      verify(snsService, never()).publishProcessMediaEvent(anyString(), anyString(), any(), any());
     }
 
     @Test
@@ -518,7 +521,7 @@ class MediaApplicationServiceTest {
       when(dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.ERROR))
           .thenReturn(true);
       doThrow(new RuntimeException("SNS failure"))
-          .when(snsService).publishProcessMediaEvent("media-123", 500, "jpeg");
+          .when(snsService).publishProcessMediaEvent("media-123", "default", 500, "jpeg");
 
       assertThatThrownBy(() -> mediaService.retryProcessing("media-123"))
           .isInstanceOf(RuntimeException.class)

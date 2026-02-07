@@ -61,6 +61,19 @@ aws:
     domain: ${CLOUDFRONT_DOMAIN:}
     enabled: ${CLOUDFRONT_ENABLED:false}
 
+# Auth Configuration
+auth:
+  jwt:
+    secret: ${JWT_SECRET:local-dev-secret-min-32-chars-long!!}
+    issuer: media-service
+    expiration-seconds: 3600
+    refresh-expiration-seconds: 86400
+  api-key:
+    enabled: true
+    header: X-API-Key
+  enforcement:
+    enabled: ${AUTH_ENFORCEMENT_ENABLED:false}
+
 # Media Configuration
 media:
   width:

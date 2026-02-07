@@ -3,7 +3,7 @@
  * Handles all analytics-related API calls
  */
 import { ANALYTICS_BASE } from "../../../shared/config/env";
-import { handleResponse } from "../../../shared/http";
+import { handleResponse, authenticatedFetch } from "../../../shared/http";
 import type { Period, EntityViewCount, ViewStats, FormatUsageStats, DownloadStats, AnalyticsSummary } from "../../../shared/types";
 
 /**
@@ -14,7 +14,7 @@ export async function getTopMedia(period: Period = "TODAY", limit = 10): Promise
   params.set("period", period);
   params.set("limit", limit.toString());
 
-  const response = await fetch(`${ANALYTICS_BASE}/top-media?${params}`);
+  const response = await authenticatedFetch(`${ANALYTICS_BASE}/top-media?${params}`);
   return handleResponse<EntityViewCount[]>(response);
 }
 
@@ -22,7 +22,7 @@ export async function getTopMedia(period: Period = "TODAY", limit = 10): Promise
  * Get view statistics for a specific media
  */
 export async function getMediaViews(mediaId: string): Promise<ViewStats> {
-  const response = await fetch(`${ANALYTICS_BASE}/media/${mediaId}/views`);
+  const response = await authenticatedFetch(`${ANALYTICS_BASE}/media/${mediaId}/views`);
   return handleResponse<ViewStats>(response);
 }
 
@@ -30,7 +30,7 @@ export async function getMediaViews(mediaId: string): Promise<ViewStats> {
  * Get format usage statistics
  */
 export async function getFormatUsage(period: Period = "TODAY"): Promise<FormatUsageStats> {
-  const response = await fetch(`${ANALYTICS_BASE}/formats?period=${period}`);
+  const response = await authenticatedFetch(`${ANALYTICS_BASE}/formats?period=${period}`);
   return handleResponse<FormatUsageStats>(response);
 }
 
@@ -38,7 +38,7 @@ export async function getFormatUsage(period: Period = "TODAY"): Promise<FormatUs
  * Get download statistics
  */
 export async function getDownloadStats(period: Period = "TODAY"): Promise<DownloadStats> {
-  const response = await fetch(`${ANALYTICS_BASE}/downloads?period=${period}`);
+  const response = await authenticatedFetch(`${ANALYTICS_BASE}/downloads?period=${period}`);
   return handleResponse<DownloadStats>(response);
 }
 
@@ -46,6 +46,6 @@ export async function getDownloadStats(period: Period = "TODAY"): Promise<Downlo
  * Get analytics summary (all key metrics)
  */
 export async function getAnalyticsSummary(): Promise<AnalyticsSummary> {
-  const response = await fetch(`${ANALYTICS_BASE}/summary`);
+  const response = await authenticatedFetch(`${ANALYTICS_BASE}/summary`);
   return handleResponse<AnalyticsSummary>(response);
 }

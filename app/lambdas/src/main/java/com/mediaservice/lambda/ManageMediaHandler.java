@@ -132,31 +132,33 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
       }
 
       var mediaId = payload.getMediaId();
+      var tenantId = payload.getTenantId() != null ? payload.getTenantId() : "default";
       var width = payload.getWidth();
       var outputFormat = OutputFormat.fromString(payload.getOutputFormat());
 
       span.setAttribute("media.id", mediaId);
+      span.setAttribute("tenant.id", tenantId);
       span.setAttribute("event.type", event.getType());
       span.setAttribute("output.format", outputFormat.getFormat());
       if (width != null)
         span.setAttribute("width", width);
-      logger.info("Processing event: type={}, mediaId={}, outputFormat={}", event.getType(), mediaId,
-          outputFormat.getFormat());
+      logger.info("Processing event: type={}, mediaId={}, tenantId={}, outputFormat={}", event.getType(), mediaId,
+          tenantId, outputFormat.getFormat());
       var eventType = EventType.fromString(event.getType());
       if (eventType == null) {
         logger.info("Skipping message with unsupported type: {}", event.getType());
         return;
       }
       switch (eventType) {
-        case DELETE_MEDIA -> handleDelete(mediaId, span);
+        case DELETE_MEDIA -> handleDelete(mediaId, tenantId, span);
         case RESIZE_MEDIA -> {
           if (width == null) {
             logger.info("Skipping resize message with missing width");
           } else {
-            handleMediaProcessing(mediaId, width, outputFormat, true, span);
+            handleMediaProcessing(mediaId, tenantId, width, outputFormat, true, span);
           }
         }
-        case PROCESS_MEDIA -> handleMediaProcessing(mediaId, width, outputFormat, false, span);
+        case PROCESS_MEDIA -> handleMediaProcessing(mediaId, tenantId, width, outputFormat, false, span);
         default -> logger.info("Skipping message with unhandled event type: {}", event.getType());
       }
     } catch (Exception e) {
@@ -172,7 +174,7 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
    * Handle soft delete: S3 files are deleted, DynamoDB record is preserved.
    * The API has already soft-deleted the record (status=DELETED, deletedAt set).
    */
-  private void handleDelete(String mediaId, Span span) {
+  private void handleDelete(String mediaId, String tenantId, Span span) {
     logger.info("Cleaning up S3 files for soft-deleted media: {}", mediaId);
     try {
       var mediaOpt = dynamoDbService.getMedia(mediaId);
@@ -184,14 +186,14 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
       var outputFormat = media.getOutputFormatOrDefault();
 
       // Delete original file from S3
-      s3Service.deleteOriginalFile(mediaId, media.getName());
+      s3Service.deleteOriginalFile(tenantId, mediaId, media.getName());
 
       // Always try to delete processed file (S3 delete is idempotent - no error if
       // file doesn't exist)
-      s3Service.deleteProcessedFile(mediaId, outputFormat);
+      s3Service.deleteProcessedFile(tenantId, mediaId, outputFormat);
 
       // Delete preview file from S3
-      s3Service.deletePreviewFile(mediaId, outputFormat);
+      s3Service.deletePreviewFile(tenantId, mediaId, outputFormat);
 
       logger.info("S3 cleanup completed for media: {} (DynamoDB record preserved for analytics)", mediaId);
       span.setStatus(StatusCode.OK);
@@ -204,7 +206,7 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
     }
   }
 
-  private void handleMediaProcessing(String mediaId, Integer requestedWidth, OutputFormat outputFormat,
+  private void handleMediaProcessing(String mediaId, String tenantId, Integer requestedWidth, OutputFormat outputFormat,
       boolean isResize, Span span) {
     var successCounter = isResize ? resizeSuccessCounter : processSuccessCounter;
     var failureCounter = isResize ? resizeFailureCounter : processFailureCounter;
@@ -234,7 +236,7 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
           return;
         }
       }
-      byte[] imageData = s3Service.getMediaFile(mediaId, media.getName());
+      byte[] imageData = s3Service.getMediaFile(tenantId, mediaId, media.getName());
 
       var targetWidth = requestedWidth != null ? requestedWidth : media.getWidth();
       var targetFormat = outputFormat != null ? outputFormat : media.getOutputFormatOrDefault();
@@ -260,11 +262,11 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
       // Generate and upload preview (only for new uploads, not resizes)
       if (!isResize) {
         byte[] preview = imageProcessingService.generatePreview(imageData, targetFormat);
-        s3Service.uploadPreview(mediaId, preview, targetFormat);
+        s3Service.uploadPreview(tenantId, mediaId, preview, targetFormat);
         logger.info("Preview generated and uploaded for media: {}", mediaId);
       }
 
-      s3Service.uploadProcessedMedia(mediaId, media.getName(), processed, targetFormat);
+      s3Service.uploadProcessedMedia(tenantId, mediaId, media.getName(), processed, targetFormat);
       var completedMedia = dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.COMPLETE, MediaStatus.PROCESSING, targetWidth);
 
       logger.info("Media operation complete for: {}", mediaId);
@@ -295,9 +297,9 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
         // Delete happened while processing was in-flight — clean up any files we uploaded
         logger.info("Media {} was deleted during processing, cleaning up uploaded files", mediaId);
         try {
-          s3Service.deleteProcessedFile(mediaId, outputFormat);
+          s3Service.deleteProcessedFile(tenantId, mediaId, outputFormat);
           if (!isResize) {
-            s3Service.deletePreviewFile(mediaId, outputFormat);
+            s3Service.deletePreviewFile(tenantId, mediaId, outputFormat);
           }
         } catch (Exception cleanupErr) {
           logger.warn("Failed to clean up files for deleted media {}: {}", mediaId, cleanupErr.getMessage());

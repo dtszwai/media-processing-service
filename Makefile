@@ -53,7 +53,7 @@ local-up: build-all start-infra tf-apply start-api
 .PHONY: start-api
 start-api:
 	@echo "Starting API..."
-	@docker compose up -d api
+	@docker compose up -d --build api
 
 .PHONY: local-start
 local-start:
@@ -161,6 +161,25 @@ tf-plan: tf-init
 tf-apply: tf-init
 	@echo "Deploying to LocalStack with Terraform..."
 	@cd terraform && tflocal apply -var-file=local.tfvars -auto-approve
+	@$(MAKE) fix-gsi
+
+# Workaround: LocalStack sometimes fails to create all GSIs via Terraform.
+# This ensures the auth-related GSIs exist on the DynamoDB table.
+.PHONY: fix-gsi
+fix-gsi:
+	@for idx in \
+	  'email-index|AttributeName=email,AttributeType=S|[{"Create":{"IndexName":"email-index","KeySchema":[{"AttributeName":"email","KeyType":"HASH"}],"Projection":{"ProjectionType":"ALL"}}}]' \
+	  'tenantId-createdAt-index|AttributeName=tenantId,AttributeType=S AttributeName=createdAt,AttributeType=S|[{"Create":{"IndexName":"tenantId-createdAt-index","KeySchema":[{"AttributeName":"tenantId","KeyType":"HASH"},{"AttributeName":"createdAt","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}}}]' \
+	  'tenantId-index|AttributeName=tenantId,AttributeType=S|[{"Create":{"IndexName":"tenantId-index","KeySchema":[{"AttributeName":"tenantId","KeyType":"HASH"}],"Projection":{"ProjectionType":"ALL"}}}]'; \
+	do \
+	  name=$$(echo "$$idx" | cut -d'|' -f1); \
+	  attrs=$$(echo "$$idx" | cut -d'|' -f2); \
+	  updates=$$(echo "$$idx" | cut -d'|' -f3); \
+	  exists=$$(aws --endpoint-url=http://localhost:4566 dynamodb describe-table --table-name media --region us-west-2 --query "Table.GlobalSecondaryIndexes[?IndexName=='$$name'].IndexName" --output text 2>/dev/null); \
+	  if [ -z "$$exists" ]; then \
+	    aws --endpoint-url=http://localhost:4566 dynamodb update-table --table-name media --region us-west-2 --attribute-definitions $$attrs --global-secondary-index-updates "$$updates" > /dev/null 2>&1 && echo "  GSI added: $$name"; \
+	  fi; \
+	done
 
 .PHONY: tf-destroy
 tf-destroy:

@@ -320,7 +320,7 @@
             <span>Awaiting upload...</span>
           </div>
         {:else}
-          <img src={getOriginalUrl(currentMedia.mediaId, currentMedia.name)} alt="Original" />
+          <img src={getOriginalUrl(currentMedia.mediaId)} alt="Original" />
         {/if}
         <div class="mt-2 space-y-0.5">
           <p class="text-xs text-gray-500">Size: {formatFileSize(currentMedia.size)}</p>

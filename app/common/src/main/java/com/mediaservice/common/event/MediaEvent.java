@@ -23,6 +23,7 @@ public class MediaEvent {
   @JsonIgnoreProperties(ignoreUnknown = true)
   public static class MediaEventPayload {
     private String mediaId;
+    private String tenantId;
     private Integer width;
     private String outputFormat;
   }
@@ -41,6 +42,28 @@ public class MediaEvent {
             .mediaId(mediaId)
             .width(width)
             .outputFormat(outputFormat)
+            .build())
+        .build();
+  }
+
+  public static MediaEvent of(EventType eventType, String mediaId, String tenantId, Integer width, String outputFormat) {
+    return MediaEvent.builder()
+        .type(eventType.getValue())
+        .payload(MediaEventPayload.builder()
+            .mediaId(mediaId)
+            .tenantId(tenantId)
+            .width(width)
+            .outputFormat(outputFormat)
+            .build())
+        .build();
+  }
+
+  public static MediaEvent of(EventType eventType, String mediaId, String tenantId) {
+    return MediaEvent.builder()
+        .type(eventType.getValue())
+        .payload(MediaEventPayload.builder()
+            .mediaId(mediaId)
+            .tenantId(tenantId)
             .build())
         .build();
   }

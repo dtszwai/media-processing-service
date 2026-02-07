@@ -31,6 +31,11 @@ export const queryKeys = {
       messages: (limit?: number) => ["admin", "dlq", "messages", { limit }] as const,
     },
   },
+  auth: {
+    all: ["auth"] as const,
+    user: () => ["auth", "user"] as const,
+    apiKeys: () => ["auth", "apiKeys"] as const,
+  },
 } as const;
 
 /**

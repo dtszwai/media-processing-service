@@ -9,6 +9,7 @@ export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:9000";
 
 // API endpoint bases
 export const API_BASE = `${API_URL}/v1/media`;
+export const AUTH_BASE = `${API_URL}/v1/auth`;
 export const ANALYTICS_BASE = `${API_URL}/v1/analytics`;
 export const ACTUATOR_BASE = `${API_URL}/actuator`;
 export const ADMIN_BASE = `${API_URL}/admin`;

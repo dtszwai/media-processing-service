@@ -40,9 +40,12 @@ public final class StorageConstants {
 
   // DynamoDB attribute names
   public static final String DYNAMO_ATTR_ORIGINAL_FILENAME = "originalFilename";
+  public static final String DYNAMO_ATTR_TENANT_ID = "tenantId";
+  public static final String DYNAMO_ATTR_USER_ID = "userId";
+  public static final String DYNAMO_GSI_TENANT_CREATED_AT = "tenantId-createdAt-index";
 
   /**
-   * Build an S3 key for a media variant.
+   * Build an S3 key for a media variant (legacy, no tenant).
    *
    * @param mediaId The media ID (UUID)
    * @param variant The variant name (e.g., "original", "processed")
@@ -51,6 +54,19 @@ public final class StorageConstants {
    */
   public static String buildS3Key(String mediaId, String variant, String extension) {
     return mediaId + "/" + variant + extension;
+  }
+
+  /**
+   * Build a tenant-scoped S3 key for a media variant.
+   *
+   * @param tenantId  The tenant ID
+   * @param mediaId   The media ID (UUID)
+   * @param variant   The variant name (e.g., "original", "processed")
+   * @param extension The file extension including dot (e.g., ".jpeg")
+   * @return The S3 key (e.g., "tenant-123/abc-123/original.jpeg")
+   */
+  public static String buildS3Key(String tenantId, String mediaId, String variant, String extension) {
+    return tenantId + "/" + mediaId + "/" + variant + extension;
   }
 
   /**

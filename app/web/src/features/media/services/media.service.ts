@@ -3,8 +3,8 @@
  * Handles all media-related API calls
  */
 import { API_BASE } from "../../../shared/config/env";
-import { handleResponse, uploadToPresignedUrl } from "../../../shared/http";
-import { RateLimitError, ApiRequestError } from "../../../shared/types";
+import { handleResponse, authenticatedFetch, uploadToPresignedUrl } from "../../../shared/http";
+import { RateLimitError, ApiRequestError, AuthenticationError } from "../../../shared/types";
 import type {
   Media,
   InitUploadRequest,
@@ -27,7 +27,7 @@ export async function getAllMedia(cursor?: string, limit?: number): Promise<Page
   if (limit) params.set("limit", limit.toString());
 
   const url = params.toString() ? `${API_BASE}?${params}` : API_BASE;
-  const response = await fetch(url);
+  const response = await authenticatedFetch(url);
   return handleResponse<PagedResponse<Media>>(response);
 }
 
@@ -37,7 +37,7 @@ export async function getAllMedia(cursor?: string, limit?: number): Promise<Page
  * @throws Error with message "DELETED" if media was deleted
  */
 export async function getMedia(mediaId: string): Promise<Media> {
-  const response = await fetch(`${API_BASE}/${mediaId}`);
+  const response = await authenticatedFetch(`${API_BASE}/${mediaId}`);
   if (response.status === 404) {
     throw new Error("NOT_FOUND");
   }
@@ -53,7 +53,7 @@ export async function getMedia(mediaId: string): Promise<Media> {
  * @throws Error with message "DELETED" if media was deleted
  */
 export async function getMediaStatus(mediaId: string): Promise<StatusResponse> {
-  const response = await fetch(`${API_BASE}/${mediaId}/status`);
+  const response = await authenticatedFetch(`${API_BASE}/${mediaId}/status`);
   if (response.status === 404) {
     throw new Error("NOT_FOUND");
   }
@@ -86,7 +86,7 @@ export async function uploadMedia(
     headers["Idempotency-Key"] = idempotencyKey;
   }
 
-  const response = await fetch(`${API_BASE}/upload`, {
+  const response = await authenticatedFetch(`${API_BASE}/upload`, {
     method: "POST",
     headers,
     body: formData,
@@ -109,7 +109,7 @@ export async function initPresignedUpload(
     headers["Idempotency-Key"] = idempotencyKey;
   }
 
-  const response = await fetch(`${API_BASE}/upload/init`, {
+  const response = await authenticatedFetch(`${API_BASE}/upload/init`, {
     method: "POST",
     headers,
     body: JSON.stringify(request),
@@ -122,7 +122,7 @@ export async function initPresignedUpload(
  * Refresh presigned upload URL (if previous expired)
  */
 export async function refreshPresignedUploadUrl(mediaId: string): Promise<InitUploadResponse> {
-  const response = await fetch(`${API_BASE}/${mediaId}/upload/refresh`, {
+  const response = await authenticatedFetch(`${API_BASE}/${mediaId}/upload/refresh`, {
     method: "POST",
   });
 
@@ -133,7 +133,7 @@ export async function refreshPresignedUploadUrl(mediaId: string): Promise<InitUp
  * Complete presigned upload after file is uploaded to S3
  */
 export async function completePresignedUpload(mediaId: string): Promise<UploadResponse> {
-  const response = await fetch(`${API_BASE}/${mediaId}/upload/complete`, {
+  const response = await authenticatedFetch(`${API_BASE}/${mediaId}/upload/complete`, {
     method: "POST",
   });
 
@@ -144,11 +144,15 @@ export async function completePresignedUpload(mediaId: string): Promise<UploadRe
  * Resize existing media
  */
 export async function resizeMedia(mediaId: string, request: ResizeRequest): Promise<void> {
-  const response = await fetch(`${API_BASE}/${mediaId}/resize`, {
+  const response = await authenticatedFetch(`${API_BASE}/${mediaId}/resize`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
   });
+
+  if (response.status === 401) {
+    throw new AuthenticationError();
+  }
 
   if (response.status === 429) {
     const retryAfter = parseInt(response.headers.get("X-Rate-Limit-Retry-After-Seconds") || "60", 10);
@@ -165,9 +169,13 @@ export async function resizeMedia(mediaId: string, request: ResizeRequest): Prom
  * Delete media by ID
  */
 export async function deleteMedia(mediaId: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/${mediaId}`, {
+  const response = await authenticatedFetch(`${API_BASE}/${mediaId}`, {
     method: "DELETE",
   });
+
+  if (response.status === 401) {
+    throw new AuthenticationError();
+  }
 
   if (response.status === 429) {
     const retryAfter = parseInt(response.headers.get("X-Rate-Limit-Retry-After-Seconds") || "60", 10);
@@ -183,7 +191,7 @@ export async function deleteMedia(mediaId: string): Promise<void> {
  * Retry processing for failed media
  */
 export async function retryProcessing(mediaId: string): Promise<UploadResponse> {
-  const response = await fetch(`${API_BASE}/${mediaId}/retry`, {
+  const response = await authenticatedFetch(`${API_BASE}/${mediaId}/retry`, {
     method: "POST",
   });
 
@@ -198,11 +206,10 @@ export function getDownloadUrl(mediaId: string): string {
 }
 
 /**
- * Get direct S3 URL for original file (LocalStack only)
+ * Get original file URL (redirects to presigned S3 URL)
  */
-export function getOriginalUrl(mediaId: string, fileName: string): string {
-  const extension = fileName.includes(".") ? fileName.substring(fileName.lastIndexOf(".")) : "";
-  return `http://127.0.0.1:4566/media-bucket/${mediaId}/original${extension}`;
+export function getOriginalUrl(mediaId: string): string {
+  return `${API_BASE}/${mediaId}/original`;
 }
 
 /**

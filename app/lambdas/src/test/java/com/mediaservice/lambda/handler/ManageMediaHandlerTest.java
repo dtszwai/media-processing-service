@@ -226,7 +226,7 @@ class ManageMediaHandlerTest {
   }
 
   private SQSEvent createSqsEvent(String eventType, String mediaId, Integer width) throws Exception {
-    var payload = new MediaEvent.MediaEventPayload(mediaId, width, "jpeg");
+    var payload = new MediaEvent.MediaEventPayload(mediaId, "default", width, "jpeg");
     var event = new MediaEvent(eventType, payload);
     return createSqsEventFromMediaEvent(event);
   }
@@ -329,7 +329,7 @@ class ManageMediaHandlerTest {
       this.shouldThrowOnGet = shouldThrow;
     }
 
-    byte[] getMediaFile(String mediaId, String mediaName) {
+    byte[] getMediaFile(String tenantId, String mediaId, String mediaName) {
       getFileCalled = true;
       if (shouldThrowOnGet) {
         throw new RuntimeException("S3 error");
@@ -337,23 +337,23 @@ class ManageMediaHandlerTest {
       return fileContent;
     }
 
-    void uploadProcessedMedia(String mediaId, String mediaName, byte[] data, OutputFormat outputFormat) {
+    void uploadProcessedMedia(String tenantId, String mediaId, String mediaName, byte[] data, OutputFormat outputFormat) {
       uploadCalled = true;
     }
 
-    void uploadPreview(String mediaId, byte[] data, OutputFormat outputFormat) {
+    void uploadPreview(String tenantId, String mediaId, byte[] data, OutputFormat outputFormat) {
       previewUploadCalled = true;
     }
 
-    void deleteOriginalFile(String mediaId, String mediaName) {
+    void deleteOriginalFile(String tenantId, String mediaId, String mediaName) {
       deletedKeys.add("original");
     }
 
-    void deleteProcessedFile(String mediaId, OutputFormat outputFormat) {
+    void deleteProcessedFile(String tenantId, String mediaId, OutputFormat outputFormat) {
       deletedKeys.add("processed");
     }
 
-    void deletePreviewFile(String mediaId, OutputFormat outputFormat) {
+    void deletePreviewFile(String tenantId, String mediaId, OutputFormat outputFormat) {
       deletedKeys.add("preview");
     }
 
@@ -443,31 +443,32 @@ class ManageMediaHandlerTest {
         if (mediaId == null || mediaId.isEmpty())
           return;
 
+        var tenantId = payload.getTenantId() != null ? payload.getTenantId() : "default";
         var width = payload.getWidth();
 
         switch (eventType) {
-          case "media.v1.delete" -> handleDelete(mediaId);
+          case "media.v1.delete" -> handleDelete(mediaId, tenantId);
           case "media.v1.resize" -> {
             if (width != null)
-              handleMediaProcessing(mediaId, width, MediaStatus.PENDING, true);
+              handleMediaProcessing(mediaId, tenantId, width, MediaStatus.PENDING, true);
           }
-          case "media.v1.process" -> handleMediaProcessing(mediaId, width, MediaStatus.PENDING, false);
+          case "media.v1.process" -> handleMediaProcessing(mediaId, tenantId, width, MediaStatus.PENDING, false);
         }
       } catch (Exception e) {
         throw new RuntimeException("Failed to process message", e);
       }
     }
 
-    private void handleDelete(String mediaId) {
+    private void handleDelete(String mediaId, String tenantId) {
       dynamoDbService.getMedia(mediaId).ifPresent(media -> {
-        s3Service.deleteOriginalFile(mediaId, media.getName());
-        s3Service.deleteProcessedFile(mediaId, media.getOutputFormat());
-        s3Service.deletePreviewFile(mediaId, media.getOutputFormat());
+        s3Service.deleteOriginalFile(tenantId, mediaId, media.getName());
+        s3Service.deleteProcessedFile(tenantId, mediaId, media.getOutputFormat());
+        s3Service.deletePreviewFile(tenantId, mediaId, media.getOutputFormat());
       });
     }
 
-    private void handleMediaProcessing(String mediaId, Integer requestedWidth, MediaStatus expectedStatus,
-        boolean isResize) {
+    private void handleMediaProcessing(String mediaId, String tenantId, Integer requestedWidth,
+        MediaStatus expectedStatus, boolean isResize) {
       try {
         var mediaOpt = dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.PROCESSING,
             expectedStatus);
@@ -475,7 +476,7 @@ class ManageMediaHandlerTest {
           return;
 
         var media = mediaOpt.get();
-        byte[] imageData = s3Service.getMediaFile(mediaId, media.getName());
+        byte[] imageData = s3Service.getMediaFile(tenantId, mediaId, media.getName());
         var targetWidth = (requestedWidth != null) ? requestedWidth : media.getWidth();
 
         byte[] processedImage = isResize
@@ -491,10 +492,10 @@ class ManageMediaHandlerTest {
         // Generate and upload preview (only for new uploads, not resizes)
         if (!isResize) {
           byte[] preview = imageProcessingService.generatePreview(imageData, OutputFormat.JPEG);
-          s3Service.uploadPreview(mediaId, preview, OutputFormat.JPEG);
+          s3Service.uploadPreview(tenantId, mediaId, preview, OutputFormat.JPEG);
         }
 
-        s3Service.uploadProcessedMedia(mediaId, media.getName(), processedImage, OutputFormat.JPEG);
+        s3Service.uploadProcessedMedia(tenantId, mediaId, media.getName(), processedImage, OutputFormat.JPEG);
         dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.COMPLETE, MediaStatus.PROCESSING,
             targetWidth);
       } catch (Exception e) {

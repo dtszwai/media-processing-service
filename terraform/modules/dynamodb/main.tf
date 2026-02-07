@@ -49,10 +49,39 @@ resource "aws_dynamodb_table" "media_dynamo_table" {
     type = "S"
   }
 
+  attribute {
+    name = "tenantId"
+    type = "S"
+  }
+
+  attribute {
+    name = "email"
+    type = "S"
+  }
+
   global_secondary_index {
     name            = "SK-createdAt-index"
     hash_key        = "SK"
     range_key       = "createdAt"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "tenantId-createdAt-index"
+    hash_key        = "tenantId"
+    range_key       = "createdAt"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "email-index"
+    hash_key        = "email"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "tenantId-index"
+    hash_key        = "tenantId"
     projection_type = "ALL"
   }
 

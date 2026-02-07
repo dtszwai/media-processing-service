@@ -1,29 +1,45 @@
 <script lang="ts">
   import { createServiceHealthQuery, createVersionInfoQuery } from "../queries";
-  import type { HealthStatus } from "../types";
+  import { authStore } from "../../features/auth/stores/auth.store";
+  import { queryClient } from "../queries";
+  import type { HealthStatus, UserInfo } from "../types";
 
   interface Props {
     currentPath: string;
     navigate: (path: string) => void;
+    user: UserInfo | null;
   }
 
-  let { currentPath, navigate }: Props = $props();
+  let { currentPath, navigate, user }: Props = $props();
 
   let showDetails = $state(false);
+  let showUserMenu = $state(false);
   let dropdownRef: HTMLDivElement;
+  let userMenuRef: HTMLDivElement;
 
   const healthQuery = createServiceHealthQuery();
   const versionQuery = createVersionInfoQuery();
 
+  let isAdmin = $derived(user?.roles?.includes("ADMIN") ?? false);
+
   function handleClickOutside(event: MouseEvent) {
     if (showDetails && dropdownRef && !dropdownRef.contains(event.target as Node)) {
       showDetails = false;
+    }
+    if (showUserMenu && userMenuRef && !userMenuRef.contains(event.target as Node)) {
+      showUserMenu = false;
     }
   }
 
   function handleNavClick(e: MouseEvent, path: string) {
     e.preventDefault();
     navigate(path);
+  }
+
+  function handleLogout() {
+    authStore.logout();
+    queryClient.clear();
+    navigate("/login");
   }
 
   function getStatusColor(status: HealthStatus | boolean): string {
@@ -99,17 +115,20 @@
           >
             Analytics
           </a>
-          <a
-            href="/admin/dlq"
-            onclick={(e) => handleNavClick(e, "/admin/dlq")}
-            class="text-sm font-medium transition-colors {currentPath === '/admin/dlq'
-              ? 'text-gray-900'
-              : 'text-gray-500 hover:text-gray-700'}"
-          >
-            Admin
-          </a>
+          {#if isAdmin}
+            <a
+              href="/admin/dlq"
+              onclick={(e) => handleNavClick(e, "/admin/dlq")}
+              class="text-sm font-medium transition-colors {currentPath === '/admin/dlq'
+                ? 'text-gray-900'
+                : 'text-gray-500 hover:text-gray-700'}"
+            >
+              Admin
+            </a>
+          {/if}
         </nav>
 
+        <!-- Health Status -->
         <div class="relative" bind:this={dropdownRef}>
           <button
             class="flex items-center space-x-2 text-sm text-gray-500 hover:text-gray-700 focus:outline-none"
@@ -188,6 +207,50 @@
             </div>
           {/if}
         </div>
+
+        <!-- User Menu -->
+        {#if user}
+          <div class="relative" bind:this={userMenuRef}>
+            <button
+              class="flex items-center space-x-2 focus:outline-none"
+              onclick={() => (showUserMenu = !showUserMenu)}
+            >
+              <div
+                class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm font-medium text-gray-600"
+              >
+                {user.email.charAt(0).toUpperCase()}
+              </div>
+            </button>
+
+            {#if showUserMenu}
+              <div class="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                <div class="px-4 py-2 border-b border-gray-100">
+                  <p class="text-sm font-medium text-gray-900 truncate">{user.email}</p>
+                  <p class="text-xs text-gray-500">{user.roles.join(", ")}</p>
+                </div>
+                <button
+                  type="button"
+                  class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  onclick={() => {
+                    showUserMenu = false;
+                    navigate("/settings/api-keys");
+                  }}
+                >
+                  API Keys
+                </button>
+                <div class="border-t border-gray-100">
+                  <button
+                    type="button"
+                    class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-50"
+                    onclick={handleLogout}
+                  >
+                    Sign out
+                  </button>
+                </div>
+              </div>
+            {/if}
+          </div>
+        {/if}
       </div>
     </div>
   </div>

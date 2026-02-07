@@ -33,3 +33,17 @@ export class ApiRequestError extends Error {
     this.requestId = requestId;
   }
 }
+
+/**
+ * Authentication error
+ * Thrown when a request fails due to missing or invalid credentials
+ */
+export class AuthenticationError extends Error {
+  status: number;
+
+  constructor(message = "Authentication required", status = 401) {
+    super(message);
+    this.name = "AuthenticationError";
+    this.status = status;
+  }
+}

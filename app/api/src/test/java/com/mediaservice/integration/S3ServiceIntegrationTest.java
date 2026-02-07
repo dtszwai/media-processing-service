@@ -29,7 +29,7 @@ class S3StorageServiceIntegrationTest extends BaseIntegrationTest {
     @DisplayName("should upload file to S3")
     void shouldUploadFile() throws Exception {
       var file = new MockMultipartFile("file", "test.jpg", "image/jpeg", "test-content".getBytes());
-      s3Service.uploadMedia("media-123", "test.jpg", file);
+      s3Service.uploadMedia("test-tenant", "media-123", "test.jpg", file);
       var objects = s3Client.listObjectsV2(ListObjectsV2Request.builder()
           .bucket("media-bucket")
           .prefix("media-123/")
@@ -45,7 +45,7 @@ class S3StorageServiceIntegrationTest extends BaseIntegrationTest {
       var file = new MockMultipartFile(
           "file", "test.png", "image/png", "png-content".getBytes());
 
-      s3Service.uploadMedia("media-123", "test.png", file);
+      s3Service.uploadMedia("test-tenant", "media-123", "test.png", file);
 
       try (var response = s3Client.getObject(GetObjectRequest.builder()
           .bucket("media-bucket")
@@ -68,7 +68,7 @@ class S3StorageServiceIntegrationTest extends BaseIntegrationTest {
       s3Client.putObject(
           b -> b.bucket("media-bucket").key("media-123/processed.jpeg").contentType("image/jpeg"),
           software.amazon.awssdk.core.sync.RequestBody.fromBytes("test-content".getBytes()));
-      var url = s3Service.getPresignedUrl("media-123", "test.jpg", OutputFormat.JPEG);
+      var url = s3Service.getPresignedUrl("test-tenant", "media-123", "test.jpg", OutputFormat.JPEG);
       assertThat(url)
           .isNotBlank()
           .contains("media-bucket")
@@ -84,7 +84,7 @@ class S3StorageServiceIntegrationTest extends BaseIntegrationTest {
     @DisplayName("should generate presigned upload URL")
     void shouldGeneratePresignedUploadUrl() {
       var url = s3Service.generatePresignedUploadUrl(
-          "media-456", "large-image.jpg", "image/jpeg", Duration.ofHours(1));
+          "test-tenant", "media-456", "large-image.jpg", "image/jpeg", Duration.ofHours(1));
 
       assertThat(url)
           .isNotBlank()
@@ -96,9 +96,9 @@ class S3StorageServiceIntegrationTest extends BaseIntegrationTest {
     @DisplayName("should generate different URLs for different files")
     void shouldGenerateDifferentUrls() {
       var url1 = s3Service.generatePresignedUploadUrl(
-          "media-1", "file1.jpg", "image/jpeg", Duration.ofHours(1));
+          "test-tenant", "media-1", "file1.jpg", "image/jpeg", Duration.ofHours(1));
       var url2 = s3Service.generatePresignedUploadUrl(
-          "media-2", "file2.jpg", "image/jpeg", Duration.ofHours(1));
+          "test-tenant", "media-2", "file2.jpg", "image/jpeg", Duration.ofHours(1));
 
       assertThat(url1).isNotEqualTo(url2);
       assertThat(url1).contains("media-1/original.jpg");
@@ -118,7 +118,7 @@ class S3StorageServiceIntegrationTest extends BaseIntegrationTest {
           b -> b.bucket("media-bucket").key("media-exists/original.jpg").contentType("image/jpeg"),
           software.amazon.awssdk.core.sync.RequestBody.fromBytes("test-content".getBytes()));
 
-      var exists = s3Service.objectExists("media-exists", "test.jpg");
+      var exists = s3Service.objectExists("test-tenant", "media-exists", "test.jpg");
 
       assertThat(exists).isTrue();
     }
@@ -126,7 +126,7 @@ class S3StorageServiceIntegrationTest extends BaseIntegrationTest {
     @Test
     @DisplayName("should return false when object does not exist")
     void shouldReturnFalseWhenNotExists() {
-      var exists = s3Service.objectExists("nonexistent-media", "nonexistent.jpg");
+      var exists = s3Service.objectExists("test-tenant", "nonexistent-media", "nonexistent.jpg");
 
       assertThat(exists).isFalse();
     }

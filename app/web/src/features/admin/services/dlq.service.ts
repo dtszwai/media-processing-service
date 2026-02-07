@@ -3,8 +3,8 @@
  * Handles all DLQ management API calls
  */
 import { ADMIN_BASE } from "../../../shared/config/env";
-import { handleResponse } from "../../../shared/http";
-import { ApiRequestError } from "../../../shared/types";
+import { handleResponse, authenticatedFetch } from "../../../shared/http";
+import { ApiRequestError, AuthenticationError } from "../../../shared/types";
 import type { DlqMessage, DlqStatus } from "../../../shared/types";
 
 const DLQ_BASE = `${ADMIN_BASE}/dlq`;
@@ -13,6 +13,9 @@ const DLQ_BASE = `${ADMIN_BASE}/dlq`;
  * Handle void responses with consistent error handling
  */
 async function handleVoidResponse(response: Response, defaultError: string): Promise<void> {
+  if (response.status === 401) {
+    throw new AuthenticationError();
+  }
   if (!response.ok) {
     let message = defaultError;
     try {
@@ -29,7 +32,7 @@ async function handleVoidResponse(response: Response, defaultError: string): Pro
  * Get DLQ status (queue configuration and message count)
  */
 export async function getDlqStatus(): Promise<DlqStatus> {
-  const response = await fetch(`${DLQ_BASE}/status`);
+  const response = await authenticatedFetch(`${DLQ_BASE}/status`);
   return handleResponse<DlqStatus>(response);
 }
 
@@ -37,7 +40,7 @@ export async function getDlqStatus(): Promise<DlqStatus> {
  * List DLQ messages (peek without removing)
  */
 export async function listDlqMessages(limit = 10): Promise<DlqMessage[]> {
-  const response = await fetch(`${DLQ_BASE}/messages?limit=${limit}`);
+  const response = await authenticatedFetch(`${DLQ_BASE}/messages?limit=${limit}`);
   return handleResponse<DlqMessage[]>(response);
 }
 
@@ -46,7 +49,7 @@ export async function listDlqMessages(limit = 10): Promise<DlqMessage[]> {
  */
 export async function replayDlqMessage(receiptHandle: string): Promise<void> {
   const encodedHandle = encodeURIComponent(receiptHandle);
-  const response = await fetch(`${DLQ_BASE}/messages/${encodedHandle}/replay`, {
+  const response = await authenticatedFetch(`${DLQ_BASE}/messages/${encodedHandle}/replay`, {
     method: "POST",
   });
   await handleVoidResponse(response, "Replay failed");
@@ -57,7 +60,7 @@ export async function replayDlqMessage(receiptHandle: string): Promise<void> {
  */
 export async function deleteDlqMessage(receiptHandle: string): Promise<void> {
   const encodedHandle = encodeURIComponent(receiptHandle);
-  const response = await fetch(`${DLQ_BASE}/messages/${encodedHandle}`, {
+  const response = await authenticatedFetch(`${DLQ_BASE}/messages/${encodedHandle}`, {
     method: "DELETE",
   });
   await handleVoidResponse(response, "Delete failed");
@@ -67,7 +70,7 @@ export async function deleteDlqMessage(receiptHandle: string): Promise<void> {
  * Purge all messages from DLQ
  */
 export async function purgeDlq(): Promise<void> {
-  const response = await fetch(`${DLQ_BASE}/purge`, {
+  const response = await authenticatedFetch(`${DLQ_BASE}/purge`, {
     method: "DELETE",
   });
   await handleVoidResponse(response, "Purge failed");

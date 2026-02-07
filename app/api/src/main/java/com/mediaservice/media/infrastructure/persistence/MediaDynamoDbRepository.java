@@ -53,6 +53,8 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
     var mediaId = pk.replace(StorageConstants.DYNAMO_PK_PREFIX, "");
     var builder = Media.builder()
         .mediaId(mediaId)
+        .tenantId(getString(item, StorageConstants.DYNAMO_ATTR_TENANT_ID))
+        .userId(getString(item, StorageConstants.DYNAMO_ATTR_USER_ID))
         .size(getLong(item, "size"))
         .name(getString(item, "name"))
         .mimetype(getString(item, "mimetype"))
@@ -87,6 +89,12 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
         s(media.getOutputFormat() != null ? media.getOutputFormat().getFormat() : OutputFormat.JPEG.getFormat()));
     item.put("createdAt", s(media.getCreatedAt() != null ? media.getCreatedAt().toString() : now.toString()));
     item.put("updatedAt", s(now.toString()));
+    if (media.getTenantId() != null) {
+      item.put(StorageConstants.DYNAMO_ATTR_TENANT_ID, s(media.getTenantId()));
+    }
+    if (media.getUserId() != null) {
+      item.put(StorageConstants.DYNAMO_ATTR_USER_ID, s(media.getUserId()));
+    }
     if (media.getDeletedAt() != null) {
       item.put("deletedAt", s(media.getDeletedAt().toString()));
     }
@@ -153,6 +161,29 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
         .filter(media -> media.getStatus() != MediaStatus.DELETED)
         .toList();
     log.info("Retrieved {} media records (hasMore={})", activeItems.size(), result.hasMore());
+    return new MediaPagedResult(activeItems, result.nextCursor(), result.hasMore());
+  }
+
+  /**
+   * Get media records for a specific tenant with pagination, excluding soft-deleted items.
+   */
+  public MediaPagedResult getMediaPaginatedByTenant(String tenantId, String cursor, Integer limit) {
+    int pageSize = (limit != null && limit > 0 && limit <= 100) ? limit : DEFAULT_PAGE_SIZE;
+    String[] tenantCursorAttributes = { StorageConstants.DYNAMO_ATTR_TENANT_ID, "createdAt", "PK", "SK" };
+    var result = queryPaginated(
+        StorageConstants.DYNAMO_GSI_TENANT_CREATED_AT,
+        "tenantId = :tenantId",
+        "begins_with(PK, :pkPrefix)",
+        null,
+        Map.of(":tenantId", s(tenantId), ":pkPrefix", s(StorageConstants.DYNAMO_PK_PREFIX)),
+        false, // newest first
+        pageSize,
+        cursor,
+        tenantCursorAttributes);
+    var activeItems = result.items().stream()
+        .filter(media -> media.getStatus() != MediaStatus.DELETED)
+        .toList();
+    log.info("Retrieved {} media records for tenant {} (hasMore={})", activeItems.size(), tenantId, result.hasMore());
     return new MediaPagedResult(activeItems, result.nextCursor(), result.hasMore());
   }
 

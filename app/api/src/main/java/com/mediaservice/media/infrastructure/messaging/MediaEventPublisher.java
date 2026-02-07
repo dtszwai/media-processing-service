@@ -36,18 +36,18 @@ public class MediaEventPublisher {
   @Value("${aws.sns.topic-arn}")
   private String topicArn;
 
-  public void publishProcessMediaEvent(String mediaId, Integer width, String outputFormat) {
-    publishEvent(MediaEvent.of(EventType.PROCESS_MEDIA, mediaId, width, outputFormat));
+  public void publishProcessMediaEvent(String mediaId, String tenantId, Integer width, String outputFormat) {
+    publishEvent(MediaEvent.of(EventType.PROCESS_MEDIA, mediaId, tenantId, width, outputFormat));
     log.info("Published process media event for mediaId: {} with width: {}, outputFormat: {}", mediaId, width, outputFormat);
   }
 
-  public void publishDeleteMediaEvent(String mediaId) {
-    publishEvent(MediaEvent.of(EventType.DELETE_MEDIA, mediaId));
+  public void publishDeleteMediaEvent(String mediaId, String tenantId) {
+    publishEvent(MediaEvent.of(EventType.DELETE_MEDIA, mediaId, tenantId));
     log.info("Published delete media event for mediaId: {}", mediaId);
   }
 
-  public void publishResizeMediaEvent(String mediaId, Integer width, String outputFormat) {
-    publishEvent(MediaEvent.of(EventType.RESIZE_MEDIA, mediaId, width, outputFormat));
+  public void publishResizeMediaEvent(String mediaId, String tenantId, Integer width, String outputFormat) {
+    publishEvent(MediaEvent.of(EventType.RESIZE_MEDIA, mediaId, tenantId, width, outputFormat));
     log.info("Published resize media event for mediaId: {} with width: {}, outputFormat: {}", mediaId, width, outputFormat);
   }
 

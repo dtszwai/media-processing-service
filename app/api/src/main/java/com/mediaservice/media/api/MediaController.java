@@ -163,6 +163,21 @@ public class MediaController {
         .orElse(ResponseEntity.notFound().build());
   }
 
+  @Operation(summary = "Get original image", description = "Redirects to presigned S3 URL for original uploaded file")
+  @ApiResponses({
+      @ApiResponse(responseCode = "302", description = "Redirect to original file URL"),
+      @ApiResponse(responseCode = "404", description = "Media not found or not yet uploaded"),
+      @ApiResponse(responseCode = "410", description = "Media has been deleted")
+  })
+  @GetMapping("/{mediaId}/original")
+  public ResponseEntity<Void> getOriginalUrl(@PathVariable String mediaId) {
+    log.info("Original URL request: mediaId={}", mediaId);
+
+    return mediaService.getOriginalUrl(mediaId)
+        .map(url -> ResponseEntity.status(HttpStatus.FOUND).location(URI.create(url)).<Void>build())
+        .orElse(ResponseEntity.notFound().build());
+  }
+
   @Operation(summary = "Get preview image", description = "Redirects to CDN URL for watermarked preview image")
   @ApiResponses({
       @ApiResponse(responseCode = "302", description = "Redirect to preview URL"),

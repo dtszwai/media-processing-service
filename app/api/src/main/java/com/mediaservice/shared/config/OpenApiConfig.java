@@ -4,6 +4,7 @@ import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.servers.Server;
 import io.swagger.v3.oas.models.Components;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.info.BuildProperties;
@@ -40,6 +41,11 @@ public class OpenApiConfig {
                 - Image resizing with configurable dimensions (max 8192px)
                 - Multiple output formats (JPEG, PNG, WebP)
                 - Async processing with status polling
+                - Multi-tenant with JWT and API key authentication
+
+                ## Authentication
+                - **JWT Bearer**: Register via `/v1/auth/register`, login via `/v1/auth/login`
+                - **API Key**: Create via `/v1/auth/api-keys`, pass in `X-API-Key` header
 
                 ## Limits
                 - Direct upload: 50MB max
@@ -52,11 +58,19 @@ public class OpenApiConfig {
             new Server()
                 .url("http://localhost:" + serverPort)
                 .description("Local development server")))
+        .addSecurityItem(new SecurityRequirement()
+            .addList("BearerAuth")
+            .addList("ApiKeyAuth"))
         .components(new Components()
+            .addSecuritySchemes("BearerAuth", new SecurityScheme()
+                .type(SecurityScheme.Type.HTTP)
+                .scheme("bearer")
+                .bearerFormat("JWT")
+                .description("JWT access token from /v1/auth/login"))
             .addSecuritySchemes("ApiKeyAuth", new SecurityScheme()
                 .type(SecurityScheme.Type.APIKEY)
                 .in(SecurityScheme.In.HEADER)
                 .name("X-API-Key")
-                .description("API key for authentication (if enabled)")));
+                .description("API key from /v1/auth/api-keys")));
   }
 }

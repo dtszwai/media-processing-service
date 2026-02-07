@@ -165,6 +165,30 @@ export const DlqStatusSchema = z.object({
   approximateMessageCount: z.number().optional(),
 });
 
+// ============= Auth Schemas =============
+
+export const AuthResponseSchema = z.object({
+  token: z.string(),
+  refreshToken: z.string(),
+  tenantId: z.string(),
+  userId: z.string(),
+  expiresIn: z.number(),
+});
+
+export const UserInfoSchema = z.object({
+  tenantId: z.string(),
+  userId: z.string(),
+  email: z.string(),
+  roles: z.array(z.string()),
+});
+
+export const ApiKeyResponseSchema = z.object({
+  keyId: z.string(),
+  rawKey: z.string().optional(),
+  name: z.string(),
+  createdAt: z.string(),
+});
+
 // ============= Inferred Types =============
 
 // Media types
@@ -198,3 +222,8 @@ export type AnalyticsSummary = z.infer<typeof AnalyticsSummarySchema>;
 // DLQ types
 export type DlqMessage = z.infer<typeof DlqMessageSchema>;
 export type DlqStatus = z.infer<typeof DlqStatusSchema>;
+
+// Auth types
+export type AuthResponse = z.infer<typeof AuthResponseSchema>;
+export type UserInfo = z.infer<typeof UserInfoSchema>;
+export type ApiKeyResponse = z.infer<typeof ApiKeyResponseSchema>;

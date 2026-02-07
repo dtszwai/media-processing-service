@@ -243,6 +243,17 @@ public abstract class AbstractDynamoDbRepository<T> implements DynamoDbRepositor
   public PagedResult<T> queryPaginated(String indexName, String keyExpression,
       Map<String, AttributeValue> attributeValues, boolean scanIndexForward,
       int limit, String cursor, String... cursorAttributes) {
+    return queryPaginated(indexName, keyExpression, null, null, attributeValues,
+        scanIndexForward, limit, cursor, cursorAttributes);
+  }
+
+  /**
+   * Query with pagination support and optional filter expression.
+   */
+  public PagedResult<T> queryPaginated(String indexName, String keyExpression,
+      String filterExpression, Map<String, String> expressionAttributeNames,
+      Map<String, AttributeValue> attributeValues, boolean scanIndexForward,
+      int limit, String cursor, String... cursorAttributes) {
     var requestBuilder = QueryRequest.builder()
         .tableName(tableName)
         .keyConditionExpression(keyExpression)
@@ -251,6 +262,12 @@ public abstract class AbstractDynamoDbRepository<T> implements DynamoDbRepositor
         .limit(limit);
     if (indexName != null) {
       requestBuilder.indexName(indexName);
+    }
+    if (filterExpression != null) {
+      requestBuilder.filterExpression(filterExpression);
+    }
+    if (expressionAttributeNames != null && !expressionAttributeNames.isEmpty()) {
+      requestBuilder.expressionAttributeNames(expressionAttributeNames);
     }
     if (cursor != null && !cursor.isBlank()) {
       var exclusiveStartKey = decodeCursor(cursor, cursorAttributes);

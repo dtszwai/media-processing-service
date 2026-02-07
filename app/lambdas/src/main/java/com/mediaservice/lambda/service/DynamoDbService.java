@@ -92,6 +92,8 @@ public class DynamoDbService {
         .mediaId(mediaId)
         .name(attrs.get("name").s())
         .status(MediaStatus.valueOf(attrs.get("status").s()));
+    getString(attrs, StorageConstants.DYNAMO_ATTR_TENANT_ID).ifPresent(builder::tenantId);
+    getString(attrs, StorageConstants.DYNAMO_ATTR_USER_ID).ifPresent(builder::userId);
     getInt(attrs, "width").ifPresent(builder::width);
     getString(attrs, "outputFormat").map(OutputFormat::fromString).ifPresent(builder::outputFormat);
     getString(attrs, "deletedAt").map(Instant::parse).ifPresent(builder::deletedAt);

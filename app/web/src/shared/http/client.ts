@@ -2,14 +2,20 @@
  * HTTP client utilities for API requests
  */
 import type { ApiError } from "../types";
-import { RateLimitError, ApiRequestError } from "../types";
+import { RateLimitError, ApiRequestError, AuthenticationError } from "../types";
+import { getAccessToken, shouldRefreshToken } from "../auth/storage";
+import { refreshAuthToken } from "../auth/token";
 
 /**
  * Handle API response and parse JSON
- * Throws appropriate errors for rate limiting and API errors
+ * Throws appropriate errors for rate limiting, auth, and API errors
  */
 export async function handleResponse<T>(response: Response): Promise<T> {
   const requestId = response.headers.get("X-Request-ID") || undefined;
+
+  if (response.status === 401) {
+    throw new AuthenticationError("Authentication required", 401);
+  }
 
   if (response.status === 429) {
     const retryAfter = parseInt(response.headers.get("X-Rate-Limit-Retry-After-Seconds") || "60", 10);
@@ -27,6 +33,24 @@ export async function handleResponse<T>(response: Response): Promise<T> {
   }
 
   return response.json();
+}
+
+/**
+ * Fetch with automatic auth header injection and proactive token refresh.
+ * Use this for all authenticated API calls.
+ */
+export async function authenticatedFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  if (shouldRefreshToken()) {
+    await refreshAuthToken();
+  }
+
+  const token = getAccessToken();
+  const headers = new Headers(options.headers);
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  return fetch(url, { ...options, headers });
 }
 
 /**

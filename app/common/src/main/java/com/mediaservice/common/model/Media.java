@@ -20,6 +20,8 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class Media {
   private String mediaId;
+  private String tenantId;
+  private String userId;
   private Long size;
   /** Original filename as uploaded by user (for Content-Disposition header) */
   private String name;

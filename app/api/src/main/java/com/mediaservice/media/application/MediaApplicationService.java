@@ -4,6 +4,7 @@ import com.mediaservice.shared.config.properties.MediaProperties;
 import com.mediaservice.media.api.dto.InitUploadRequest;
 import com.mediaservice.media.api.dto.InitUploadResponse;
 import com.mediaservice.media.api.dto.MediaResponse;
+import com.mediaservice.common.constants.StorageConstants;
 import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaStatus;
 import com.mediaservice.common.model.OutputFormat;
@@ -14,6 +15,8 @@ import com.mediaservice.media.infrastructure.storage.S3StorageService;
 import com.mediaservice.shared.cache.CacheInvalidationService;
 import com.mediaservice.shared.cache.MultiLevelCacheOrchestrator;
 import com.mediaservice.shared.config.properties.MediaProperties.Upload;
+import com.mediaservice.shared.auth.AuthorizationService;
+import com.mediaservice.shared.auth.TenantContext;
 import com.mediaservice.shared.http.error.MediaGoneException;
 import com.mediaservice.analytics.application.AnalyticsService;
 import io.opentelemetry.api.metrics.LongCounter;
@@ -52,6 +55,7 @@ public class MediaApplicationService {
   private final CacheInvalidationService cacheInvalidationService;
   private final MultiLevelCacheOrchestrator cacheOrchestrator;
   private final AnalyticsService analyticsService;
+  private final AuthorizationService authorizationService;
   private final Tracer tracer;
   private final LongCounter uploadSuccessCounter;
   private final LongCounter uploadFailureCounter;
@@ -66,6 +70,7 @@ public class MediaApplicationService {
       MediaEventPublisher eventPublisher, MediaProperties mediaProperties,
       ImageValidationService imageValidationService, CacheInvalidationService cacheInvalidationService,
       MultiLevelCacheOrchestrator cacheOrchestrator, AnalyticsService analyticsService,
+      AuthorizationService authorizationService,
       Tracer tracer, Meter meter) {
     this.mediaRepository = mediaRepository;
     this.s3Service = s3Service;
@@ -75,6 +80,7 @@ public class MediaApplicationService {
     this.cacheInvalidationService = cacheInvalidationService;
     this.cacheOrchestrator = cacheOrchestrator;
     this.analyticsService = analyticsService;
+    this.authorizationService = authorizationService;
     this.tracer = tracer;
     this.uploadSuccessCounter = meter.counterBuilder("media.upload.success")
         .setDescription("Count of successful media uploads")
@@ -107,12 +113,17 @@ public class MediaApplicationService {
       String fileName = (originalName == null || originalName.isEmpty()) ? "image.jpg" : originalName;
       span.setAttribute("file.name", fileName);
       span.setAttribute("output.format", targetFormat.getFormat());
+      String tenantId = TenantContext.getTenantId();
+      String userId = TenantContext.getUserId();
+
       // Step 1: Upload original to S3
-      s3Service.uploadMedia(mediaId, fileName, file);
+      s3Service.uploadMedia(tenantId, mediaId, fileName, file);
       // Step 2: Store metadata in DynamoDB with PENDING status
       try {
         mediaRepository.createMedia(Media.builder()
             .mediaId(mediaId)
+            .tenantId(tenantId)
+            .userId(userId)
             .size(file.getSize())
             .name(fileName)
             .mimetype(contentType)
@@ -122,16 +133,16 @@ public class MediaApplicationService {
             .build());
       } catch (Exception e) {
         // Compensate: delete S3 object
-        compensateS3Upload(mediaId, fileName);
+        compensateS3Upload(tenantId, mediaId, fileName);
         throw e;
       }
       // Step 3: Publish event to SNS for async processing by Lambda
       try {
-        eventPublisher.publishProcessMediaEvent(mediaId, targetWidth, targetFormat.getFormat());
+        eventPublisher.publishProcessMediaEvent(mediaId, tenantId, targetWidth, targetFormat.getFormat());
       } catch (Exception e) {
         // Compensate: delete DynamoDB record and S3 object
         compensateDynamoDb(mediaId);
-        compensateS3Upload(mediaId, fileName);
+        compensateS3Upload(tenantId, mediaId, fileName);
         throw e;
       }
       span.setStatus(StatusCode.OK);
@@ -149,9 +160,9 @@ public class MediaApplicationService {
     }
   }
 
-  private void compensateS3Upload(String mediaId, String fileName) {
+  private void compensateS3Upload(String tenantId, String mediaId, String fileName) {
     try {
-      s3Service.deleteUpload(mediaId, fileName);
+      s3Service.deleteUpload(tenantId, mediaId, fileName);
     } catch (Exception e) {
       log.error("Failed to compensate S3 upload for mediaId={}: {}", mediaId, e.getMessage());
     }
@@ -194,6 +205,7 @@ public class MediaApplicationService {
       if (media.getStatus() == MediaStatus.DELETED) {
         throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
       }
+      authorizationService.requireMediaAccess(media);
       return media;
     });
   }
@@ -228,6 +240,7 @@ public class MediaApplicationService {
     if (media.getStatus() == MediaStatus.DELETED) {
       throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
     }
+    authorizationService.requireMediaAccess(media);
 
     if (media.getStatus() != MediaStatus.COMPLETE) {
       return new DownloadResult.Processing(mediaId);
@@ -276,6 +289,28 @@ public class MediaApplicationService {
   }
 
   /**
+   * Get presigned URL for the original uploaded file.
+   *
+   * @param mediaId the media ID
+   * @return presigned URL if media exists and has been uploaded, empty otherwise
+   * @throws MediaGoneException if media is deleted
+   */
+  public Optional<String> getOriginalUrl(String mediaId) {
+    return getMedia(mediaId)
+        .map(media -> {
+          if (media.getStatus() == MediaStatus.DELETED) {
+            throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
+          }
+          authorizationService.requireMediaAccess(media);
+          if (media.getStatus() == MediaStatus.PENDING_UPLOAD) {
+            return null;
+          }
+          String tenantId = media.getTenantId() != null ? media.getTenantId() : "default";
+          return s3Service.getOriginalPresignedUrl(tenantId, mediaId, media.getName());
+        });
+  }
+
+  /**
    * Get presigned download URL with multi-level caching.
    */
   public Optional<String> getDownloadUrl(String mediaId) {
@@ -283,10 +318,11 @@ public class MediaApplicationService {
         .filter(media -> media.getStatus() == MediaStatus.COMPLETE)
         .flatMap(media -> {
           var format = media.getOutputFormatOrDefault();
+          String tenantId = media.getTenantId() != null ? media.getTenantId() : "default";
           return cacheOrchestrator.getPresignedUrl(
               mediaId,
               format.getFormat(),
-              () -> s3Service.getPresignedUrl(mediaId, media.getName(), format));
+              () -> s3Service.getPresignedUrl(tenantId, mediaId, media.getName(), format));
         });
   }
 
@@ -299,13 +335,15 @@ public class MediaApplicationService {
         .filter(media -> media.getStatus() == MediaStatus.COMPLETE)
         .map(media -> {
           var format = media.getOutputFormatOrDefault();
-          String key = mediaId + "/preview." + format.getExtension();
+          String tenantId = media.getTenantId() != null ? media.getTenantId() : "default";
+          String key = StorageConstants.buildS3Key(tenantId, mediaId, StorageConstants.VARIANT_PREVIEW,
+              format.getExtension());
 
           if (cloudfrontEnabled && cloudfrontDomain != null && !cloudfrontDomain.isEmpty()) {
             return "https://" + cloudfrontDomain + "/" + key;
           }
           // Fallback to S3 presigned URL if CloudFront not configured
-          return s3Service.getPreviewPresignedUrl(mediaId, format).orElse(null);
+          return s3Service.getPreviewPresignedUrl(tenantId, mediaId, format).orElse(null);
         });
   }
 
@@ -333,6 +371,7 @@ public class MediaApplicationService {
     if (media.getStatus() == MediaStatus.DELETED) {
       return new MediaOperationResult.Deleted(mediaId, media.getDeletedAt());
     }
+    authorizationService.requireMediaAccess(media);
 
     var updated = mediaRepository.updateStatusConditionally(mediaId, MediaStatus.PENDING, MediaStatus.COMPLETE);
     if (!updated) {
@@ -344,8 +383,9 @@ public class MediaApplicationService {
     OutputFormat targetFormat = outputFormat != null
         ? OutputFormat.fromString(outputFormat)
         : media.getOutputFormatOrDefault();
+    String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
     try {
-      eventPublisher.publishResizeMediaEvent(mediaId, width, targetFormat.getFormat());
+      eventPublisher.publishResizeMediaEvent(mediaId, tenantId, width, targetFormat.getFormat());
     } catch (Exception e) {
       log.error("Failed to publish resize event for mediaId={}, reverting status to COMPLETE", mediaId, e);
       mediaRepository.updateStatusConditionally(mediaId, MediaStatus.COMPLETE, MediaStatus.PENDING);
@@ -365,9 +405,11 @@ public class MediaApplicationService {
     return mediaRepository.getMedia(mediaId)
         .filter(media -> media.getStatus() != MediaStatus.DELETED)
         .map(media -> {
+          authorizationService.requireMediaAccess(media);
           mediaRepository.softDelete(mediaId, Duration.ofDays(mediaProperties.getSoftDeleteRetentionDays()));
+          String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
           try {
-            eventPublisher.publishDeleteMediaEvent(mediaId);
+            eventPublisher.publishDeleteMediaEvent(mediaId, tenantId);
           } catch (Exception e) {
             log.error("Failed to publish delete event for mediaId={}, reverting soft delete", mediaId, e);
             mediaRepository.revertSoftDelete(mediaId, media.getStatus());
@@ -401,6 +443,8 @@ public class MediaApplicationService {
       return new MediaOperationResult.Deleted(mediaId, media.getDeletedAt());
     }
 
+    authorizationService.requireMediaAccess(media);
+
     if (media.getStatus() != MediaStatus.PROCESSING && media.getStatus() != MediaStatus.ERROR) {
       return new MediaOperationResult.NotAllowed(mediaId,
           "Retry only allowed for PROCESSING or ERROR status. Current status: " + media.getStatus());
@@ -412,8 +456,9 @@ public class MediaApplicationService {
       return new MediaOperationResult.NotAllowed(mediaId, "Failed to update status (concurrent modification)");
     }
 
+    String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
     try {
-      eventPublisher.publishProcessMediaEvent(mediaId, media.getWidth(), media.getOutputFormatOrDefault().getFormat());
+      eventPublisher.publishProcessMediaEvent(mediaId, tenantId, media.getWidth(), media.getOutputFormatOrDefault().getFormat());
     } catch (Exception e) {
       log.error("Failed to publish retry event for mediaId={}, reverting status to {}", mediaId, media.getStatus(), e);
       mediaRepository.updateStatusConditionally(mediaId, media.getStatus(), MediaStatus.PENDING);
@@ -426,6 +471,9 @@ public class MediaApplicationService {
   }
 
   public MediaDynamoDbRepository.MediaPagedResult getMediaPaginated(String cursor, Integer limit) {
+    if (TenantContext.isAuthenticated()) {
+      return mediaRepository.getMediaPaginatedByTenant(TenantContext.getTenantId(), cursor, limit);
+    }
     return mediaRepository.getMediaPaginated(cursor, limit);
   }
 
@@ -437,6 +485,9 @@ public class MediaApplicationService {
       String mediaId = UUID.randomUUID().toString();
       span.setAttribute("media.id", mediaId);
 
+      String tenantId = TenantContext.getTenantId();
+      String userId = TenantContext.getUserId();
+
       int targetWidth = mediaProperties.resolveWidth(request.getWidth());
       OutputFormat targetFormat = OutputFormat.fromString(request.getOutputFormat());
       int expirationSeconds = mediaProperties.getUpload().getPresignedUrlExpirationSeconds();
@@ -444,6 +495,7 @@ public class MediaApplicationService {
       span.setAttribute("output.format", targetFormat.getFormat());
 
       String uploadUrl = s3Service.generatePresignedUploadUrl(
+          tenantId,
           mediaId,
           request.getFileName(),
           request.getContentType(),
@@ -452,6 +504,8 @@ public class MediaApplicationService {
       Duration ttl = Duration.ofHours(mediaProperties.getUpload().getPendingUploadTtlHours());
       mediaRepository.createMedia(Media.builder()
           .mediaId(mediaId)
+          .tenantId(tenantId)
+          .userId(userId)
           .size(request.getFileSize())
           .name(request.getFileName())
           .mimetype(request.getContentType())
@@ -495,8 +549,10 @@ public class MediaApplicationService {
           .filter(media -> media.getStatus() == MediaStatus.PENDING_UPLOAD)
           .map(media -> {
             int expirationSeconds = mediaProperties.getUpload().getPresignedUrlExpirationSeconds();
+            String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
 
             String uploadUrl = s3Service.generatePresignedUploadUrl(
+                tenantId,
                 mediaId,
                 media.getName(),
                 media.getMimetype(),
@@ -535,7 +591,8 @@ public class MediaApplicationService {
       return mediaRepository.getMedia(mediaId)
           .filter(media -> media.getStatus() == MediaStatus.PENDING_UPLOAD)
           .flatMap(media -> {
-            if (!s3Service.objectExists(mediaId, media.getName())) {
+            String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
+            if (!s3Service.objectExists(tenantId, mediaId, media.getName())) {
               log.warn("File not found in S3 for mediaId: {}", mediaId);
               return Optional.empty();
             }
@@ -548,7 +605,7 @@ public class MediaApplicationService {
             }
 
             try {
-              eventPublisher.publishProcessMediaEvent(mediaId, media.getWidth(), media.getOutputFormatOrDefault().getFormat());
+              eventPublisher.publishProcessMediaEvent(mediaId, tenantId, media.getWidth(), media.getOutputFormatOrDefault().getFormat());
             } catch (Exception e) {
               log.error("Failed to publish process event for mediaId={}, reverting status to PENDING_UPLOAD", mediaId, e);
               mediaRepository.updateStatusConditionally(mediaId, MediaStatus.PENDING_UPLOAD, MediaStatus.PENDING);

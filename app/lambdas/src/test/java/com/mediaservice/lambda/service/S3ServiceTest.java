@@ -37,12 +37,13 @@ class S3ServiceTest {
         @DisplayName("should upload preview to correct key with cache headers")
         void uploadPreview_uploadsToCorrectKey() {
             byte[] previewData = "preview-data".getBytes();
+            String tenantId = "default";
             String mediaId = "test-media-id";
 
-            s3Service.uploadPreview(mediaId, previewData, OutputFormat.JPEG);
+            s3Service.uploadPreview(tenantId, mediaId, previewData, OutputFormat.JPEG);
 
             verify(mockS3Client).putObject(argThat((PutObjectRequest req) ->
-                req.key().equals(mediaId + "/preview.jpeg") &&
+                req.key().equals(tenantId + "/" + mediaId + "/preview.jpeg") &&
                 req.contentType().equals("image/jpeg") &&
                 req.cacheControl() != null &&
                 req.cacheControl().contains("max-age=31536000")
@@ -53,12 +54,13 @@ class S3ServiceTest {
         @DisplayName("should handle PNG format")
         void uploadPreview_handlesPngFormat() {
             byte[] previewData = "preview-data".getBytes();
+            String tenantId = "default";
             String mediaId = "test-media-id";
 
-            s3Service.uploadPreview(mediaId, previewData, OutputFormat.PNG);
+            s3Service.uploadPreview(tenantId, mediaId, previewData, OutputFormat.PNG);
 
             verify(mockS3Client).putObject(argThat((PutObjectRequest req) ->
-                req.key().equals(mediaId + "/preview.png") &&
+                req.key().equals(tenantId + "/" + mediaId + "/preview.png") &&
                 req.contentType().equals("image/png")
             ), any(RequestBody.class));
         }
@@ -67,12 +69,13 @@ class S3ServiceTest {
         @DisplayName("should default to JPEG when null format")
         void uploadPreview_defaultsToJpeg() {
             byte[] previewData = "preview-data".getBytes();
+            String tenantId = "default";
             String mediaId = "test-media-id";
 
-            s3Service.uploadPreview(mediaId, previewData, null);
+            s3Service.uploadPreview(tenantId, mediaId, previewData, null);
 
             verify(mockS3Client).putObject(argThat((PutObjectRequest req) ->
-                req.key().equals(mediaId + "/preview.jpeg")
+                req.key().equals(tenantId + "/" + mediaId + "/preview.jpeg")
             ), any(RequestBody.class));
         }
     }

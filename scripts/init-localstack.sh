@@ -50,11 +50,16 @@ create_dynamodb_table() {
             AttributeName=PK,AttributeType=S \
             AttributeName=SK,AttributeType=S \
             AttributeName=createdAt,AttributeType=S \
+            AttributeName=tenantId,AttributeType=S \
+            AttributeName=email,AttributeType=S \
         --key-schema \
             AttributeName=PK,KeyType=HASH \
             AttributeName=SK,KeyType=RANGE \
         --global-secondary-indexes \
             'IndexName=SK-createdAt-index,KeySchema=[{AttributeName=SK,KeyType=HASH},{AttributeName=createdAt,KeyType=RANGE}],Projection={ProjectionType=ALL}' \
+            'IndexName=tenantId-createdAt-index,KeySchema=[{AttributeName=tenantId,KeyType=HASH},{AttributeName=createdAt,KeyType=RANGE}],Projection={ProjectionType=ALL}' \
+            'IndexName=email-index,KeySchema=[{AttributeName=email,KeyType=HASH}],Projection={ProjectionType=ALL}' \
+            'IndexName=tenantId-index,KeySchema=[{AttributeName=tenantId,KeyType=HASH}],Projection={ProjectionType=ALL}' \
         --billing-mode PAY_PER_REQUEST \
         --region "${AWS_REGION}"
     log "DynamoDB table created: ${TABLE_NAME}"
