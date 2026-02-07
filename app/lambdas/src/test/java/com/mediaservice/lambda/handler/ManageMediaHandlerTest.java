@@ -155,7 +155,7 @@ class ManageMediaHandlerTest {
       var sqsEvent = createSqsEvent("media.v1.delete", "media-123", null);
       String result = handler.handleRequest(sqsEvent, null);
       assertThat(result).isEqualTo("OK");
-      assertThat(s3Service.getDeletedKeys()).contains("original", "processed");
+      assertThat(s3Service.getDeletedKeys()).contains("original", "processed", "preview");
     }
 
     @Test
@@ -167,15 +167,28 @@ class ManageMediaHandlerTest {
       assertThat(result).isEqualTo("OK");
       assertThat(s3Service.getDeletedKeys()).isEmpty();
     }
+  }
+
+  @Nested
+  @DisplayName("Delete vs Processing Race Condition")
+  class DeleteProcessingRace {
 
     @Test
-    @DisplayName("should not delete processed file when still processing")
-    void shouldNotDeleteProcessedWhenProcessing() throws Exception {
-      var media = Media.builder().mediaId("media-123").name("test.jpg").status(MediaStatus.PROCESSING).build();
-      dynamoDbService.setDeletedMedia(media);
-      var sqsEvent = createSqsEvent("media.v1.delete", "media-123", null);
-      handler.handleRequest(sqsEvent, null);
-      assertThat(s3Service.getDeletedKeys()).containsExactly("original");
+    @DisplayName("should abort upload when media deleted during processing")
+    void shouldAbortUploadWhenDeletedDuringProcessing() throws Exception {
+      var media = Media.builder().mediaId("media-123").name("test.jpg").width(500).status(MediaStatus.PENDING)
+          .build();
+      dynamoDbService.setMediaToReturn(media);
+      // Simulate: getMedia() returns DELETED status (delete happened mid-processing)
+      dynamoDbService.setGetMediaOverride(
+          Media.builder().mediaId("media-123").name("test.jpg").status(MediaStatus.DELETED).build());
+      s3Service.setFileContent(new byte[100]);
+      imageProcessingService.setProcessedOutput(new byte[50]);
+      var sqsEvent = createSqsEvent("media.v1.process", "media-123", 500);
+      String result = handler.handleRequest(sqsEvent, null);
+      assertThat(result).isEqualTo("OK");
+      assertThat(s3Service.wasUploadCalled()).isFalse();
+      assertThat(s3Service.wasPreviewUploadCalled()).isFalse();
     }
   }
 
@@ -239,6 +252,7 @@ class ManageMediaHandlerTest {
   static class StubDynamoDbService {
     private Media mediaToReturn;
     private Media deletedMedia;
+    private Media getMediaOverride;
     private MediaStatus lastSetStatus;
     private Integer lastWidthSet;
     private boolean setStatusCalled;
@@ -249,6 +263,18 @@ class ManageMediaHandlerTest {
 
     void setDeletedMedia(Media media) {
       this.deletedMedia = media;
+    }
+
+    /** Override what getMedia() returns (e.g. to simulate concurrent delete). */
+    void setGetMediaOverride(Media media) {
+      this.getMediaOverride = media;
+    }
+
+    Optional<Media> getMedia(String mediaId) {
+      if (getMediaOverride != null) {
+        return Optional.of(getMediaOverride);
+      }
+      return Optional.ofNullable(deletedMedia != null ? deletedMedia : mediaToReturn);
     }
 
     Optional<Media> setMediaStatusConditionally(String mediaId, MediaStatus newStatus, MediaStatus expectedStatus) {
@@ -325,6 +351,10 @@ class ManageMediaHandlerTest {
 
     void deleteProcessedFile(String mediaId, OutputFormat outputFormat) {
       deletedKeys.add("processed");
+    }
+
+    void deletePreviewFile(String mediaId, OutputFormat outputFormat) {
+      deletedKeys.add("preview");
     }
 
     boolean wasGetFileCalled() {
@@ -429,13 +459,10 @@ class ManageMediaHandlerTest {
     }
 
     private void handleDelete(String mediaId) {
-      dynamoDbService.deleteMedia(mediaId).ifPresent(media -> {
-        // Always delete original file
+      dynamoDbService.getMedia(mediaId).ifPresent(media -> {
         s3Service.deleteOriginalFile(mediaId, media.getName());
-        // Delete processed file only if processing completed (not still processing or errored)
-        if (media.getStatus() != MediaStatus.PROCESSING && media.getStatus() != MediaStatus.ERROR) {
-          s3Service.deleteProcessedFile(mediaId, media.getOutputFormat());
-        }
+        s3Service.deleteProcessedFile(mediaId, media.getOutputFormat());
+        s3Service.deletePreviewFile(mediaId, media.getOutputFormat());
       });
     }
 
@@ -454,6 +481,12 @@ class ManageMediaHandlerTest {
         byte[] processedImage = isResize
             ? imageProcessingService.resizeImage(imageData, targetWidth, OutputFormat.JPEG)
             : imageProcessingService.processImage(imageData, targetWidth, OutputFormat.JPEG);
+
+        // Re-check status before uploading to guard against concurrent delete
+        var preUploadStatus = dynamoDbService.getMedia(mediaId).map(Media::getStatus).orElse(null);
+        if (preUploadStatus == MediaStatus.DELETED) {
+          return;
+        }
 
         // Generate and upload preview (only for new uploads, not resizes)
         if (!isResize) {

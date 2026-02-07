@@ -190,6 +190,9 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
       // file doesn't exist)
       s3Service.deleteProcessedFile(mediaId, outputFormat);
 
+      // Delete preview file from S3
+      s3Service.deletePreviewFile(mediaId, outputFormat);
+
       logger.info("S3 cleanup completed for media: {} (DynamoDB record preserved for analytics)", mediaId);
       span.setStatus(StatusCode.OK);
       deleteSuccessCounter.add(1);
@@ -246,6 +249,14 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
           Attributes.of(AttributeKey.longKey("media.processing.duration"), duration));
       logger.info("Processed media in {} ms with format: {}", duration, targetFormat.getFormat());
 
+      // Re-check status before uploading to guard against concurrent delete
+      var preUploadStatus = dynamoDbService.getMedia(mediaId).map(Media::getStatus).orElse(null);
+      if (preUploadStatus == MediaStatus.DELETED) {
+        logger.info("Media {} was deleted during processing, aborting upload", mediaId);
+        span.setStatus(StatusCode.OK);
+        return;
+      }
+
       // Generate and upload preview (only for new uploads, not resizes)
       if (!isResize) {
         byte[] preview = imageProcessingService.generatePreview(imageData, targetFormat);
@@ -279,6 +290,20 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
         span.setStatus(StatusCode.OK);
         successCounter.add(1);
         return; // Idempotent - already completed by another instance
+      }
+      if ("DELETED".equals(actual)) {
+        // Delete happened while processing was in-flight — clean up any files we uploaded
+        logger.info("Media {} was deleted during processing, cleaning up uploaded files", mediaId);
+        try {
+          s3Service.deleteProcessedFile(mediaId, outputFormat);
+          if (!isResize) {
+            s3Service.deletePreviewFile(mediaId, outputFormat);
+          }
+        } catch (Exception cleanupErr) {
+          logger.warn("Failed to clean up files for deleted media {}: {}", mediaId, cleanupErr.getMessage());
+        }
+        span.setStatus(StatusCode.OK);
+        return; // Not a failure — delete took precedence
       }
       logger.error("Failed to complete media {}: unexpected status={}", mediaId, actual);
       span.setStatus(StatusCode.ERROR, "unexpected_status=" + actual);
