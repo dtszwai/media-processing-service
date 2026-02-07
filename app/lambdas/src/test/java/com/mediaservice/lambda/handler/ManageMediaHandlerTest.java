@@ -220,7 +220,13 @@ class ManageMediaHandlerTest {
 
   private SQSEvent createSqsEventFromMediaEvent(MediaEvent event) throws Exception {
     String eventJson = objectMapper.writeValueAsString(event);
-    String snsWrapper = objectMapper.writeValueAsString(java.util.Map.of("Message", eventJson));
+    // Include MessageAttributes in the SNS envelope to match real SNS→SQS format
+    var snsEnvelope = new java.util.LinkedHashMap<String, Object>();
+    snsEnvelope.put("Message", eventJson);
+    snsEnvelope.put("MessageAttributes", java.util.Map.of(
+        "traceparent", java.util.Map.of("Type", "String", "Value", "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01")
+    ));
+    String snsWrapper = objectMapper.writeValueAsString(snsEnvelope);
     var message = new SQSEvent.SQSMessage();
     message.setBody(snsWrapper);
     var sqsEvent = new SQSEvent();

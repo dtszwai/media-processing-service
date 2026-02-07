@@ -226,6 +226,24 @@ class MediaApplicationServiceTest {
       assertThat(result).isInstanceOf(MediaOperationResult.NotAllowed.class);
       verify(snsService, never()).publishResizeMediaEvent(anyString(), any(), any());
     }
+
+    @Test
+    @DisplayName("should revert status to COMPLETE when event publish fails")
+    void shouldRevertStatusWhenPublishFails() {
+      var media = createMedia(MediaStatus.COMPLETE);
+      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
+      when(dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.COMPLETE))
+          .thenReturn(true);
+      doThrow(new RuntimeException("SNS failure"))
+          .when(snsService).publishResizeMediaEvent("media-123", 800, "jpeg");
+
+      assertThatThrownBy(() -> mediaService.resizeMedia("media-123", 800, "jpeg"))
+          .isInstanceOf(RuntimeException.class)
+          .hasMessage("SNS failure");
+
+      verify(dynamoDbService).updateStatusConditionally("media-123", MediaStatus.COMPLETE, MediaStatus.PENDING);
+      verify(cacheInvalidationService, never()).invalidateMedia(anyString());
+    }
   }
 
   @Nested
@@ -260,6 +278,23 @@ class MediaApplicationServiceTest {
       assertThat(result).isEmpty();
       verify(dynamoDbService, never()).softDelete(anyString(), any());
       verify(snsService, never()).publishDeleteMediaEvent(anyString());
+    }
+
+    @Test
+    @DisplayName("should revert soft delete when event publish fails")
+    void shouldRevertSoftDeleteWhenPublishFails() {
+      var media = createMedia(MediaStatus.COMPLETE);
+      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
+      doThrow(new RuntimeException("SNS failure"))
+          .when(snsService).publishDeleteMediaEvent("media-123");
+
+      assertThatThrownBy(() -> mediaService.deleteMedia("media-123"))
+          .isInstanceOf(RuntimeException.class)
+          .hasMessage("SNS failure");
+
+      verify(dynamoDbService).softDelete(eq("media-123"), any(Duration.class));
+      verify(dynamoDbService).revertSoftDelete("media-123", MediaStatus.COMPLETE);
+      verify(cacheInvalidationService, never()).invalidateMedia(anyString());
     }
   }
 
@@ -412,6 +447,85 @@ class MediaApplicationServiceTest {
 
       assertThat(result).isEmpty();
       verify(snsService, never()).publishProcessMediaEvent(anyString(), any(), any());
+    }
+
+    @Test
+    @DisplayName("should revert status to PENDING_UPLOAD when event publish fails")
+    void shouldRevertStatusWhenPublishFails() {
+      var media = createMedia(MediaStatus.PENDING_UPLOAD);
+      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
+      when(s3Service.objectExists("media-123", "test.jpg")).thenReturn(true);
+      when(dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.PENDING_UPLOAD, true))
+          .thenReturn(true);
+      doThrow(new RuntimeException("SNS failure"))
+          .when(snsService).publishProcessMediaEvent("media-123", 500, "jpeg");
+
+      assertThatThrownBy(() -> mediaService.completePresignedUpload("media-123"))
+          .isInstanceOf(RuntimeException.class)
+          .hasMessage("SNS failure");
+
+      verify(dynamoDbService).updateStatusConditionally("media-123", MediaStatus.PENDING_UPLOAD, MediaStatus.PENDING);
+    }
+  }
+
+  @Nested
+  @DisplayName("retryProcessing")
+  class RetryProcessing {
+
+    @Test
+    @DisplayName("should retry when media is in ERROR status")
+    void shouldRetryWhenError() {
+      var media = createMedia(MediaStatus.ERROR);
+      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
+      when(dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.ERROR))
+          .thenReturn(true);
+
+      var result = mediaService.retryProcessing("media-123");
+
+      assertThat(result).isInstanceOf(MediaOperationResult.Success.class);
+      verify(snsService).publishProcessMediaEvent("media-123", 500, "jpeg");
+      verify(cacheInvalidationService).invalidateMedia("media-123");
+    }
+
+    @Test
+    @DisplayName("should return NotFound when media does not exist")
+    void shouldReturnNotFoundWhenMissing() {
+      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.empty());
+
+      var result = mediaService.retryProcessing("media-123");
+
+      assertThat(result).isInstanceOf(MediaOperationResult.NotFound.class);
+      verify(snsService, never()).publishProcessMediaEvent(anyString(), any(), any());
+    }
+
+    @Test
+    @DisplayName("should return NotAllowed when media is in COMPLETE status")
+    void shouldReturnNotAllowedWhenComplete() {
+      var media = createMedia(MediaStatus.COMPLETE);
+      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
+
+      var result = mediaService.retryProcessing("media-123");
+
+      assertThat(result).isInstanceOf(MediaOperationResult.NotAllowed.class);
+      verify(snsService, never()).publishProcessMediaEvent(anyString(), any(), any());
+    }
+
+    @Test
+    @DisplayName("should revert status when event publish fails")
+    void shouldRevertStatusWhenPublishFails() {
+      var media = createMedia(MediaStatus.ERROR);
+      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
+      when(dynamoDbService.updateStatusConditionally("media-123", MediaStatus.PENDING, MediaStatus.ERROR))
+          .thenReturn(true);
+      doThrow(new RuntimeException("SNS failure"))
+          .when(snsService).publishProcessMediaEvent("media-123", 500, "jpeg");
+
+      assertThatThrownBy(() -> mediaService.retryProcessing("media-123"))
+          .isInstanceOf(RuntimeException.class)
+          .hasMessage("SNS failure");
+
+      verify(dynamoDbService).updateStatusConditionally("media-123", MediaStatus.ERROR, MediaStatus.PENDING);
+      verify(cacheInvalidationService, never()).invalidateMedia(anyString());
     }
   }
 

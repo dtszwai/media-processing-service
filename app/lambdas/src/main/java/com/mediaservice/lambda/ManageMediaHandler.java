@@ -3,6 +3,7 @@ package com.mediaservice.lambda;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.SQSEvent;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mediaservice.lambda.config.OpenTelemetryInitializer;
 import com.mediaservice.common.event.MediaEvent;
@@ -14,6 +15,7 @@ import com.mediaservice.lambda.service.DynamoDbService;
 import com.mediaservice.lambda.service.ImageProcessingService;
 import com.mediaservice.lambda.service.S3Service;
 import com.mediaservice.lambda.service.WebhookService;
+import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongCounter;
@@ -22,9 +24,13 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.propagation.TextMapGetter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
+
+import java.util.HashMap;
+import java.util.Map;
 
 public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
   static {
@@ -33,11 +39,24 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
 
   private static final Logger logger = LoggerFactory.getLogger(ManageMediaHandler.class);
 
+  private static final TextMapGetter<Map<String, String>> TRACE_HEADER_GETTER = new TextMapGetter<>() {
+    @Override
+    public Iterable<String> keys(Map<String, String> carrier) {
+      return carrier.keySet();
+    }
+
+    @Override
+    public String get(Map<String, String> carrier, String key) {
+      return carrier.get(key);
+    }
+  };
+
   private final DynamoDbService dynamoDbService;
   private final S3Service s3Service;
   private final ImageProcessingService imageProcessingService;
   private final WebhookService webhookService;
   private final ObjectMapper objectMapper;
+  private final OpenTelemetry openTelemetry;
   private final Tracer tracer;
   private final LongCounter deleteSuccessCounter, deleteFailureCounter;
   private final LongCounter resizeSuccessCounter, resizeFailureCounter;
@@ -63,6 +82,7 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
     this.objectMapper = objectMapper;
 
     var otel = OpenTelemetryInitializer.initialize();
+    this.openTelemetry = otel;
     this.tracer = otel.getTracer("media-service-manage-media-lambda");
     var meter = otel.getMeter("media-service-manage-media-lambda");
 
@@ -90,9 +110,19 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
   }
 
   private void processMessage(SQSEvent.SQSMessage message) {
-    var span = tracer.spanBuilder("manage-media").setSpanKind(SpanKind.INTERNAL).startSpan();
+    JsonNode bodyNode;
+    try {
+      bodyNode = objectMapper.readTree(message.getBody());
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to parse message body", e);
+    }
+
+    var parentContext = extractTraceContext(bodyNode);
+    var span = tracer.spanBuilder("manage-media")
+        .setSpanKind(SpanKind.CONSUMER)
+        .setParent(parentContext)
+        .startSpan();
     try (var scope = span.makeCurrent()) {
-      var bodyNode = objectMapper.readTree(message.getBody());
       var event = objectMapper.readValue(bodyNode.get("Message").asText(), MediaEvent.class);
 
       var payload = event.getPayload();
@@ -265,5 +295,29 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
       failureCounter.add(1);
       throw new RuntimeException("Failed to process media", e);
     }
+  }
+
+  private io.opentelemetry.context.Context extractTraceContext(JsonNode snsEnvelope) {
+    var messageAttributes = snsEnvelope.get("MessageAttributes");
+    if (messageAttributes == null) {
+      return io.opentelemetry.context.Context.current();
+    }
+
+    Map<String, String> headers = new HashMap<>();
+    var fields = messageAttributes.fields();
+    while (fields.hasNext()) {
+      var entry = fields.next();
+      var valueNode = entry.getValue().get("Value");
+      if (valueNode != null) {
+        headers.put(entry.getKey(), valueNode.asText());
+      }
+    }
+
+    if (headers.isEmpty()) {
+      return io.opentelemetry.context.Context.current();
+    }
+
+    return openTelemetry.getPropagators().getTextMapPropagator()
+        .extract(io.opentelemetry.context.Context.current(), headers, TRACE_HEADER_GETTER);
   }
 }

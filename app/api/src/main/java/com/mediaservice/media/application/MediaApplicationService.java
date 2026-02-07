@@ -344,7 +344,13 @@ public class MediaApplicationService {
     OutputFormat targetFormat = outputFormat != null
         ? OutputFormat.fromString(outputFormat)
         : media.getOutputFormatOrDefault();
-    eventPublisher.publishResizeMediaEvent(mediaId, width, targetFormat.getFormat());
+    try {
+      eventPublisher.publishResizeMediaEvent(mediaId, width, targetFormat.getFormat());
+    } catch (Exception e) {
+      log.error("Failed to publish resize event for mediaId={}, reverting status to COMPLETE", mediaId, e);
+      mediaRepository.updateStatusConditionally(mediaId, MediaStatus.COMPLETE, MediaStatus.PENDING);
+      throw e;
+    }
     cacheInvalidationService.invalidateMedia(mediaId);
     log.info("Resize request submitted for mediaId: {} with outputFormat: {}", mediaId, targetFormat.getFormat());
 
@@ -360,7 +366,13 @@ public class MediaApplicationService {
         .filter(media -> media.getStatus() != MediaStatus.DELETED)
         .map(media -> {
           mediaRepository.softDelete(mediaId, Duration.ofDays(mediaProperties.getSoftDeleteRetentionDays()));
-          eventPublisher.publishDeleteMediaEvent(mediaId);
+          try {
+            eventPublisher.publishDeleteMediaEvent(mediaId);
+          } catch (Exception e) {
+            log.error("Failed to publish delete event for mediaId={}, reverting soft delete", mediaId, e);
+            mediaRepository.revertSoftDelete(mediaId, media.getStatus());
+            throw e;
+          }
           cacheInvalidationService.invalidateMedia(mediaId);
           log.info("Soft delete completed for mediaId: {}", mediaId);
           return media;
@@ -400,7 +412,13 @@ public class MediaApplicationService {
       return new MediaOperationResult.NotAllowed(mediaId, "Failed to update status (concurrent modification)");
     }
 
-    eventPublisher.publishProcessMediaEvent(mediaId, media.getWidth(), media.getOutputFormatOrDefault().getFormat());
+    try {
+      eventPublisher.publishProcessMediaEvent(mediaId, media.getWidth(), media.getOutputFormatOrDefault().getFormat());
+    } catch (Exception e) {
+      log.error("Failed to publish retry event for mediaId={}, reverting status to {}", mediaId, media.getStatus(), e);
+      mediaRepository.updateStatusConditionally(mediaId, media.getStatus(), MediaStatus.PENDING);
+      throw e;
+    }
     cacheInvalidationService.invalidateMedia(mediaId);
     log.info("Retry initiated for mediaId={}, previousStatus={}", mediaId, media.getStatus());
 
@@ -529,7 +547,13 @@ public class MediaApplicationService {
               return Optional.empty();
             }
 
-            eventPublisher.publishProcessMediaEvent(mediaId, media.getWidth(), media.getOutputFormatOrDefault().getFormat());
+            try {
+              eventPublisher.publishProcessMediaEvent(mediaId, media.getWidth(), media.getOutputFormatOrDefault().getFormat());
+            } catch (Exception e) {
+              log.error("Failed to publish process event for mediaId={}, reverting status to PENDING_UPLOAD", mediaId, e);
+              mediaRepository.updateStatusConditionally(mediaId, MediaStatus.PENDING_UPLOAD, MediaStatus.PENDING);
+              throw e;
+            }
             uploadSuccessCounter.add(1);
             span.setStatus(StatusCode.OK);
             log.info("Presigned upload completed: mediaId={}", mediaId);

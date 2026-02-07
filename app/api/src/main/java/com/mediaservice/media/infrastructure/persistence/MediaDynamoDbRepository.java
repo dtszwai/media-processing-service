@@ -235,6 +235,22 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
   }
 
   /**
+   * Revert a soft delete by restoring the original status and clearing deletedAt/expiresAt.
+   * Used as compensation when event publishing fails after soft delete.
+   */
+  public void revertSoftDelete(String mediaId, MediaStatus originalStatus) {
+    updateAttributes(
+        StorageConstants.DYNAMO_PK_PREFIX + mediaId,
+        StorageConstants.DYNAMO_SK_METADATA,
+        "SET #status = :status, updatedAt = :updatedAt REMOVE deletedAt, expiresAt",
+        Map.of("#status", "status"),
+        Map.of(
+            ":status", s(originalStatus.name()),
+            ":updatedAt", s(Instant.now().toString())));
+    log.info("Reverted soft delete for mediaId: {}, restored status to {}", mediaId, originalStatus);
+  }
+
+  /**
    * Hard delete a media record (for compensation/cleanup only).
    */
   public void deleteMedia(String mediaId) {
