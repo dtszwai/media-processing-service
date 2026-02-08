@@ -169,22 +169,34 @@ public class AnalyticsRollupHandler implements RequestHandler<Map<String, Object
       return;
     }
 
-    // Get yesterday's daily data from DynamoDB
-    var data = dynamoDbService.queryAnalytics("DAILY", dateKey);
+    var tenants = dynamoDbService.listTenantIds();
+    if (tenants.isEmpty()) {
+      logger.info("No tenants found for daily archive {}", dateKey);
+      return;
+    }
 
-    if (data.isEmpty()) {
+    long totalItems = 0;
+    for (var tenantId : tenants) {
+      // Get yesterday's daily data from DynamoDB
+      var data = dynamoDbService.queryAnalytics(tenantId, "DAILY", dateKey);
+      if (data.isEmpty()) {
+        continue;
+      }
+      // Archive to S3
+      archiveDailyToS3(tenantId, dateKey, data);
+      dailyArchiveCounter.add(1);
+      totalItems += data.size();
+    }
+
+    if (totalItems == 0) {
       logger.info("No daily analytics data to archive for {}", dateKey);
       return;
     }
 
-    // Archive to S3
-    archiveDailyToS3(dateKey, data);
-    dailyArchiveCounter.add(1);
-
     span.addEvent("daily-archive-complete",
-        io.opentelemetry.api.common.Attributes.of(AttributeKey.longKey("media.count"), (long) data.size()));
+        io.opentelemetry.api.common.Attributes.of(AttributeKey.longKey("media.count"), totalItems));
 
-    logger.info("Daily archive completed for {}: {} media items", dateKey, data.size());
+    logger.info("Daily archive completed for {}: {} media items", dateKey, totalItems);
   }
 
   /**
@@ -205,23 +217,35 @@ public class AnalyticsRollupHandler implements RequestHandler<Map<String, Object
       return;
     }
 
-    // Aggregate from DynamoDB daily snapshots (populated by API write-behind)
-    var dailyKeys = getDailyKeysForMonth(lastMonth);
-    var data = dynamoDbService.aggregateAnalytics("DAILY", dailyKeys);
+    var tenants = dynamoDbService.listTenantIds();
+    if (tenants.isEmpty()) {
+      logger.info("No tenants found for monthly rollup {}", monthKey);
+      return;
+    }
 
-    if (data.isEmpty()) {
+    var dailyKeys = getDailyKeysForMonth(lastMonth);
+    long totalItems = 0;
+    for (var tenantId : tenants) {
+      // Aggregate from DynamoDB daily snapshots (populated by API write-behind)
+      var data = dynamoDbService.aggregateAnalytics(tenantId, "DAILY", dailyKeys);
+      if (data.isEmpty()) {
+        continue;
+      }
+      dynamoDbService.persistAnalytics(tenantId, "MONTHLY", monthKey, data);
+      monthlyRollupCounter.add(1);
+      totalItems += data.size();
+    }
+
+    if (totalItems == 0) {
       logger.info("No monthly analytics data to rollup for {}", monthKey);
       return;
     }
 
-    dynamoDbService.persistAnalytics("MONTHLY", monthKey, data);
-    monthlyRollupCounter.add(1);
-
     span.addEvent("monthly-rollup-complete",
         io.opentelemetry.api.common.Attributes.of(
-            AttributeKey.longKey("media.count"), (long) data.size()));
+            AttributeKey.longKey("media.count"), totalItems));
 
-    logger.info("Monthly rollup completed for {}: {} media items", monthKey, data.size());
+    logger.info("Monthly rollup completed for {}: {} media items", monthKey, totalItems);
   }
 
   /**
@@ -240,36 +264,49 @@ public class AnalyticsRollupHandler implements RequestHandler<Map<String, Object
       return;
     }
 
-    // Get monthly data from DynamoDB
-    var data = dynamoDbService.queryAnalytics("MONTHLY", monthKey);
+    var tenants = dynamoDbService.listTenantIds();
+    if (tenants.isEmpty()) {
+      logger.info("No tenants found for monthly archive {}", monthKey);
+      return;
+    }
 
-    if (data.isEmpty()) {
+    long totalItems = 0;
+    for (var tenantId : tenants) {
+      // Get monthly data from DynamoDB
+      var data = dynamoDbService.queryAnalytics(tenantId, "MONTHLY", monthKey);
+      if (data.isEmpty()) {
+        continue;
+      }
+      // Archive to S3
+      archiveMonthlyToS3(tenantId, monthKey, data);
+      monthlyArchiveCounter.add(1);
+      totalItems += data.size();
+    }
+
+    if (totalItems == 0) {
       logger.info("No monthly analytics data to archive for {}", monthKey);
       return;
     }
 
-    // Archive to S3
-    archiveMonthlyToS3(monthKey, data);
-    monthlyArchiveCounter.add(1);
-
     span.addEvent("monthly-archive-complete",
-        io.opentelemetry.api.common.Attributes.of(AttributeKey.longKey("media.count"), (long) data.size()));
+        io.opentelemetry.api.common.Attributes.of(AttributeKey.longKey("media.count"), totalItems));
 
-    logger.info("Monthly archive completed for {}: {} media items", monthKey, data.size());
+    logger.info("Monthly archive completed for {}: {} media items", monthKey, totalItems);
   }
 
   /**
    * Archive daily analytics data to S3.
    * Path: analytics/daily/{year}/{month}/analytics-{date}.json
    */
-  private void archiveDailyToS3(String dateKey, Map<String, Long> data) {
+  private void archiveDailyToS3(String tenantId, String dateKey, Map<String, Long> data) {
     try {
       String[] parts = dateKey.split("-");
       String year = parts[0];
       String month = parts[1];
-      String s3Key = String.format("analytics/daily/%s/%s/analytics-%s.json", year, month, dateKey);
+      String s3Key = String.format("analytics/%s/daily/%s/%s/analytics-%s.json", tenantId, year, month, dateKey);
 
       var archive = new AnalyticsArchive(
+          tenantId,
           dateKey,
           Instant.now().toString(),
           data.size(),
@@ -286,7 +323,7 @@ public class AnalyticsRollupHandler implements RequestHandler<Map<String, Object
 
       s3Client.putObject(putRequest, RequestBody.fromString(jsonContent));
 
-      logger.info("Archived daily analytics to S3: s3://{}/{}", bucketName, s3Key);
+      logger.info("Archived daily analytics to S3 for tenant {}: s3://{}/{}", tenantId, bucketName, s3Key);
     } catch (Exception e) {
       logger.error("Failed to archive daily analytics to S3: {}", e.getMessage(), e);
       throw new RuntimeException("S3 daily archival failed", e);
@@ -297,14 +334,15 @@ public class AnalyticsRollupHandler implements RequestHandler<Map<String, Object
    * Archive monthly analytics data to S3.
    * Path: analytics/monthly/{year}/{month}/analytics-{year-month}.json
    */
-  private void archiveMonthlyToS3(String monthKey, Map<String, Long> data) {
+  private void archiveMonthlyToS3(String tenantId, String monthKey, Map<String, Long> data) {
     try {
       String[] parts = monthKey.split("-");
       String year = parts[0];
       String month = parts[1];
-      String s3Key = String.format("analytics/monthly/%s/%s/analytics-%s.json", year, month, monthKey);
+      String s3Key = String.format("analytics/%s/monthly/%s/%s/analytics-%s.json", tenantId, year, month, monthKey);
 
       var archive = new AnalyticsArchive(
+          tenantId,
           monthKey,
           Instant.now().toString(),
           data.size(),
@@ -321,7 +359,7 @@ public class AnalyticsRollupHandler implements RequestHandler<Map<String, Object
 
       s3Client.putObject(putRequest, RequestBody.fromString(jsonContent));
 
-      logger.info("Archived monthly analytics to S3: s3://{}/{}", bucketName, s3Key);
+      logger.info("Archived monthly analytics to S3 for tenant {}: s3://{}/{}", tenantId, bucketName, s3Key);
     } catch (Exception e) {
       logger.error("Failed to archive monthly analytics to S3: {}", e.getMessage(), e);
       throw new RuntimeException("S3 monthly archival failed", e);
@@ -342,6 +380,7 @@ public class AnalyticsRollupHandler implements RequestHandler<Map<String, Object
    * Archive record for S3 storage.
    */
   public record AnalyticsArchive(
+      String tenantId,
       String period,
       String archivedAt,
       int mediaCount,

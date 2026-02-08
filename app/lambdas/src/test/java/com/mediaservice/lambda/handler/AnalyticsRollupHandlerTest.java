@@ -161,7 +161,7 @@ class AnalyticsRollupHandlerTest {
 
       assertThat(result).isEqualTo("OK");
       assertThat(s3Client.wasPutObjectCalled()).isTrue();
-      assertThat(s3Client.getLastPutKey()).contains("analytics/daily/");
+      assertThat(s3Client.getLastPutKey()).contains("analytics/tenant-1/daily/");
     }
 
     @Test
@@ -207,7 +207,7 @@ class AnalyticsRollupHandlerTest {
 
       assertThat(result).isEqualTo("OK");
       assertThat(s3Client.wasPutObjectCalled()).isTrue();
-      assertThat(s3Client.getLastPutKey()).contains("analytics/");
+      assertThat(s3Client.getLastPutKey()).contains("analytics/tenant-1/");
     }
 
     @Test
@@ -246,6 +246,7 @@ class AnalyticsRollupHandlerTest {
     private String lastPersistedPeriod;
     private Map<String, Long> aggregatedData = new LinkedHashMap<>();
     private Map<String, Long> queryResult = new LinkedHashMap<>();
+    private Set<String> tenants = Set.of("tenant-1");
 
     void setLockAcquired(boolean acquired) {
       this.lockAcquired = acquired;
@@ -257,6 +258,10 @@ class AnalyticsRollupHandlerTest {
 
     void setQueryResult(Map<String, Long> data) {
       this.queryResult = data;
+    }
+
+    void setTenants(Set<String> tenants) {
+      this.tenants = tenants;
     }
 
     boolean wasLockAcquired() {
@@ -280,20 +285,24 @@ class AnalyticsRollupHandlerTest {
       return lockAcquired;
     }
 
-    void persistAnalytics(String period, String periodKey, Map<String, Long> data) {
+    void persistAnalytics(String tenantId, String period, String periodKey, Map<String, Long> data) {
       if (data != null && !data.isEmpty()) {
         analyticsPersisted = true;
         lastPersistedPeriod = period;
       }
     }
 
-    Map<String, Long> queryAnalytics(String period, String periodKey) {
+    Map<String, Long> queryAnalytics(String tenantId, String period, String periodKey) {
       return queryResult;
     }
 
-    Map<String, Long> aggregateAnalytics(String period, List<String> periodKeys) {
+    Map<String, Long> aggregateAnalytics(String tenantId, String period, List<String> periodKeys) {
       aggregationCalled = true;
       return aggregatedData;
+    }
+
+    Set<String> listTenantIds() {
+      return tenants;
     }
   }
 
@@ -370,13 +379,14 @@ class AnalyticsRollupHandlerTest {
         return;
       }
 
-      var data = dynamoDbService.queryAnalytics("DAILY", dateKey);
-
-      if (data.isEmpty()) {
-        return;
+      var tenants = dynamoDbService.listTenantIds();
+      for (var tenantId : tenants) {
+        var data = dynamoDbService.queryAnalytics(tenantId, "DAILY", dateKey);
+        if (data.isEmpty()) {
+          continue;
+        }
+        archiveDailyToS3(tenantId, dateKey, data);
       }
-
-      archiveDailyToS3(dateKey, data);
     }
 
     private void handleMonthlyRollup() {
@@ -390,13 +400,14 @@ class AnalyticsRollupHandlerTest {
 
       // Aggregate from DynamoDB daily snapshots (populated by API write-behind)
       var dailyKeys = getDailyKeysForMonth(lastMonth);
-      var data = dynamoDbService.aggregateAnalytics("DAILY", dailyKeys);
-
-      if (data.isEmpty()) {
-        return;
+      var tenants = dynamoDbService.listTenantIds();
+      for (var tenantId : tenants) {
+        var data = dynamoDbService.aggregateAnalytics(tenantId, "DAILY", dailyKeys);
+        if (data.isEmpty()) {
+          continue;
+        }
+        dynamoDbService.persistAnalytics(tenantId, "MONTHLY", monthKey, data);
       }
-
-      dynamoDbService.persistAnalytics("MONTHLY", monthKey, data);
     }
 
     private void handleMonthlyArchive() {
@@ -408,23 +419,25 @@ class AnalyticsRollupHandlerTest {
         return;
       }
 
-      var data = dynamoDbService.queryAnalytics("MONTHLY", monthKey);
-
-      if (data.isEmpty()) {
-        return;
+      var tenants = dynamoDbService.listTenantIds();
+      for (var tenantId : tenants) {
+        var data = dynamoDbService.queryAnalytics(tenantId, "MONTHLY", monthKey);
+        if (data.isEmpty()) {
+          continue;
+        }
+        archiveMonthlyToS3(tenantId, monthKey, data);
       }
-
-      archiveMonthlyToS3(monthKey, data);
     }
 
-    private void archiveDailyToS3(String dateKey, Map<String, Long> data) {
+    private void archiveDailyToS3(String tenantId, String dateKey, Map<String, Long> data) {
       try {
         String[] parts = dateKey.split("-");
         String year = parts[0];
         String month = parts[1];
-        String s3Key = String.format("analytics/daily/%s/%s/analytics-%s.json", year, month, dateKey);
+        String s3Key = String.format("analytics/%s/daily/%s/%s/analytics-%s.json", tenantId, year, month, dateKey);
 
         var archive = Map.of(
+            "tenantId", tenantId,
             "period", dateKey,
             "archivedAt", Instant.now().toString(),
             "mediaCount", data.size(),
@@ -438,14 +451,15 @@ class AnalyticsRollupHandlerTest {
       }
     }
 
-    private void archiveMonthlyToS3(String monthKey, Map<String, Long> data) {
+    private void archiveMonthlyToS3(String tenantId, String monthKey, Map<String, Long> data) {
       try {
         String[] parts = monthKey.split("-");
         String year = parts[0];
         String month = parts[1];
-        String s3Key = String.format("analytics/monthly/%s/%s/analytics-%s.json", year, month, monthKey);
+        String s3Key = String.format("analytics/%s/monthly/%s/%s/analytics-%s.json", tenantId, year, month, monthKey);
 
         var archive = Map.of(
+            "tenantId", tenantId,
             "period", monthKey,
             "archivedAt", Instant.now().toString(),
             "mediaCount", data.size(),

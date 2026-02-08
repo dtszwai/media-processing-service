@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Period, EntityViewCount, DownloadStats } from "../../../shared/types";
+  import { AuthenticationError } from "../../../shared/types";
   import { createQuery } from "@tanstack/svelte-query";
   import { createAnalyticsSummaryQuery } from "../queries";
   import { queryKeys } from "../../../shared/queries";
@@ -99,9 +100,15 @@
   </div>
 
   {#if summaryQuery.isError}
-    <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
-      {summaryQuery.error instanceof Error ? summaryQuery.error.message : "Failed to load analytics"}
-    </div>
+    {#if summaryQuery.error instanceof AuthenticationError}
+      <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm text-yellow-800">
+        Please sign in to view analytics.
+      </div>
+    {:else}
+      <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
+        {summaryQuery.error instanceof Error ? summaryQuery.error.message : "Failed to load analytics"}
+      </div>
+    {/if}
   {/if}
 
   {#if summaryQuery.isLoading && !summaryQuery.data}

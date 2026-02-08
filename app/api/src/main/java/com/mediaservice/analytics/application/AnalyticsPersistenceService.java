@@ -38,8 +38,9 @@ public class AnalyticsPersistenceService {
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
 
     // Redis key prefixes (must match AnalyticsService)
+    private static final String TENANT_SET_KEY = "analytics:tenants";
     private static final String VIEWS_DAILY_PREFIX = "views:daily:";
-    private static final String VIEWS_TOTAL_KEY = "views:total";
+    private static final String VIEWS_TOTAL_PREFIX = "views:total:";
 
     // Distributed lock for write-behind
     private static final String WRITE_BEHIND_LOCK_KEY = "analytics:writebehind:lock";
@@ -73,8 +74,15 @@ public class AnalyticsPersistenceService {
 
         try {
             var today = LocalDate.now();
-            log.debug("Starting write-behind persistence for {}", today);
-            snapshotDayToDb(today);
+            var tenants = getTrackedTenants();
+            if (tenants.isEmpty()) {
+                log.debug("No tenant analytics to persist for {}", today);
+                return;
+            }
+            log.debug("Starting write-behind persistence for {} ({} tenants)", today, tenants.size());
+            for (var tenantId : tenants) {
+                snapshotDayToDb(tenantId, today);
+            }
             log.debug("Write-behind persistence completed for {}", today);
         } catch (Exception e) {
             log.error("Write-behind persistence failed: {}", e.getMessage(), e);
@@ -94,7 +102,14 @@ public class AnalyticsPersistenceService {
 
         try {
             var yesterday = LocalDate.now().minusDays(1);
-            snapshotDayToDb(yesterday);
+            var tenants = getTrackedTenants();
+            if (tenants.isEmpty()) {
+                log.info("No tenant analytics to snapshot for {}", yesterday);
+                return;
+            }
+            for (var tenantId : tenants) {
+                snapshotDayToDb(tenantId, yesterday);
+            }
             log.info("Daily analytics snapshot completed for {}", yesterday);
         } catch (Exception e) {
             log.error("Failed to snapshot daily analytics: {}", e.getMessage(), e);
@@ -104,8 +119,8 @@ public class AnalyticsPersistenceService {
     /**
      * Snapshot a specific day's analytics from Redis to DynamoDB.
      */
-    public void snapshotDayToDb(LocalDate date) {
-        String redisKey = VIEWS_DAILY_PREFIX + date.format(DATE_FORMATTER);
+    public void snapshotDayToDb(String tenantId, LocalDate date) {
+        String redisKey = dailyViewsKey(tenantId, date);
         var viewCounts = readViewCountsFromRedis(redisKey);
 
         if (viewCounts.isEmpty()) {
@@ -113,8 +128,8 @@ public class AnalyticsPersistenceService {
             return;
         }
 
-        dynamoDbRepository.saveDailySnapshot(date, viewCounts);
-        log.info("Persisted {} analytics entries for {} to DynamoDB", viewCounts.size(), date);
+        dynamoDbRepository.saveDailySnapshot(tenantId, date, viewCounts);
+        log.info("Persisted {} analytics entries for tenant {} on {} to DynamoDB", viewCounts.size(), tenantId, date);
     }
 
     /**
@@ -122,11 +137,11 @@ public class AnalyticsPersistenceService {
      *
      * @return map of mediaId to view count (for S3 archival)
      */
-    public Map<String, Long> snapshotMonthToDb(String yearMonth) {
-        var aggregatedViews = dynamoDbRepository.aggregateMonthFromDaily(yearMonth);
+    public Map<String, Long> snapshotMonthToDb(String tenantId, String yearMonth) {
+        var aggregatedViews = dynamoDbRepository.aggregateMonthFromDaily(tenantId, yearMonth);
 
         if (!aggregatedViews.isEmpty()) {
-            dynamoDbRepository.saveMonthlySnapshot(yearMonth, aggregatedViews);
+            dynamoDbRepository.saveMonthlySnapshot(tenantId, yearMonth, aggregatedViews);
         }
 
         return aggregatedViews;
@@ -144,10 +159,17 @@ public class AnalyticsPersistenceService {
         try {
             var lastMonth = YearMonth.now().minusMonths(1);
             String yearMonth = lastMonth.format(DateTimeFormatter.ofPattern("yyyy-MM"));
+            var tenants = getTrackedTenants();
+            if (tenants.isEmpty()) {
+                log.info("No tenant analytics to archive for {}", yearMonth);
+                return;
+            }
 
-            var monthlyData = snapshotMonthToDb(yearMonth);
-            if (!monthlyData.isEmpty()) {
-                s3ArchiveService.archive(yearMonth, monthlyData);
+            for (var tenantId : tenants) {
+                var monthlyData = snapshotMonthToDb(tenantId, yearMonth);
+                if (!monthlyData.isEmpty()) {
+                    s3ArchiveService.archive(tenantId, yearMonth, monthlyData);
+                }
             }
 
             log.info("Monthly analytics archive completed for {}", yearMonth);
@@ -159,16 +181,16 @@ public class AnalyticsPersistenceService {
     /**
      * Archive analytics data to S3.
      */
-    public void archiveToS3(String yearMonth, Map<String, Long> data) {
-        s3ArchiveService.archive(yearMonth, data);
+    public void archiveToS3(String tenantId, String yearMonth, Map<String, Long> data) {
+        s3ArchiveService.archive(tenantId, yearMonth, data);
     }
 
     /**
      * Restore Redis analytics data from DynamoDB.
      */
-    public void restoreFromDb(LocalDate date) {
-        String redisKey = VIEWS_DAILY_PREFIX + date.format(DATE_FORMATTER);
-        var viewCounts = dynamoDbRepository.queryAnalytics("DAILY", date.format(DATE_FORMATTER));
+    public void restoreFromDb(String tenantId, LocalDate date) {
+        String redisKey = dailyViewsKey(tenantId, date);
+        var viewCounts = dynamoDbRepository.queryAnalytics(tenantId, "DAILY", date.format(DATE_FORMATTER));
 
         if (viewCounts.isEmpty()) {
             log.debug("No persisted analytics data found for {}", date);
@@ -177,27 +199,27 @@ public class AnalyticsPersistenceService {
 
         for (var entry : viewCounts.entrySet()) {
             redisTemplate.opsForZSet().add(redisKey, entry.getKey(), entry.getValue());
-            redisTemplate.opsForZSet().incrementScore(VIEWS_TOTAL_KEY, entry.getKey(), entry.getValue());
+            redisTemplate.opsForZSet().incrementScore(totalViewsKey(tenantId), entry.getKey(), entry.getValue());
         }
 
         int retentionDays = analyticsProperties.getPersistence().getDailyRetentionDays();
         redisTemplate.expire(redisKey, retentionDays, TimeUnit.DAYS);
-        log.info("Restored {} analytics entries for {} from DynamoDB", viewCounts.size(), date);
+        log.info("Restored {} analytics entries for tenant {} on {} from DynamoDB", viewCounts.size(), tenantId, date);
     }
 
     /**
      * Aggregate daily analytics over a date range from DynamoDB.
      * Used for calculating weekly/monthly/yearly views at read-time.
      */
-    public Map<String, Long> aggregateDailyAnalytics(LocalDate startDate, LocalDate endDate, int limit) {
-        return dynamoDbRepository.aggregateDailyRange(startDate, endDate, limit);
+    public Map<String, Long> aggregateDailyAnalytics(String tenantId, LocalDate startDate, LocalDate endDate, int limit) {
+        return dynamoDbRepository.aggregateDailyRange(tenantId, startDate, endDate, limit);
     }
 
     /**
      * Get historical analytics for a specific period from DynamoDB.
      */
-    public Map<String, Long> getHistoricalAnalytics(String period, String dateKey, int limit) {
-        var results = dynamoDbRepository.queryAnalytics(period, dateKey);
+    public Map<String, Long> getHistoricalAnalytics(String tenantId, String period, String dateKey, int limit) {
+        var results = dynamoDbRepository.queryAnalytics(tenantId, period, dateKey);
 
         // Sort and limit
         return results.entrySet().stream()
@@ -229,6 +251,24 @@ public class AnalyticsPersistenceService {
         }
 
         return viewCounts;
+    }
+
+    private Set<String> getTrackedTenants() {
+        try {
+            var tenants = redisTemplate.opsForSet().members(TENANT_SET_KEY);
+            return tenants != null ? tenants : Set.of();
+        } catch (Exception e) {
+            log.debug("Failed to load tracked analytics tenants: {}", e.getMessage());
+            return Set.of();
+        }
+    }
+
+    private String dailyViewsKey(String tenantId, LocalDate date) {
+        return VIEWS_DAILY_PREFIX + tenantId + ":" + date.format(DATE_FORMATTER);
+    }
+
+    private String totalViewsKey(String tenantId) {
+        return VIEWS_TOTAL_PREFIX + tenantId;
     }
 
     private boolean acquireWriteBehindLock() {

@@ -11,6 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.data.redis.core.ZSetOperations.TypedTuple;
 
@@ -24,6 +25,7 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class AnalyticsPersistenceServiceTest {
+  private static final String TENANT_ID = "tenant-1";
 
   @Mock
   private AnalyticsDynamoDbRepository dynamoDbRepository;
@@ -33,6 +35,9 @@ class AnalyticsPersistenceServiceTest {
 
   @Mock
   private StringRedisTemplate redisTemplate;
+
+  @Mock
+  private SetOperations<String, String> setOperations;
 
   @Mock
   private ZSetOperations<String, String> zSetOperations;
@@ -84,6 +89,8 @@ class AnalyticsPersistenceServiceTest {
     void shouldSnapshotYesterdaysData() {
       when(analyticsProperties.isEnabled()).thenReturn(true);
       when(persistenceConfig.isEnabled()).thenReturn(true);
+      when(redisTemplate.opsForSet()).thenReturn(setOperations);
+      when(setOperations.members("analytics:tenants")).thenReturn(Set.of(TENANT_ID));
       when(redisTemplate.opsForZSet()).thenReturn(zSetOperations);
       // Return empty set so it exits early without needing retention days
       when(zSetOperations.rangeWithScores(anyString(), anyLong(), anyLong())).thenReturn(Set.of());
@@ -105,7 +112,7 @@ class AnalyticsPersistenceServiceTest {
       when(redisTemplate.opsForZSet()).thenReturn(zSetOperations);
       when(zSetOperations.rangeWithScores(anyString(), anyLong(), anyLong())).thenReturn(null);
 
-      service.snapshotDayToDb(date);
+      service.snapshotDayToDb(TENANT_ID, date);
 
       verifyNoInteractions(dynamoDbRepository);
     }
@@ -117,7 +124,7 @@ class AnalyticsPersistenceServiceTest {
       when(redisTemplate.opsForZSet()).thenReturn(zSetOperations);
       when(zSetOperations.rangeWithScores(anyString(), anyLong(), anyLong())).thenReturn(Set.of());
 
-      service.snapshotDayToDb(date);
+      service.snapshotDayToDb(TENANT_ID, date);
 
       verifyNoInteractions(dynamoDbRepository);
     }
@@ -133,9 +140,9 @@ class AnalyticsPersistenceServiceTest {
           createTypedTuple("media-2", 50.0));
       when(zSetOperations.rangeWithScores(anyString(), anyLong(), anyLong())).thenReturn(entries);
 
-      service.snapshotDayToDb(date);
+      service.snapshotDayToDb(TENANT_ID, date);
 
-      verify(dynamoDbRepository).saveDailySnapshot(eq(date), argThat(map ->
+      verify(dynamoDbRepository).saveDailySnapshot(eq(TENANT_ID), eq(date), argThat(map ->
           map.size() == 2 &&
           map.get("media-1") == 100L &&
           map.get("media-2") == 50L));
@@ -152,9 +159,9 @@ class AnalyticsPersistenceServiceTest {
           createTypedTuple("media-1", 50.0));
       when(zSetOperations.rangeWithScores(anyString(), anyLong(), anyLong())).thenReturn(entries);
 
-      service.snapshotDayToDb(date);
+      service.snapshotDayToDb(TENANT_ID, date);
 
-      verify(dynamoDbRepository).saveDailySnapshot(eq(date), argThat(map ->
+      verify(dynamoDbRepository).saveDailySnapshot(eq(TENANT_ID), eq(date), argThat(map ->
           map.size() == 1 && map.containsKey("media-1")));
     }
 
@@ -169,9 +176,9 @@ class AnalyticsPersistenceServiceTest {
           createTypedTuple("media-2", 50.0));
       when(zSetOperations.rangeWithScores(anyString(), anyLong(), anyLong())).thenReturn(entries);
 
-      service.snapshotDayToDb(date);
+      service.snapshotDayToDb(TENANT_ID, date);
 
-      verify(dynamoDbRepository).saveDailySnapshot(eq(date), argThat(map ->
+      verify(dynamoDbRepository).saveDailySnapshot(eq(TENANT_ID), eq(date), argThat(map ->
           map.size() == 1 && map.containsKey("media-2")));
     }
   }
@@ -186,12 +193,12 @@ class AnalyticsPersistenceServiceTest {
       String yearMonth = "2024-01";
 
       Map<String, Long> aggregatedData = Map.of("media-1", 10L, "media-2", 5L);
-      when(dynamoDbRepository.aggregateMonthFromDaily(yearMonth)).thenReturn(aggregatedData);
+      when(dynamoDbRepository.aggregateMonthFromDaily(TENANT_ID, yearMonth)).thenReturn(aggregatedData);
 
-      var result = service.snapshotMonthToDb(yearMonth);
+      var result = service.snapshotMonthToDb(TENANT_ID, yearMonth);
 
-      verify(dynamoDbRepository).aggregateMonthFromDaily(yearMonth);
-      verify(dynamoDbRepository).saveMonthlySnapshot(yearMonth, aggregatedData);
+      verify(dynamoDbRepository).aggregateMonthFromDaily(TENANT_ID, yearMonth);
+      verify(dynamoDbRepository).saveMonthlySnapshot(TENANT_ID, yearMonth, aggregatedData);
       assertThat(result).isNotEmpty();
       assertThat(result).containsEntry("media-1", 10L);
       assertThat(result).containsEntry("media-2", 5L);
@@ -202,12 +209,12 @@ class AnalyticsPersistenceServiceTest {
     void shouldSkipIfNoDataForMonth() {
       String yearMonth = "2024-01";
 
-      when(dynamoDbRepository.aggregateMonthFromDaily(yearMonth)).thenReturn(Map.of());
+      when(dynamoDbRepository.aggregateMonthFromDaily(TENANT_ID, yearMonth)).thenReturn(Map.of());
 
-      var result = service.snapshotMonthToDb(yearMonth);
+      var result = service.snapshotMonthToDb(TENANT_ID, yearMonth);
 
-      verify(dynamoDbRepository).aggregateMonthFromDaily(yearMonth);
-      verify(dynamoDbRepository, never()).saveMonthlySnapshot(anyString(), any());
+      verify(dynamoDbRepository).aggregateMonthFromDaily(TENANT_ID, yearMonth);
+      verify(dynamoDbRepository, never()).saveMonthlySnapshot(anyString(), anyString(), any());
       assertThat(result).isEmpty();
     }
   }
@@ -224,14 +231,14 @@ class AnalyticsPersistenceServiceTest {
       when(persistenceConfig.getDailyRetentionDays()).thenReturn(90);
 
       Map<String, Long> viewCounts = Map.of("media-1", 100L, "media-2", 50L);
-      when(dynamoDbRepository.queryAnalytics("DAILY", "2024-01-15")).thenReturn(viewCounts);
+      when(dynamoDbRepository.queryAnalytics(TENANT_ID, "DAILY", "2024-01-15")).thenReturn(viewCounts);
 
-      service.restoreFromDb(date);
+      service.restoreFromDb(TENANT_ID, date);
 
-      verify(zSetOperations).add(contains("views:daily:2024-01-15"), eq("media-1"), eq(100.0));
-      verify(zSetOperations).add(contains("views:daily:2024-01-15"), eq("media-2"), eq(50.0));
-      verify(zSetOperations).incrementScore(eq("views:total"), eq("media-1"), eq(100.0));
-      verify(zSetOperations).incrementScore(eq("views:total"), eq("media-2"), eq(50.0));
+      verify(zSetOperations).add(contains("views:daily:" + TENANT_ID + ":2024-01-15"), eq("media-1"), eq(100.0));
+      verify(zSetOperations).add(contains("views:daily:" + TENANT_ID + ":2024-01-15"), eq("media-2"), eq(50.0));
+      verify(zSetOperations).incrementScore(eq("views:total:" + TENANT_ID), eq("media-1"), eq(100.0));
+      verify(zSetOperations).incrementScore(eq("views:total:" + TENANT_ID), eq("media-2"), eq(50.0));
     }
 
     @Test
@@ -239,9 +246,9 @@ class AnalyticsPersistenceServiceTest {
     void shouldSkipIfNoDataInDynamoDb() {
       LocalDate date = LocalDate.of(2024, 1, 15);
 
-      when(dynamoDbRepository.queryAnalytics("DAILY", "2024-01-15")).thenReturn(Map.of());
+      when(dynamoDbRepository.queryAnalytics(TENANT_ID, "DAILY", "2024-01-15")).thenReturn(Map.of());
 
-      service.restoreFromDb(date);
+      service.restoreFromDb(TENANT_ID, date);
 
       verifyNoInteractions(redisTemplate);
     }
@@ -254,11 +261,11 @@ class AnalyticsPersistenceServiceTest {
       when(persistenceConfig.getDailyRetentionDays()).thenReturn(90);
 
       Map<String, Long> viewCounts = Map.of("media-1", 100L);
-      when(dynamoDbRepository.queryAnalytics("DAILY", "2024-01-15")).thenReturn(viewCounts);
+      when(dynamoDbRepository.queryAnalytics(TENANT_ID, "DAILY", "2024-01-15")).thenReturn(viewCounts);
 
-      service.restoreFromDb(date);
+      service.restoreFromDb(TENANT_ID, date);
 
-      verify(redisTemplate).expire(contains("views:daily:2024-01-15"), eq(90L), any());
+      verify(redisTemplate).expire(contains("views:daily:" + TENANT_ID + ":2024-01-15"), eq(90L), any());
     }
   }
 
@@ -274,9 +281,9 @@ class AnalyticsPersistenceServiceTest {
       unsortedData.put("media-1", 50L);
       unsortedData.put("media-2", 100L);
       unsortedData.put("media-3", 75L);
-      when(dynamoDbRepository.queryAnalytics("DAILY", "2024-01-15")).thenReturn(unsortedData);
+      when(dynamoDbRepository.queryAnalytics(TENANT_ID, "DAILY", "2024-01-15")).thenReturn(unsortedData);
 
-      var result = service.getHistoricalAnalytics("DAILY", "2024-01-15", 10);
+      var result = service.getHistoricalAnalytics(TENANT_ID, "DAILY", "2024-01-15", 10);
 
       assertThat(result).hasSize(3);
       // Should be sorted descending: media-2 (100), media-3 (75), media-1 (50)
@@ -294,9 +301,9 @@ class AnalyticsPersistenceServiceTest {
       unsortedData.put("media-1", 50L);
       unsortedData.put("media-2", 100L);
       unsortedData.put("media-3", 75L);
-      when(dynamoDbRepository.queryAnalytics("DAILY", "2024-01-15")).thenReturn(unsortedData);
+      when(dynamoDbRepository.queryAnalytics(TENANT_ID, "DAILY", "2024-01-15")).thenReturn(unsortedData);
 
-      var result = service.getHistoricalAnalytics("DAILY", "2024-01-15", 2);
+      var result = service.getHistoricalAnalytics(TENANT_ID, "DAILY", "2024-01-15", 2);
 
       assertThat(result).hasSize(2);
       var keys = new ArrayList<>(result.keySet());
@@ -306,9 +313,9 @@ class AnalyticsPersistenceServiceTest {
     @Test
     @DisplayName("should return empty map when no data")
     void shouldReturnEmptyMapWhenNoData() {
-      when(dynamoDbRepository.queryAnalytics("DAILY", "2024-01-15")).thenReturn(Map.of());
+      when(dynamoDbRepository.queryAnalytics(TENANT_ID, "DAILY", "2024-01-15")).thenReturn(Map.of());
 
-      var result = service.getHistoricalAnalytics("DAILY", "2024-01-15", 10);
+      var result = service.getHistoricalAnalytics(TENANT_ID, "DAILY", "2024-01-15", 10);
 
       assertThat(result).isEmpty();
     }
@@ -316,11 +323,11 @@ class AnalyticsPersistenceServiceTest {
     @Test
     @DisplayName("should query correct period and date key")
     void shouldQueryCorrectPeriodAndDateKey() {
-      when(dynamoDbRepository.queryAnalytics("MONTHLY", "2024-01")).thenReturn(Map.of());
+      when(dynamoDbRepository.queryAnalytics(TENANT_ID, "MONTHLY", "2024-01")).thenReturn(Map.of());
 
-      service.getHistoricalAnalytics("MONTHLY", "2024-01", 10);
+      service.getHistoricalAnalytics(TENANT_ID, "MONTHLY", "2024-01", 10);
 
-      verify(dynamoDbRepository).queryAnalytics("MONTHLY", "2024-01");
+      verify(dynamoDbRepository).queryAnalytics(TENANT_ID, "MONTHLY", "2024-01");
     }
   }
 
@@ -333,9 +340,9 @@ class AnalyticsPersistenceServiceTest {
     void shouldDelegateToArchiveService() {
       Map<String, Long> data = Map.of("media-1", 100L, "media-2", 50L);
 
-      service.archiveToS3("2024-01", data);
+      service.archiveToS3(TENANT_ID, "2024-01", data);
 
-      verify(s3ArchiveService).archive("2024-01", data);
+      verify(s3ArchiveService).archive(TENANT_ID, "2024-01", data);
     }
   }
 
@@ -351,7 +358,7 @@ class AnalyticsPersistenceServiceTest {
       service.archiveMonthlyAnalyticsToS3();
 
       verifyNoInteractions(dynamoDbRepository);
-      verify(s3ArchiveService, never()).archive(anyString(), any());
+      verify(s3ArchiveService, never()).archive(anyString(), anyString(), any());
     }
 
     @Test
@@ -359,13 +366,15 @@ class AnalyticsPersistenceServiceTest {
     void shouldArchiveWhenEnabledAndDataExists() {
       when(s3ArchiveService.isEnabled()).thenReturn(true);
       Map<String, Long> monthlyData = Map.of("media-1", 100L);
-      when(dynamoDbRepository.aggregateMonthFromDaily(anyString())).thenReturn(monthlyData);
+      when(redisTemplate.opsForSet()).thenReturn(setOperations);
+      when(setOperations.members("analytics:tenants")).thenReturn(Set.of(TENANT_ID));
+      when(dynamoDbRepository.aggregateMonthFromDaily(eq(TENANT_ID), anyString())).thenReturn(monthlyData);
 
       service.archiveMonthlyAnalyticsToS3();
 
-      verify(dynamoDbRepository).aggregateMonthFromDaily(anyString());
-      verify(dynamoDbRepository).saveMonthlySnapshot(anyString(), eq(monthlyData));
-      verify(s3ArchiveService).archive(anyString(), eq(monthlyData));
+      verify(dynamoDbRepository).aggregateMonthFromDaily(eq(TENANT_ID), anyString());
+      verify(dynamoDbRepository).saveMonthlySnapshot(eq(TENANT_ID), anyString(), eq(monthlyData));
+      verify(s3ArchiveService).archive(eq(TENANT_ID), anyString(), eq(monthlyData));
     }
   }
 

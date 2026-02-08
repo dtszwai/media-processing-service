@@ -31,6 +31,21 @@ public class AuthorizationService {
   }
 
   /**
+   * Verify the current user is authenticated.
+   * When enforcement is disabled, this is a no-op.
+   *
+   * @throws AccessDeniedException if the current user is not authenticated
+   */
+  public void requireAuthenticated() {
+    if (!authProperties.getEnforcement().isEnabled()) {
+      return;
+    }
+    if (!TenantContext.isAuthenticated()) {
+      throw new AccessDeniedException("Authentication required");
+    }
+  }
+
+  /**
    * Verify the current user has ADMIN role.
    * When enforcement is disabled, this is a no-op.
    *

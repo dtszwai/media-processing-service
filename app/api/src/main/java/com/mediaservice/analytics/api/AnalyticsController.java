@@ -2,6 +2,8 @@ package com.mediaservice.analytics.api;
 
 import com.mediaservice.analytics.api.dto.*;
 import com.mediaservice.analytics.application.AnalyticsService;
+import com.mediaservice.shared.auth.AuthorizationService;
+import com.mediaservice.shared.auth.TenantContext;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -29,6 +31,7 @@ import java.util.List;
 public class AnalyticsController {
 
   private final AnalyticsService analyticsService;
+  private final AuthorizationService authorizationService;
 
   @Operation(summary = "Get top viewed media", description = "Returns media items ranked by view count for the specified time period")
   @ApiResponses({ @ApiResponse(responseCode = "200", description = "Top media list") })
@@ -36,8 +39,10 @@ public class AnalyticsController {
   public ResponseEntity<List<EntityViewCount>> getTopMedia(
       @Parameter(description = "Time period for the query") @RequestParam(defaultValue = "TODAY") Period period,
       @Parameter(description = "Maximum number of results to return") @RequestParam(defaultValue = "10") int limit) {
+    authorizationService.requireAuthenticated();
+    String tenantId = TenantContext.getTenantId();
     log.debug("Getting top media for period: {}, limit: {}", period, limit);
-    var topMedia = analyticsService.getTopMedia(period, Math.min(limit, 100));
+    var topMedia = analyticsService.getTopMedia(tenantId, period, Math.min(limit, 100));
     return ResponseEntity.ok(topMedia);
   }
 
@@ -45,8 +50,10 @@ public class AnalyticsController {
   @ApiResponses({ @ApiResponse(responseCode = "200", description = "View statistics") })
   @GetMapping("/media/{mediaId}/views")
   public ResponseEntity<ViewStats> getMediaViews(@Parameter(description = "Media ID") @PathVariable String mediaId) {
+    authorizationService.requireAuthenticated();
+    String tenantId = TenantContext.getTenantId();
     log.debug("Getting view stats for mediaId: {}", mediaId);
-    var stats = analyticsService.getMediaViews(mediaId);
+    var stats = analyticsService.getMediaViews(tenantId, mediaId);
     return ResponseEntity.ok(stats);
   }
 
@@ -55,8 +62,10 @@ public class AnalyticsController {
   @GetMapping("/formats")
   public ResponseEntity<FormatUsageStats> getFormatUsage(
       @Parameter(description = "Time period for the query") @RequestParam(defaultValue = "TODAY") Period period) {
+    authorizationService.requireAuthenticated();
+    String tenantId = TenantContext.getTenantId();
     log.debug("Getting format usage for period: {}", period);
-    var stats = analyticsService.getFormatUsage(period);
+    var stats = analyticsService.getFormatUsage(tenantId, period);
     return ResponseEntity.ok(stats);
   }
 
@@ -65,8 +74,10 @@ public class AnalyticsController {
   @GetMapping("/downloads")
   public ResponseEntity<DownloadStats> getDownloadStats(
       @Parameter(description = "Time period for the query") @RequestParam(defaultValue = "TODAY") Period period) {
+    authorizationService.requireAuthenticated();
+    String tenantId = TenantContext.getTenantId();
     log.debug("Getting download stats for period: {}", period);
-    var stats = analyticsService.getDownloadStats(period);
+    var stats = analyticsService.getDownloadStats(tenantId, period);
     return ResponseEntity.ok(stats);
   }
 
@@ -74,8 +85,10 @@ public class AnalyticsController {
   @ApiResponses({ @ApiResponse(responseCode = "200", description = "Analytics summary") })
   @GetMapping("/summary")
   public ResponseEntity<AnalyticsSummary> getSummary() {
+    authorizationService.requireAuthenticated();
+    String tenantId = TenantContext.getTenantId();
     log.debug("Getting analytics summary");
-    var summary = analyticsService.getSummary();
+    var summary = analyticsService.getSummary(tenantId);
     return ResponseEntity.ok(summary);
   }
 }

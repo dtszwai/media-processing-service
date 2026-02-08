@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getDownloadUrl } from "../../media/services";
+  import { getDownloadUrl, getPreviewUrl } from "../../media/services";
   import { createMediaViewsQuery } from "../queries";
   import { currentMediaId } from "../../media/stores";
   import type { EntityViewCount } from "../../../shared/types";
@@ -10,9 +10,15 @@
   }
 
   let { media, onclose }: Props = $props();
+  let previewError = $state(false);
 
   // Query for detailed view stats when modal opens (skip for deleted media)
   const viewsQuery = $derived(media && !media.deleted ? createMediaViewsQuery(media.entityId) : null);
+
+  $effect(() => {
+    media;
+    previewError = false;
+  });
 
   function handleBackdropClick(e: MouseEvent) {
     if (e.target === e.currentTarget) {
@@ -44,6 +50,10 @@
     if (media && !media.deleted) {
       window.open(getDownloadUrl(media.entityId), "_blank");
     }
+  }
+
+  function handlePreviewError() {
+    previewError = true;
   }
 
   function formatNumber(num: number): string {
@@ -147,11 +157,26 @@
           </div>
         {:else}
           <div class="bg-gray-100 rounded-lg overflow-hidden mb-6">
-            <img
-              src="{getDownloadUrl(media.entityId)}?t={Date.now()}"
-              alt={media.name}
-              class="w-full h-auto max-h-80 object-contain"
-            />
+            {#if previewError}
+              <div class="flex flex-col items-center justify-center py-12 text-gray-400">
+                <svg class="w-12 h-12 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.5"
+                    d="M3 7l9-4 9 4-9 4-9-4zm0 0v10l9 4 9-4V7"
+                  ></path>
+                </svg>
+                <p class="text-sm">Preview unavailable</p>
+              </div>
+            {:else}
+              <img
+                src="{getPreviewUrl(media.entityId)}?t={Date.now()}"
+                alt={media.name}
+                class="w-full h-auto max-h-80 object-contain"
+                onerror={handlePreviewError}
+              />
+            {/if}
           </div>
         {/if}
 

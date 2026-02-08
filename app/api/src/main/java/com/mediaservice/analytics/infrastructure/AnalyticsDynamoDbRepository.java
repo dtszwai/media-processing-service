@@ -17,7 +17,7 @@ import java.util.*;
  *
  * <p>DynamoDB Schema for Analytics:
  * <ul>
- *   <li>PK: {@code ANALYTICS#VIEWS#{period}#{date}}</li>
+ *   <li>PK: {@code ANALYTICS#TENANT#{tenantId}#VIEWS#{period}#{date}}</li>
  *   <li>SK: {@code {mediaId}}</li>
  *   <li>viewCount: Number of views</li>
  *   <li>snapshotAt: Timestamp of snapshot</li>
@@ -29,7 +29,7 @@ import java.util.*;
 public class AnalyticsDynamoDbRepository {
 
     private static final String TABLE_NAME = "media";
-    private static final String ANALYTICS_PK_PREFIX = "ANALYTICS#VIEWS#";
+    private static final String ANALYTICS_PK_PREFIX = "ANALYTICS#TENANT#";
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
     private static final int BATCH_WRITE_LIMIT = 25;
     private static final int MAX_RETRIES = 3;
@@ -48,17 +48,17 @@ public class AnalyticsDynamoDbRepository {
      * @param date       the date of the snapshot
      * @param viewCounts map of mediaId to view count
      */
-    public void saveDailySnapshot(LocalDate date, Map<String, Long> viewCounts) {
+    public void saveDailySnapshot(String tenantId, LocalDate date, Map<String, Long> viewCounts) {
         if (viewCounts.isEmpty()) {
             log.debug("No analytics data to save for {}", date);
             return;
         }
 
-        String dynamoPk = buildPk("DAILY", date.format(DATE_FORMATTER));
+        String dynamoPk = buildPk(tenantId, "DAILY", date.format(DATE_FORMATTER));
         Long ttlEpoch = calculateTtl(date, analyticsProperties.getPersistence().getDailyRetentionDays());
 
         batchWriteAnalytics(dynamoPk, viewCounts, ttlEpoch);
-        log.info("Saved {} daily analytics entries for {}", viewCounts.size(), date);
+        log.info("Saved {} daily analytics entries for tenant {} on {}", viewCounts.size(), tenantId, date);
     }
 
     /**
@@ -67,18 +67,18 @@ public class AnalyticsDynamoDbRepository {
      * @param yearMonth  the year-month (e.g., "2024-01")
      * @param viewCounts map of mediaId to view count
      */
-    public void saveMonthlySnapshot(String yearMonth, Map<String, Long> viewCounts) {
+    public void saveMonthlySnapshot(String tenantId, String yearMonth, Map<String, Long> viewCounts) {
         if (viewCounts.isEmpty()) {
             log.debug("No monthly analytics data to save for {}", yearMonth);
             return;
         }
 
-        String dynamoPk = buildPk("MONTHLY", yearMonth);
+        String dynamoPk = buildPk(tenantId, "MONTHLY", yearMonth);
         LocalDate monthStart = LocalDate.parse(yearMonth + "-01");
         Long ttlEpoch = calculateTtl(monthStart, analyticsProperties.getPersistence().getMonthlyRetentionDays());
 
         batchWriteAnalytics(dynamoPk, viewCounts, ttlEpoch);
-        log.info("Saved {} monthly analytics entries for {}", viewCounts.size(), yearMonth);
+        log.info("Saved {} monthly analytics entries for tenant {} on {}", viewCounts.size(), tenantId, yearMonth);
     }
 
     /**
@@ -88,8 +88,8 @@ public class AnalyticsDynamoDbRepository {
      * @param dateKey the date key
      * @return map of mediaId to view count
      */
-    public Map<String, Long> queryAnalytics(String period, String dateKey) {
-        String dynamoPk = buildPk(period, dateKey);
+    public Map<String, Long> queryAnalytics(String tenantId, String period, String dateKey) {
+        String dynamoPk = buildPk(tenantId, period, dateKey);
         var results = new LinkedHashMap<String, Long>();
 
         try {
@@ -119,12 +119,12 @@ public class AnalyticsDynamoDbRepository {
      * @param limit     maximum results
      * @return map of mediaId to aggregated view count, sorted descending
      */
-    public Map<String, Long> aggregateDailyRange(LocalDate startDate, LocalDate endDate, int limit) {
+    public Map<String, Long> aggregateDailyRange(String tenantId, LocalDate startDate, LocalDate endDate, int limit) {
         var aggregated = new HashMap<String, Long>();
 
         try {
             for (var date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
-                var dailyData = queryAnalytics("DAILY", date.format(DATE_FORMATTER));
+                var dailyData = queryAnalytics(tenantId, "DAILY", date.format(DATE_FORMATTER));
                 for (var entry : dailyData.entrySet()) {
                     aggregated.merge(entry.getKey(), entry.getValue(), Long::sum);
                 }
@@ -143,13 +143,13 @@ public class AnalyticsDynamoDbRepository {
      * @param yearMonth the year-month to aggregate
      * @return map of mediaId to aggregated view count
      */
-    public Map<String, Long> aggregateMonthFromDaily(String yearMonth) {
+    public Map<String, Long> aggregateMonthFromDaily(String tenantId, String yearMonth) {
         var aggregated = new HashMap<String, Long>();
         var monthStart = LocalDate.parse(yearMonth + "-01");
         var monthEnd = monthStart.plusMonths(1).minusDays(1);
 
         for (var date = monthStart; !date.isAfter(monthEnd); date = date.plusDays(1)) {
-            var dailyData = queryAnalytics("DAILY", date.format(DATE_FORMATTER));
+            var dailyData = queryAnalytics(tenantId, "DAILY", date.format(DATE_FORMATTER));
             for (var entry : dailyData.entrySet()) {
                 aggregated.merge(entry.getKey(), entry.getValue(), Long::sum);
             }
@@ -158,8 +158,8 @@ public class AnalyticsDynamoDbRepository {
         return aggregated;
     }
 
-    private String buildPk(String period, String dateKey) {
-        return ANALYTICS_PK_PREFIX + period + "#" + dateKey;
+    private String buildPk(String tenantId, String period, String dateKey) {
+        return ANALYTICS_PK_PREFIX + tenantId + "#VIEWS#" + period + "#" + dateKey;
     }
 
     private Long calculateTtl(LocalDate baseDate, int retentionDays) {

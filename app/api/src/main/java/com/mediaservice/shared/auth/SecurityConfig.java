@@ -1,6 +1,7 @@
 package com.mediaservice.shared.auth;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -38,6 +39,18 @@ public class SecurityConfig {
     }
 
     return http.build();
+  }
+
+  /**
+   * Disable servlet container auto-registration for AuthenticationFilter.
+   * We only want it to run inside Spring Security's filter chain.
+   */
+  @Bean
+  public FilterRegistrationBean<AuthenticationFilter> authenticationFilterRegistration(
+      AuthenticationFilter filter) {
+    FilterRegistrationBean<AuthenticationFilter> registration = new FilterRegistrationBean<>(filter);
+    registration.setEnabled(false);
+    return registration;
   }
 
   @Bean

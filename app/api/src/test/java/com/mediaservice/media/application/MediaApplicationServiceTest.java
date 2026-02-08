@@ -184,7 +184,7 @@ class MediaApplicationServiceTest {
     @DisplayName("should return URL when media is complete")
     void shouldReturnUrlWhenComplete() {
       var media = createMedia(MediaStatus.COMPLETE);
-      when(cacheOrchestrator.getMedia("media-123")).thenReturn(Optional.of(media));
+      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
       when(cacheOrchestrator.getPresignedUrl(eq("media-123"), eq("jpeg"), any()))
           .thenReturn(Optional.of("https://s3.example.com/signed-url"));
       var result = mediaService.getDownloadUrl("media-123");
@@ -195,7 +195,7 @@ class MediaApplicationServiceTest {
     @DisplayName("should return empty when media is not complete")
     void shouldReturnEmptyWhenNotComplete() {
       var media = createMedia(MediaStatus.PROCESSING);
-      when(cacheOrchestrator.getMedia("media-123")).thenReturn(Optional.of(media));
+      when(dynamoDbService.getMedia("media-123")).thenReturn(Optional.of(media));
       var result = mediaService.getDownloadUrl("media-123");
       assertThat(result).isEmpty();
       verify(cacheOrchestrator, never()).getPresignedUrl(anyString(), anyString(), any());

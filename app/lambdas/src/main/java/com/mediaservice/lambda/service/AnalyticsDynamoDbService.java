@@ -22,8 +22,10 @@ public class AnalyticsDynamoDbService {
   private final String tableName;
 
   // Analytics PK prefixes
-  private static final String ANALYTICS_PK_PREFIX = "ANALYTICS#VIEWS#";
+  private static final String ANALYTICS_PK_PREFIX = "ANALYTICS#TENANT#";
   private static final String ROLLUP_LOCK_PK = "ANALYTICS#ROLLUP#LOCK";
+  private static final String TENANT_PK_PREFIX = "TENANT#";
+  private static final String TENANT_METADATA_SK = "METADATA";
 
   public AnalyticsDynamoDbService() {
     this.client = AwsClientFactory.getDynamoDbClient();
@@ -78,12 +80,12 @@ public class AnalyticsDynamoDbService {
    *                  "2024")
    * @param data      Map of mediaId to view count
    */
-  public void persistAnalytics(String period, String periodKey, Map<String, Long> data) {
+  public void persistAnalytics(String tenantId, String period, String periodKey, Map<String, Long> data) {
     if (data == null || data.isEmpty()) {
       logger.debug("No analytics data to persist for {}/{}", period, periodKey);
       return;
     }
-    String pk = ANALYTICS_PK_PREFIX + period + "#" + periodKey;
+    String pk = buildPk(tenantId, period, periodKey);
     var writeRequests = new ArrayList<WriteRequest>();
     int totalItems = 0;
     for (var entry : data.entrySet()) {
@@ -114,7 +116,7 @@ public class AnalyticsDynamoDbService {
       totalItems += writeRequests.size();
     }
 
-    logger.info("Persisted {} analytics entries for {}/{}", totalItems, period, periodKey);
+    logger.info("Persisted {} analytics entries for tenant {} {}/{}", totalItems, tenantId, period, periodKey);
   }
 
   /**
@@ -124,8 +126,8 @@ public class AnalyticsDynamoDbService {
    * @param periodKey Period key (e.g., "2024-01-15")
    * @return Map of mediaId to view count
    */
-  public Map<String, Long> queryAnalytics(String period, String periodKey) {
-    String pk = ANALYTICS_PK_PREFIX + period + "#" + periodKey;
+  public Map<String, Long> queryAnalytics(String tenantId, String period, String periodKey) {
+    String pk = buildPk(tenantId, period, periodKey);
     var results = new HashMap<String, Long>();
 
     try {
@@ -172,19 +174,55 @@ public class AnalyticsDynamoDbService {
    *                   "2024-01-02", ...])
    * @return Aggregated map of mediaId to total view count
    */
-  public Map<String, Long> aggregateAnalytics(String period, List<String> periodKeys) {
+  public Map<String, Long> aggregateAnalytics(String tenantId, String period, List<String> periodKeys) {
     var aggregated = new HashMap<String, Long>();
 
     for (String periodKey : periodKeys) {
-      var periodData = queryAnalytics(period, periodKey);
+      var periodData = queryAnalytics(tenantId, period, periodKey);
       for (var entry : periodData.entrySet()) {
         aggregated.merge(entry.getKey(), entry.getValue(), Long::sum);
       }
     }
 
-    logger.debug("Aggregated {} unique media items from {} periods",
-        aggregated.size(), periodKeys.size());
+    logger.debug("Aggregated {} unique media items from {} periods for tenant {}",
+        aggregated.size(), periodKeys.size(), tenantId);
     return aggregated;
+  }
+
+  /**
+   * List all tenant IDs from the DynamoDB table.
+   * Uses a scan with a prefix filter on PK to find tenant metadata records.
+   */
+  public Set<String> listTenantIds() {
+    var tenants = new HashSet<String>();
+    Map<String, AttributeValue> lastEvaluatedKey = null;
+
+    try {
+      do {
+        var request = ScanRequest.builder()
+            .tableName(tableName)
+            .projectionExpression("PK, SK")
+            .filterExpression("begins_with(PK, :pkPrefix) AND SK = :sk")
+            .expressionAttributeValues(Map.of(
+                ":pkPrefix", s(TENANT_PK_PREFIX),
+                ":sk", s(TENANT_METADATA_SK)))
+            .exclusiveStartKey(lastEvaluatedKey)
+            .build();
+
+        var response = client.scan(request);
+        for (var item : response.items()) {
+          var pk = item.get("PK");
+          if (pk != null && pk.s() != null) {
+            tenants.add(pk.s().replace(TENANT_PK_PREFIX, ""));
+          }
+        }
+        lastEvaluatedKey = response.lastEvaluatedKey();
+      } while (lastEvaluatedKey != null && !lastEvaluatedKey.isEmpty());
+    } catch (Exception e) {
+      logger.error("Failed to list tenants for analytics rollup: {}", e.getMessage());
+    }
+
+    return tenants;
   }
 
   private void executeBatchWrite(List<WriteRequest> writeRequests) {
@@ -233,5 +271,9 @@ public class AnalyticsDynamoDbService {
 
   private AttributeValue n(long value) {
     return AttributeValue.builder().n(String.valueOf(value)).build();
+  }
+
+  private String buildPk(String tenantId, String period, String periodKey) {
+    return ANALYTICS_PK_PREFIX + tenantId + "#VIEWS#" + period + "#" + periodKey;
   }
 }

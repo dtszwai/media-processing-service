@@ -44,6 +44,7 @@ import java.util.concurrent.TimeUnit;
 @Service
 @Slf4j
 public class HotkeyDetectionService {
+  private static final String ANALYTICS_TENANTS_SET = "analytics:tenants";
   private final StringRedisTemplate stringRedisTemplate;
   private final MultiLevelCacheProperties cacheProperties;
   private final ObjectProvider<AnalyticsService> analyticsServiceProvider;
@@ -111,13 +112,19 @@ public class HotkeyDetectionService {
     var warmUpConfig = config.getWarmUp();
     String knownHotKeysKey = config.getKnownHotKeysKey();
     try {
-      // Get top items from today and all-time
-      var todayTop = analyticsService.getTopMedia(Period.TODAY, warmUpConfig.getTopCount());
-      var allTimeTop = analyticsService.getTopMedia(Period.ALL_TIME, warmUpConfig.getTopCount());
-      // Collect all media IDs
+      var tenants = stringRedisTemplate.opsForSet().members(ANALYTICS_TENANTS_SET);
+      if (tenants == null || tenants.isEmpty()) {
+        log.debug("No tracked tenants found for analytics warm-up");
+        return;
+      }
+      // Get top items from today and all-time for each tenant
       var hotMediaIds = new java.util.HashSet<String>();
-      todayTop.forEach(item -> hotMediaIds.add(item.getEntityId()));
-      allTimeTop.forEach(item -> hotMediaIds.add(item.getEntityId()));
+      for (var tenantId : tenants) {
+        var todayTop = analyticsService.getTopMedia(tenantId, Period.TODAY, warmUpConfig.getTopCount());
+        var allTimeTop = analyticsService.getTopMedia(tenantId, Period.ALL_TIME, warmUpConfig.getTopCount());
+        todayTop.forEach(item -> hotMediaIds.add(item.getEntityId()));
+        allTimeTop.forEach(item -> hotMediaIds.add(item.getEntityId()));
+      }
       if (hotMediaIds.isEmpty()) {
         log.debug("No hot keys found in analytics");
         return;

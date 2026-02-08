@@ -315,13 +315,14 @@ class HotkeyDetectionServiceTest {
     @DisplayName("should load hot keys from analytics on refresh")
     void shouldLoadHotKeysFromAnalyticsOnRefresh() {
       when(analyticsServiceProvider.getIfAvailable()).thenReturn(analyticsService);
-      when(analyticsService.getTopMedia(Period.TODAY, 100)).thenReturn(List.of(
+      when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
+      when(setOperations.members("analytics:tenants")).thenReturn(Set.of("tenant-1"));
+      when(analyticsService.getTopMedia("tenant-1", Period.TODAY, 100)).thenReturn(List.of(
           EntityViewCount.forMedia("media1", "Media 1", 1000L, 1),
           EntityViewCount.forMedia("media2", "Media 2", 500L, 2)));
-      when(analyticsService.getTopMedia(Period.ALL_TIME, 100)).thenReturn(List.of(
+      when(analyticsService.getTopMedia("tenant-1", Period.ALL_TIME, 100)).thenReturn(List.of(
           EntityViewCount.forMedia("media1", "Media 1", 5000L, 1),
           EntityViewCount.forMedia("media3", "Media 3", 3000L, 2)));
-      when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
 
       hotkeyService.refreshKnownHotKeysFromAnalytics();
 
@@ -337,7 +338,7 @@ class HotkeyDetectionServiceTest {
 
       hotkeyService.refreshKnownHotKeysFromAnalytics();
 
-      verify(analyticsService, never()).getTopMedia(any(), anyInt());
+      verify(analyticsService, never()).getTopMedia(anyString(), any(), anyInt());
     }
 
     @Test
@@ -354,20 +355,25 @@ class HotkeyDetectionServiceTest {
     @DisplayName("should handle empty analytics results")
     void shouldHandleEmptyAnalyticsResults() {
       when(analyticsServiceProvider.getIfAvailable()).thenReturn(analyticsService);
-      when(analyticsService.getTopMedia(Period.TODAY, 100)).thenReturn(List.of());
-      when(analyticsService.getTopMedia(Period.ALL_TIME, 100)).thenReturn(List.of());
+      when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
+      when(setOperations.members("analytics:tenants")).thenReturn(Set.of("tenant-1"));
+      when(analyticsService.getTopMedia("tenant-1", Period.TODAY, 100)).thenReturn(List.of());
+      when(analyticsService.getTopMedia("tenant-1", Period.ALL_TIME, 100)).thenReturn(List.of());
 
       hotkeyService.refreshKnownHotKeysFromAnalytics();
 
       // Should not try to add empty set
-      verify(stringRedisTemplate, never()).opsForSet();
+      verify(setOperations, never()).add(anyString(), any(String[].class));
     }
 
     @Test
     @DisplayName("should handle analytics exceptions gracefully")
     void shouldHandleAnalyticsExceptionsGracefully() {
       when(analyticsServiceProvider.getIfAvailable()).thenReturn(analyticsService);
-      when(analyticsService.getTopMedia(any(), anyInt())).thenThrow(new RuntimeException("Analytics error"));
+      when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
+      when(setOperations.members("analytics:tenants")).thenReturn(Set.of("tenant-1"));
+      when(analyticsService.getTopMedia(anyString(), any(), anyInt()))
+          .thenThrow(new RuntimeException("Analytics error"));
 
       // Should not throw
       hotkeyService.refreshKnownHotKeysFromAnalytics();

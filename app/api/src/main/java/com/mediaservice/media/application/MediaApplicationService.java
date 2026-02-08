@@ -218,7 +218,13 @@ public class MediaApplicationService {
    * @throws MediaGoneException if media is deleted
    */
   public Optional<MediaStatus> getActiveMediaStatus(String mediaId) {
-    return getActiveMedia(mediaId).map(Media::getStatus);
+    return mediaRepository.getMedia(mediaId).map(media -> {
+      if (media.getStatus() == MediaStatus.DELETED) {
+        throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
+      }
+      authorizationService.requireMediaAccess(media);
+      return media.getStatus();
+    });
   }
 
   /**
@@ -231,7 +237,7 @@ public class MediaApplicationService {
    * @throws MediaGoneException if media is deleted
    */
   public DownloadResult prepareDownload(String mediaId) {
-    var mediaOpt = getMedia(mediaId);
+    var mediaOpt = mediaRepository.getMedia(mediaId);
     if (mediaOpt.isEmpty()) {
       return new DownloadResult.NotFound();
     }
@@ -246,11 +252,12 @@ public class MediaApplicationService {
       return new DownloadResult.Processing(mediaId);
     }
 
-    return getDownloadUrl(mediaId)
+    return getDownloadUrl(media)
         .map(url -> {
           // Record analytics in application layer
-          analyticsService.recordView(mediaId);
-          analyticsService.recordDownload(mediaId, media.getOutputFormatOrDefault(), media.getWidth());
+          String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
+          analyticsService.recordView(tenantId, mediaId);
+          analyticsService.recordDownload(tenantId, mediaId, media.getOutputFormatOrDefault(), media.getWidth());
           return (DownloadResult) new DownloadResult.Ready(url, media);
         })
         .orElse(new DownloadResult.NotFound());
@@ -265,7 +272,7 @@ public class MediaApplicationService {
    * @return PreviewResult indicating the state and data
    */
   public PreviewResult preparePreview(String mediaId) {
-    var mediaOpt = getMedia(mediaId);
+    var mediaOpt = mediaRepository.getMedia(mediaId);
     if (mediaOpt.isEmpty()) {
       return new PreviewResult.NotFound();
     }
@@ -275,14 +282,17 @@ public class MediaApplicationService {
       return new PreviewResult.NotFound();
     }
 
+    authorizationService.requireMediaAccess(media);
+
     if (media.getStatus() != MediaStatus.COMPLETE) {
       return new PreviewResult.Processing(mediaId);
     }
 
-    return getPreviewUrl(mediaId)
+    return getPreviewUrl(media)
         .map(url -> {
           // Record view analytics in application layer
-          analyticsService.recordView(mediaId);
+          String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
+          analyticsService.recordView(tenantId, mediaId);
           return (PreviewResult) new PreviewResult.Ready(url);
         })
         .orElse(new PreviewResult.NotFound());
@@ -296,7 +306,7 @@ public class MediaApplicationService {
    * @throws MediaGoneException if media is deleted
    */
   public Optional<String> getOriginalUrl(String mediaId) {
-    return getMedia(mediaId)
+    return mediaRepository.getMedia(mediaId)
         .map(media -> {
           if (media.getStatus() == MediaStatus.DELETED) {
             throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
@@ -314,16 +324,9 @@ public class MediaApplicationService {
    * Get presigned download URL with multi-level caching.
    */
   public Optional<String> getDownloadUrl(String mediaId) {
-    return cacheOrchestrator.getMedia(mediaId)
+    return mediaRepository.getMedia(mediaId)
         .filter(media -> media.getStatus() == MediaStatus.COMPLETE)
-        .flatMap(media -> {
-          var format = media.getOutputFormatOrDefault();
-          String tenantId = media.getTenantId() != null ? media.getTenantId() : "default";
-          return cacheOrchestrator.getPresignedUrl(
-              mediaId,
-              format.getFormat(),
-              () -> s3Service.getPresignedUrl(tenantId, mediaId, media.getName(), format));
-        });
+        .flatMap(this::getDownloadUrl);
   }
 
   /**
@@ -331,20 +334,35 @@ public class MediaApplicationService {
    * Returns CloudFront URL if enabled, otherwise falls back to S3 presigned URL.
    */
   public Optional<String> getPreviewUrl(String mediaId) {
-    return cacheOrchestrator.getMedia(mediaId)
+    return mediaRepository.getMedia(mediaId)
         .filter(media -> media.getStatus() == MediaStatus.COMPLETE)
-        .map(media -> {
-          var format = media.getOutputFormatOrDefault();
-          String tenantId = media.getTenantId() != null ? media.getTenantId() : "default";
-          String key = StorageConstants.buildS3Key(tenantId, mediaId, StorageConstants.VARIANT_PREVIEW,
-              format.getExtension());
+        .flatMap(this::getPreviewUrl);
+  }
 
-          if (cloudfrontEnabled && cloudfrontDomain != null && !cloudfrontDomain.isEmpty()) {
-            return "https://" + cloudfrontDomain + "/" + key;
-          }
-          // Fallback to S3 presigned URL if CloudFront not configured
-          return s3Service.getPreviewPresignedUrl(tenantId, mediaId, format).orElse(null);
-        });
+  private Optional<String> getDownloadUrl(Media media) {
+    var format = media.getOutputFormatOrDefault();
+    String tenantId = media.getTenantId() != null ? media.getTenantId() : "default";
+    return cacheOrchestrator.getPresignedUrl(
+        media.getMediaId(),
+        format.getFormat(),
+        () -> s3Service.getPresignedUrl(tenantId, media.getMediaId(), media.getName(), format));
+  }
+
+  private Optional<String> getPreviewUrl(Media media) {
+    return Optional.ofNullable(buildPreviewUrl(media));
+  }
+
+  private String buildPreviewUrl(Media media) {
+    var format = media.getOutputFormatOrDefault();
+    String tenantId = media.getTenantId() != null ? media.getTenantId() : "default";
+    String key = StorageConstants.buildS3Key(tenantId, media.getMediaId(), StorageConstants.VARIANT_PREVIEW,
+        format.getExtension());
+
+    if (cloudfrontEnabled && cloudfrontDomain != null && !cloudfrontDomain.isEmpty()) {
+      return "https://" + cloudfrontDomain + "/" + key;
+    }
+    // Fallback to S3 presigned URL if CloudFront not configured
+    return s3Service.getPreviewPresignedUrl(tenantId, media.getMediaId(), format).orElse(null);
   }
 
   public boolean isMediaProcessing(String mediaId) {

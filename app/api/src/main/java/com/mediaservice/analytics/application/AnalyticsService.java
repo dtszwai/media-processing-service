@@ -34,12 +34,12 @@ import java.util.concurrent.TimeUnit;
  * <p>
  * Redis Key Design:
  * <ul>
- * <li>{@code views:daily:{YYYY-MM-DD}} - Daily view counts (Sorted Set)</li>
- * <li>{@code views:total} - All-time view counts (Sorted Set)</li>
- * <li>{@code media:{mediaId}:views} - Total views per media (String
+ * <li>{@code views:daily:{tenantId}:{YYYY-MM-DD}} - Daily view counts (Sorted Set)</li>
+ * <li>{@code views:total:{tenantId}} - All-time view counts (Sorted Set)</li>
+ * <li>{@code media:views:{tenantId}:{mediaId}} - Total views per media (String
  * counter)</li>
- * <li>{@code analytics:formats:{YYYY-MM-DD}} - Daily format usage (Hash)</li>
- * <li>{@code analytics:downloads:{YYYY-MM-DD}} - Daily download counts
+ * <li>{@code analytics:formats:{tenantId}:{YYYY-MM-DD}} - Daily format usage (Hash)</li>
+ * <li>{@code analytics:downloads:{tenantId}:{YYYY-MM-DD}} - Daily download counts
  * (Hash)</li>
  * </ul>
  *
@@ -56,9 +56,10 @@ public class AnalyticsService {
   private final MediaDynamoDbRepository dynamoDbService;
   private final AnalyticsPersistenceService persistenceService;
 
-  // Redis key prefixes - only daily + total (Roll-Up Pattern)
+  // Redis key prefixes - tenant-scoped (Roll-Up Pattern)
+  private static final String TENANT_SET_KEY = "analytics:tenants";
   private static final String VIEWS_DAILY_PREFIX = "views:daily:";
-  private static final String VIEWS_TOTAL_KEY = "views:total";
+  private static final String VIEWS_TOTAL_PREFIX = "views:total:";
   private static final String MEDIA_VIEWS_PREFIX = "media:views:";
   private static final String FORMAT_USAGE_PREFIX = "analytics:formats:";
   private static final String DOWNLOADS_PREFIX = "analytics:downloads:";
@@ -78,17 +79,24 @@ public class AnalyticsService {
    * Weekly/monthly/yearly are calculated at read-time from DynamoDB snapshots.
    * This reduces write amplification from 5 writes to 2 writes per view.
    *
-   * @param mediaId The media ID that was viewed
+   * @param tenantId The tenant ID that owns the media
+   * @param mediaId  The media ID that was viewed
    */
   @Async
-  public void recordView(String mediaId) {
+  public void recordView(String tenantId, String mediaId) {
     if (!analyticsProperties.isEnabled()) {
       return;
     }
     try {
+      if (tenantId == null || tenantId.isBlank()) {
+        log.warn("Skipping analytics view record: missing tenantId for mediaId {}", mediaId);
+        return;
+      }
+      trackTenant(tenantId);
       LocalDate today = LocalDate.now();
-      String dailyKey = VIEWS_DAILY_PREFIX + today.format(DATE_FORMATTER);
-      String mediaKey = MEDIA_VIEWS_PREFIX + mediaId;
+      String dailyKey = dailyViewsKey(tenantId, today);
+      String totalKey = totalViewsKey(tenantId);
+      String mediaKey = mediaViewsKey(tenantId, mediaId);
 
       // Roll-Up Pattern: Only increment daily bucket + all-time total
       // Weekly/monthly/yearly are aggregated from DynamoDB at read-time
@@ -100,7 +108,7 @@ public class AnalyticsService {
         zSetConn.zIncrBy(dailyKey.getBytes(), 1, mediaId.getBytes());
 
         // 2. All-time total (for quick all-time queries)
-        zSetConn.zIncrBy(VIEWS_TOTAL_KEY.getBytes(), 1, mediaId.getBytes());
+        zSetConn.zIncrBy(totalKey.getBytes(), 1, mediaId.getBytes());
 
         // 3. Per-media counter (for individual media stats)
         stringConn.incr(mediaKey.getBytes());
@@ -109,9 +117,9 @@ public class AnalyticsService {
         connection.keyCommands().expire(dailyKey.getBytes(), TimeUnit.HOURS.toSeconds(DAILY_TTL_HOURS));
         return null;
       });
-      log.debug("Recorded view for mediaId: {}", mediaId);
+      log.debug("Recorded view for tenantId={}, mediaId={}", tenantId, mediaId);
     } catch (Exception e) {
-      log.error("Failed to record view for mediaId {}: {}", mediaId, e.getMessage());
+      log.error("Failed to record view for tenantId={}, mediaId {}: {}", tenantId, mediaId, e.getMessage());
     }
   }
 
@@ -119,20 +127,26 @@ public class AnalyticsService {
    * Record a download event including format information.
    * Uses Redis pipelining to batch all commands into a single network round-trip.
    *
-   * @param mediaId The media ID that was downloaded
-   * @param format  The output format (JPEG, PNG, WebP)
-   * @param width   The resize width
+   * @param tenantId The tenant ID that owns the media
+   * @param mediaId  The media ID that was downloaded
+   * @param format   The output format (JPEG, PNG, WebP)
+   * @param width    The resize width
    */
   @Async
-  public void recordDownload(String mediaId, OutputFormat format, Integer width) {
+  public void recordDownload(String tenantId, String mediaId, OutputFormat format, Integer width) {
     if (!analyticsProperties.isEnabled()) {
       return;
     }
 
     try {
-      String dateKey = LocalDate.now().format(DATE_FORMATTER);
-      String formatKey = FORMAT_USAGE_PREFIX + dateKey;
-      String downloadKey = DOWNLOADS_PREFIX + dateKey;
+      if (tenantId == null || tenantId.isBlank()) {
+        log.warn("Skipping analytics download record: missing tenantId for mediaId {}", mediaId);
+        return;
+      }
+      trackTenant(tenantId);
+      LocalDate today = LocalDate.now();
+      String formatKey = formatUsageKey(tenantId, today);
+      String downloadKey = downloadsKey(tenantId, today);
       String formatName = format != null ? format.getFormat().toUpperCase() : "UNKNOWN";
 
       // Use pipelining to batch all Redis commands into a single round-trip
@@ -154,9 +168,9 @@ public class AnalyticsService {
         return null;
       });
 
-      log.debug("Recorded download for mediaId: {}, format: {}", mediaId, formatName);
+      log.debug("Recorded download for tenantId={}, mediaId: {}, format: {}", tenantId, mediaId, formatName);
     } catch (Exception e) {
-      log.error("Failed to record download for mediaId {}: {}", mediaId, e.getMessage());
+      log.error("Failed to record download for tenantId={}, mediaId {}: {}", tenantId, mediaId, e.getMessage());
     }
   }
 
@@ -166,12 +180,12 @@ public class AnalyticsService {
    * @param mediaId The media ID
    * @return Total view count
    */
-  public long getViewCount(String mediaId) {
+  public long getViewCount(String tenantId, String mediaId) {
     try {
-      var value = redisTemplate.opsForValue().get(MEDIA_VIEWS_PREFIX + mediaId);
+      var value = redisTemplate.opsForValue().get(mediaViewsKey(tenantId, mediaId));
       return value != null ? Long.parseLong(value) : 0;
     } catch (Exception e) {
-      log.error("Failed to get view count for mediaId {}: {}", mediaId, e.getMessage());
+      log.error("Failed to get view count for tenantId={}, mediaId {}: {}", tenantId, mediaId, e.getMessage());
       return 0;
     }
   }
@@ -183,11 +197,11 @@ public class AnalyticsService {
    * @param mediaId The media ID
    * @return View statistics across different time periods
    */
-  public ViewStats getMediaViews(String mediaId) {
+  public ViewStats getMediaViews(String tenantId, String mediaId) {
     var today = LocalDate.now();
 
     // Today's views from Redis (fast)
-    long todayViews = getScoreFromZSet(VIEWS_DAILY_PREFIX + today.format(DATE_FORMATTER), mediaId);
+    long todayViews = getScoreFromZSet(dailyViewsKey(tenantId, today), mediaId);
 
     // Week/Month/Year from DynamoDB aggregation (Roll-Up Pattern)
     var weekStart = today.with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
@@ -195,13 +209,13 @@ public class AnalyticsService {
     var yearStart = today.withDayOfYear(1);
 
     // Aggregate from persisted daily snapshots
-    long weekViews = getAggregatedViewsForMedia(mediaId, weekStart, today) + todayViews;
-    long monthViews = getAggregatedViewsForMedia(mediaId, monthStart, today) + todayViews;
-    long yearViews = getAggregatedViewsForMedia(mediaId, yearStart, today) + todayViews;
+    long weekViews = getAggregatedViewsForMedia(tenantId, mediaId, weekStart, today) + todayViews;
+    long monthViews = getAggregatedViewsForMedia(tenantId, mediaId, monthStart, today) + todayViews;
+    long yearViews = getAggregatedViewsForMedia(tenantId, mediaId, yearStart, today) + todayViews;
 
     return ViewStats.forMedia(
         mediaId,
-        getViewCount(mediaId),
+        getViewCount(tenantId, mediaId),
         todayViews,
         weekViews,
         monthViews,
@@ -211,10 +225,10 @@ public class AnalyticsService {
   /**
    * Get aggregated views for a specific media from DynamoDB daily snapshots.
    */
-  private long getAggregatedViewsForMedia(String mediaId, LocalDate startDate, LocalDate endDate) {
+  private long getAggregatedViewsForMedia(String tenantId, String mediaId, LocalDate startDate, LocalDate endDate) {
     // Query DynamoDB for daily snapshots in range (excluding today, which is in
     // Redis)
-    var aggregated = persistenceService.aggregateDailyAnalytics(startDate, endDate.minusDays(1), Integer.MAX_VALUE);
+    var aggregated = persistenceService.aggregateDailyAnalytics(tenantId, startDate, endDate.minusDays(1), Integer.MAX_VALUE);
     return aggregated.getOrDefault(mediaId, 0L);
   }
 
@@ -226,17 +240,17 @@ public class AnalyticsService {
    * @param limit  Maximum number of results
    * @return List of media with view counts, ranked by views
    */
-  public List<EntityViewCount> getTopMedia(Period period, int limit) {
+  public List<EntityViewCount> getTopMedia(String tenantId, Period period, int limit) {
     try {
-      Map<String, Long> viewCounts = fetchViewCountsForPeriod(period, limit);
+      Map<String, Long> viewCounts = fetchViewCountsForPeriod(tenantId, period, limit);
 
       if (viewCounts.isEmpty()) {
         return Collections.emptyList();
       }
 
-      return buildEntityViewCountList(viewCounts);
+      return buildEntityViewCountList(tenantId, viewCounts);
     } catch (Exception e) {
-      log.error("Failed to get top media for period {}: {}", period, e.getMessage());
+      log.error("Failed to get top media for tenantId={}, period {}: {}", tenantId, period, e.getMessage());
       return Collections.emptyList();
     }
   }
@@ -244,14 +258,14 @@ public class AnalyticsService {
   /**
    * Fetch view counts for a specific period using appropriate data source.
    */
-  private Map<String, Long> fetchViewCountsForPeriod(Period period, int limit) {
+  private Map<String, Long> fetchViewCountsForPeriod(String tenantId, Period period, int limit) {
     var today = LocalDate.now();
 
     return switch (period) {
-      case TODAY -> getTopFromRedis(VIEWS_DAILY_PREFIX + today.format(DATE_FORMATTER), limit);
-      case ALL_TIME -> getTopFromRedis(VIEWS_TOTAL_KEY, limit);
+      case TODAY -> getTopFromRedis(dailyViewsKey(tenantId, today), limit);
+      case ALL_TIME -> getTopFromRedis(totalViewsKey(tenantId), limit);
       case THIS_WEEK, THIS_MONTH, THIS_YEAR -> aggregateWithTodayData(
-          getPeriodStartDate(period, today), today, limit);
+          tenantId, getPeriodStartDate(period, today), today, limit);
       default -> Collections.emptyMap();
     };
   }
@@ -272,13 +286,13 @@ public class AnalyticsService {
    * Aggregate historical data from DynamoDB with today's Redis data.
    * Implements the Roll-Up Pattern for weekly/monthly/yearly views.
    */
-  private Map<String, Long> aggregateWithTodayData(LocalDate startDate, LocalDate today, int limit) {
+  private Map<String, Long> aggregateWithTodayData(String tenantId, LocalDate startDate, LocalDate today, int limit) {
     // Get historical data from DynamoDB (excludes today)
     var viewCounts = new HashMap<>(
-        persistenceService.aggregateDailyAnalytics(startDate, today.minusDays(1), limit * 2));
+        persistenceService.aggregateDailyAnalytics(tenantId, startDate, today.minusDays(1), limit * 2));
 
     // Add today's data from Redis
-    var todayData = getTopFromRedis(VIEWS_DAILY_PREFIX + today.format(DATE_FORMATTER), limit * 2);
+    var todayData = getTopFromRedis(dailyViewsKey(tenantId, today), limit * 2);
     todayData.forEach((mediaId, count) -> viewCounts.merge(mediaId, count, Long::sum));
 
     // Re-sort and limit
@@ -302,18 +316,23 @@ public class AnalyticsService {
   /**
    * Build EntityViewCount list from view counts map, enriching with media metadata.
    */
-  private List<EntityViewCount> buildEntityViewCountList(Map<String, Long> viewCounts) {
+  private List<EntityViewCount> buildEntityViewCountList(String tenantId, Map<String, Long> viewCounts) {
     var result = new ArrayList<EntityViewCount>();
     int rank = 1;
 
     for (var entry : viewCounts.entrySet()) {
       var mediaOpt = dynamoDbService.getMedia(entry.getKey());
-      var name = mediaOpt.map(media -> media.getName()).orElse("Unknown");
-      var deleted = mediaOpt.map(media -> media.getStatus() == MediaStatus.DELETED).orElse(false);
-      var deletedAt = mediaOpt
-          .filter(media -> media.getStatus() == MediaStatus.DELETED)
-          .map(media -> media.getDeletedAt())
-          .orElse(null);
+      var mediaForTenant = mediaOpt.filter(media -> {
+        var mediaTenantId = media.getTenantId() != null ? media.getTenantId() : "default";
+        return tenantId.equals(mediaTenantId);
+      });
+      if (mediaForTenant.isEmpty()) {
+        continue;
+      }
+      var media = mediaForTenant.get();
+      var name = media.getName();
+      var deleted = media.getStatus() == MediaStatus.DELETED;
+      var deletedAt = deleted ? media.getDeletedAt() : null;
 
       result.add(EntityViewCount.forMedia(entry.getKey(), name, entry.getValue(), rank++, deleted, deletedAt));
     }
@@ -343,11 +362,11 @@ public class AnalyticsService {
    * @param period Time period
    * @return Format usage statistics
    */
-  public FormatUsageStats getFormatUsage(Period period) {
+  public FormatUsageStats getFormatUsage(String tenantId, Period period) {
     var usage = new HashMap<String, Long>();
     long total = 0;
     try {
-      var keys = getKeysForPeriodRange(FORMAT_USAGE_PREFIX, period);
+      var keys = getKeysForPeriodRange(FORMAT_USAGE_PREFIX, tenantId, period);
       for (var key : keys) {
         var dayUsage = redisTemplate.opsForHash().entries(key);
         for (var entry : dayUsage.entrySet()) {
@@ -360,7 +379,7 @@ public class AnalyticsService {
         }
       }
     } catch (Exception e) {
-      log.error("Failed to get format usage for period {}: {}", period, e.getMessage());
+      log.error("Failed to get format usage for tenantId={}, period {}: {}", tenantId, period, e.getMessage());
     }
     return FormatUsageStats.builder()
         .period(period)
@@ -375,14 +394,14 @@ public class AnalyticsService {
    * @param period Time period
    * @return Download statistics
    */
-  public DownloadStats getDownloadStats(Period period) {
+  public DownloadStats getDownloadStats(String tenantId, Period period) {
     var byFormat = new HashMap<String, Long>();
     var byDay = new LinkedHashMap<String, Long>();
     long totalDownloads = 0;
     try {
-      var keys = getKeysForPeriodRange(DOWNLOADS_PREFIX, period);
+      var keys = getKeysForPeriodRange(DOWNLOADS_PREFIX, tenantId, period);
       for (var key : keys) {
-        var dateKey = key.replace(DOWNLOADS_PREFIX, "");
+        var dateKey = key.replace(DOWNLOADS_PREFIX + tenantId + ":", "");
         var dayStats = redisTemplate.opsForHash().entries(key);
         long dayTotal = 0;
         for (var entry : dayStats.entrySet()) {
@@ -399,7 +418,7 @@ public class AnalyticsService {
         byDay.put(dateKey, dayTotal);
       }
     } catch (Exception e) {
-      log.error("Failed to get download stats for period {}: {}", period, e.getMessage());
+      log.error("Failed to get download stats for tenantId={}, period {}: {}", tenantId, period, e.getMessage());
     }
 
     return DownloadStats.builder()
@@ -415,18 +434,19 @@ public class AnalyticsService {
    *
    * @return Analytics summary for dashboard
    */
-  public AnalyticsSummary getSummary() {
+  public AnalyticsSummary getSummary(String tenantId) {
     var limit = analyticsProperties.getTopMediaLimit();
     // Get today's stats
-    var todayDownloads = getDownloadStats(Period.TODAY);
-    var formatUsage = getFormatUsage(Period.ALL_TIME);
+    var todayDownloads = getDownloadStats(tenantId, Period.TODAY);
+    var formatUsage = getFormatUsage(tenantId, Period.ALL_TIME);
     // Calculate total views from all-time key
     long totalViews = 0;
     try {
-      var size = redisTemplate.opsForZSet().zCard(VIEWS_TOTAL_KEY);
+      var totalKey = totalViewsKey(tenantId);
+      var size = redisTemplate.opsForZSet().zCard(totalKey);
       if (size != null && size > 0) {
         // Sum all scores
-        var all = redisTemplate.opsForZSet().rangeWithScores(VIEWS_TOTAL_KEY, 0, -1);
+        var all = redisTemplate.opsForZSet().rangeWithScores(totalKey, 0, -1);
         if (all != null) {
           totalViews = all.stream()
               .mapToLong(t -> t.getScore() != null ? t.getScore().longValue() : 0)
@@ -434,12 +454,12 @@ public class AnalyticsService {
         }
       }
     } catch (Exception e) {
-      log.error("Failed to calculate total views: {}", e.getMessage());
+      log.error("Failed to calculate total views for tenantId={}: {}", tenantId, e.getMessage());
     }
     // Get today's views
     long viewsToday = 0;
     try {
-      var todayKey = VIEWS_DAILY_PREFIX + LocalDate.now().format(DATE_FORMATTER);
+      var todayKey = dailyViewsKey(tenantId, LocalDate.now());
       var todayViews = redisTemplate.opsForZSet().rangeWithScores(todayKey, 0, -1);
       if (todayViews != null) {
         viewsToday = todayViews.stream()
@@ -447,45 +467,45 @@ public class AnalyticsService {
             .sum();
       }
     } catch (Exception e) {
-      log.error("Failed to calculate today's views: {}", e.getMessage());
+      log.error("Failed to calculate today's views for tenantId={}: {}", tenantId, e.getMessage());
     }
     return AnalyticsSummary.builder()
         .totalViews(totalViews)
         .totalDownloads(todayDownloads.getTotalDownloads())
         .viewsToday(viewsToday)
         .downloadsToday(todayDownloads.getTotalDownloads())
-        .topMediaToday(getTopMedia(Period.TODAY, limit))
-        .topMediaAllTime(getTopMedia(Period.ALL_TIME, limit))
+        .topMediaToday(getTopMedia(tenantId, Period.TODAY, limit))
+        .topMediaAllTime(getTopMedia(tenantId, Period.ALL_TIME, limit))
         .formatUsage(formatUsage.getUsage())
         .build();
   }
 
-  private List<String> getKeysForPeriodRange(String prefix, Period period) {
+  private List<String> getKeysForPeriodRange(String prefix, String tenantId, Period period) {
     var today = LocalDate.now();
     var keys = new ArrayList<String>();
     switch (period) {
-      case TODAY -> keys.add(prefix + today.format(DATE_FORMATTER));
+      case TODAY -> keys.add(prefix + tenantId + ":" + today.format(DATE_FORMATTER));
       case THIS_WEEK -> {
         var weekStart = today.with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
         for (var date = weekStart; !date.isAfter(today); date = date.plusDays(1)) {
-          keys.add(prefix + date.format(DATE_FORMATTER));
+          keys.add(prefix + tenantId + ":" + date.format(DATE_FORMATTER));
         }
       }
       case THIS_MONTH -> {
         var monthStart = today.withDayOfMonth(1);
         for (LocalDate date = monthStart; !date.isAfter(today); date = date.plusDays(1)) {
-          keys.add(prefix + date.format(DATE_FORMATTER));
+          keys.add(prefix + tenantId + ":" + date.format(DATE_FORMATTER));
         }
       }
       case THIS_YEAR -> {
         var yearStart = today.withDayOfYear(1);
         for (LocalDate date = yearStart; !date.isAfter(today); date = date.plusDays(1)) {
-          keys.add(prefix + date.format(DATE_FORMATTER));
+          keys.add(prefix + tenantId + ":" + date.format(DATE_FORMATTER));
         }
       }
       case ALL_TIME -> {
         // Get all keys matching the pattern
-        var allKeys = redisTemplate.keys(prefix + "*");
+        var allKeys = redisTemplate.keys(prefix + tenantId + ":*");
         if (allKeys != null) {
           keys.addAll(allKeys);
         }
@@ -493,6 +513,34 @@ public class AnalyticsService {
     }
 
     return keys;
+  }
+
+  private void trackTenant(String tenantId) {
+    try {
+      redisTemplate.opsForSet().add(TENANT_SET_KEY, tenantId);
+    } catch (Exception e) {
+      log.debug("Failed to track tenant for analytics: {}", e.getMessage());
+    }
+  }
+
+  private String dailyViewsKey(String tenantId, LocalDate date) {
+    return VIEWS_DAILY_PREFIX + tenantId + ":" + date.format(DATE_FORMATTER);
+  }
+
+  private String totalViewsKey(String tenantId) {
+    return VIEWS_TOTAL_PREFIX + tenantId;
+  }
+
+  private String mediaViewsKey(String tenantId, String mediaId) {
+    return MEDIA_VIEWS_PREFIX + tenantId + ":" + mediaId;
+  }
+
+  private String formatUsageKey(String tenantId, LocalDate date) {
+    return FORMAT_USAGE_PREFIX + tenantId + ":" + date.format(DATE_FORMATTER);
+  }
+
+  private String downloadsKey(String tenantId, LocalDate date) {
+    return DOWNLOADS_PREFIX + tenantId + ":" + date.format(DATE_FORMATTER);
   }
 
   private long getScoreFromZSet(String key, String member) {
