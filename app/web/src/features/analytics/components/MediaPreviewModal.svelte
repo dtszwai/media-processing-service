@@ -46,10 +46,11 @@
       } catch (error) {
         console.warn("Failed to fetch media details for navigation", error);
       }
+      const targetPathWithId = `${targetPath}?mediaId=${encodeURIComponent(media.entityId)}`;
       if (nav) {
-        nav(targetPath);
+        nav(targetPathWithId);
       } else {
-        window.location.href = targetPath;
+        window.location.href = targetPathWithId;
       }
       onclose();
     }

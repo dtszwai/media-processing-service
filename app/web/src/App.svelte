@@ -21,7 +21,8 @@
   // Handle navigation
   function navigate(path: string) {
     window.history.pushState({}, "", path);
-    currentPath = path;
+    currentPath = window.location.pathname;
+    window.dispatchEvent(new CustomEvent("app:navigate"));
   }
 
   // Expose navigate function globally for the Header links

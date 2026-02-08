@@ -118,7 +118,9 @@
     {:else}
       {#each filteredList as item (item.mediaId)}
         <div
-          class="p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
+          class="p-3 rounded-lg border transition-colors { $currentMediaId === item.mediaId
+            ? 'bg-blue-50 border-blue-200 shadow-sm ring-1 ring-blue-100'
+            : 'bg-gray-50 border-transparent hover:bg-white hover:border-gray-200'}"
           class:opacity-50={isDeleting(item.mediaId)}
         >
           <div class="flex items-center justify-between mb-1">
