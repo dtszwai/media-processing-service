@@ -1,6 +1,7 @@
 package com.mediaservice.common.model;
 
 import java.time.Instant;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -41,6 +42,7 @@ public class Media {
    *
    * @return the output format or JPEG as default
    */
+  @JsonIgnore
   public OutputFormat getOutputFormatOrDefault() {
     return outputFormat != null ? outputFormat : OutputFormat.JPEG;
   }
