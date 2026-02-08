@@ -2,6 +2,7 @@ package com.mediaservice.media.api.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.mediaservice.common.model.MediaStatus;
+import com.mediaservice.common.model.MediaType;
 import com.mediaservice.common.model.OutputFormat;
 import java.time.Instant;
 import lombok.AllArgsConstructor;
@@ -19,6 +20,7 @@ public class MediaResponse {
   private Long size;
   private String name;
   private String mimetype;
+  private MediaType mediaType;
   private MediaStatus status;
   private Integer width;
   private OutputFormat outputFormat;

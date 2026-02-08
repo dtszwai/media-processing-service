@@ -15,6 +15,7 @@ import com.mediaservice.media.application.MediaOperationResult;
 import com.mediaservice.media.application.PreviewResult;
 import com.mediaservice.media.application.mapper.MediaMapper;
 import com.mediaservice.media.application.MediaApplicationService;
+import com.mediaservice.common.model.MediaType;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -59,9 +60,15 @@ public class MediaController {
   @GetMapping
   public ResponseEntity<PagedResponse<MediaResponse>> getAllMedia(
       @RequestParam(required = false) String cursor,
-      @RequestParam(required = false) Integer limit) {
-    log.info("Get all media request: cursor={}, limit={}", cursor, limit);
-    var result = mediaService.getMediaPaginated(cursor, limit);
+      @RequestParam(required = false) Integer limit,
+      @RequestParam(required = false) String mediaType) {
+    MediaType resolvedType = MediaType.fromString(mediaType);
+    if (mediaType != null && resolvedType == null) {
+      throw new IllegalArgumentException("Invalid mediaType. Supported values: image, document, video, audio, other.");
+    }
+    log.info("Get all media request: cursor={}, limit={}, mediaType={}", cursor, limit,
+        resolvedType != null ? resolvedType.getValue() : "any");
+    var result = mediaService.getMediaPaginated(cursor, limit, resolvedType);
     var items = result.items().stream().map(mediaMapper::toResponse).toList();
     return ResponseEntity.ok(PagedResponse.<MediaResponse>builder()
         .items(items)
@@ -81,12 +88,13 @@ public class MediaController {
   public ResponseEntity<MediaResponse> uploadMedia(
       @RequestParam("file") MultipartFile file,
       @RequestParam(required = false) Integer width,
-      @RequestParam(required = false) String outputFormat) throws IOException {
-    log.info("Upload request received: fileName={}, size={}, outputFormat={}",
-        file.getOriginalFilename(), file.getSize(), outputFormat);
+      @RequestParam(required = false) String outputFormat,
+      @RequestParam(required = false) String mediaType) throws IOException {
+    log.info("Upload request received: fileName={}, size={}, outputFormat={}, mediaType={}",
+        file.getOriginalFilename(), file.getSize(), outputFormat, mediaType);
 
     mediaService.validateUploadFile(file.getSize(), file.isEmpty());
-    MediaResponse response = mediaService.uploadMedia(file, width, outputFormat);
+    MediaResponse response = mediaService.uploadMedia(file, width, outputFormat, mediaType);
     return ResponseEntity.accepted().body(response);
   }
 
@@ -103,7 +111,7 @@ public class MediaController {
     log.info("Init presigned upload request: fileName={}, size={}, contentType={}",
         request.getFileName(), request.getFileSize(), request.getContentType());
 
-    mediaService.validatePresignedUploadRequest(request.getFileSize(), request.getContentType());
+    mediaService.validatePresignedUploadRequest(request.getFileSize(), request.getContentType(), request.getMediaType(), request.getFileName());
     InitUploadResponse response = mediaService.initPresignedUpload(request);
     return ResponseEntity.status(HttpStatus.CREATED).body(response);
   }

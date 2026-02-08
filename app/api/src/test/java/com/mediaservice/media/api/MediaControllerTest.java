@@ -90,7 +90,7 @@ class MediaControllerTest {
       var response = MediaResponse.builder().mediaId("media-123").build();
 
       doNothing().when(mediaService).validateUploadFile(anyLong(), anyBoolean());
-      when(mediaService.uploadMedia(any(), any(), any())).thenReturn(response);
+      when(mediaService.uploadMedia(any(), any(), any(), any())).thenReturn(response);
 
       mockMvc.perform(multipart("/v1/media/upload").file(file))
           .andExpect(status().isAccepted())
@@ -379,7 +379,7 @@ class MediaControllerTest {
       var response = MediaResponse.builder().mediaId("media-123").build();
       var pagedResult = new MediaDynamoDbRepository.MediaPagedResult(List.of(media), null, false);
 
-      when(mediaService.getMediaPaginated(null, null)).thenReturn(pagedResult);
+      when(mediaService.getMediaPaginated(null, null, null)).thenReturn(pagedResult);
       when(mediaMapper.toResponse(media)).thenReturn(response);
 
       mockMvc.perform(get("/v1/media"))
@@ -396,7 +396,7 @@ class MediaControllerTest {
       var response = MediaResponse.builder().mediaId("media-123").build();
       var pagedResult = new MediaDynamoDbRepository.MediaPagedResult(List.of(media), "nextCursor123", true);
 
-      when(mediaService.getMediaPaginated(null, null)).thenReturn(pagedResult);
+      when(mediaService.getMediaPaginated(null, null, null)).thenReturn(pagedResult);
       when(mediaMapper.toResponse(media)).thenReturn(response);
 
       mockMvc.perform(get("/v1/media"))
@@ -411,7 +411,7 @@ class MediaControllerTest {
     void shouldPassCursorAndLimit() throws Exception {
       var pagedResult = new MediaDynamoDbRepository.MediaPagedResult(List.of(), null, false);
 
-      when(mediaService.getMediaPaginated("someCursor", 10)).thenReturn(pagedResult);
+      when(mediaService.getMediaPaginated("someCursor", 10, null)).thenReturn(pagedResult);
 
       mockMvc.perform(get("/v1/media")
           .param("cursor", "someCursor")
@@ -419,7 +419,7 @@ class MediaControllerTest {
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.items", hasSize(0)));
 
-      verify(mediaService).getMediaPaginated("someCursor", 10);
+      verify(mediaService).getMediaPaginated("someCursor", 10, null);
     }
   }
 
@@ -438,7 +438,7 @@ class MediaControllerTest {
           .headers(Map.of("Content-Type", "image/jpeg"))
           .build();
 
-      doNothing().when(mediaService).validatePresignedUploadRequest(anyLong(), anyString());
+      doNothing().when(mediaService).validatePresignedUploadRequest(anyLong(), anyString(), any(), anyString());
       when(mediaService.initPresignedUpload(any())).thenReturn(response);
 
       mockMvc.perform(post("/v1/media/upload/init")
@@ -462,7 +462,7 @@ class MediaControllerTest {
     @DisplayName("should reject file exceeding size limit")
     void shouldRejectLargeFile() throws Exception {
       doThrow(new IllegalArgumentException("File size exceeds maximum allowed size of 5 GB."))
-          .when(mediaService).validatePresignedUploadRequest(anyLong(), anyString());
+          .when(mediaService).validatePresignedUploadRequest(anyLong(), anyString(), any(), anyString());
 
       mockMvc.perform(post("/v1/media/upload/init")
           .contentType(MediaType.APPLICATION_JSON)
@@ -478,22 +478,22 @@ class MediaControllerTest {
     }
 
     @Test
-    @DisplayName("should reject non-image content type")
-    void shouldRejectNonImageContentType() throws Exception {
-      doThrow(new IllegalArgumentException("Invalid content type. Only images are supported."))
-          .when(mediaService).validatePresignedUploadRequest(anyLong(), anyString());
+    @DisplayName("should reject unsupported content type")
+    void shouldRejectUnsupportedContentType() throws Exception {
+      doThrow(new IllegalArgumentException("Invalid content type. Only images and PDFs are supported."))
+          .when(mediaService).validatePresignedUploadRequest(anyLong(), anyString(), any(), anyString());
 
       mockMvc.perform(post("/v1/media/upload/init")
           .contentType(MediaType.APPLICATION_JSON)
           .content("""
               {
-                "fileName": "document.pdf",
+                "fileName": "archive.zip",
                 "fileSize": 1024,
-                "contentType": "application/pdf"
+                "contentType": "application/zip"
               }
               """))
           .andExpect(status().isBadRequest())
-          .andExpect(jsonPath("$.message", containsString("Only images are supported")));
+          .andExpect(jsonPath("$.message", containsString("Only images and PDFs are supported")));
     }
 
     @Test
@@ -595,6 +595,7 @@ class MediaControllerTest {
         .name("test.jpg")
         .size(1024L)
         .mimetype("image/jpeg")
+        .mediaType(com.mediaservice.common.model.MediaType.IMAGE)
         .status(status)
         .width(500)
         .outputFormat(OutputFormat.JPEG)

@@ -13,6 +13,7 @@ import type {
   UploadResponse,
   ResizeRequest,
   OutputFormat,
+  MediaType,
   PagedResponse,
 } from "../../../shared/types";
 
@@ -21,10 +22,15 @@ export { uploadToPresignedUrl };
 /**
  * Get all media with optional pagination
  */
-export async function getAllMedia(cursor?: string, limit?: number): Promise<PagedResponse<Media>> {
+export async function getAllMedia(
+  cursor?: string,
+  limit?: number,
+  mediaType?: MediaType,
+): Promise<PagedResponse<Media>> {
   const params = new URLSearchParams();
   if (cursor) params.set("cursor", cursor);
   if (limit) params.set("limit", limit.toString());
+  if (mediaType) params.set("mediaType", mediaType);
 
   const url = params.toString() ? `${API_BASE}?${params}` : API_BASE;
   const response = await authenticatedFetch(url);
@@ -72,14 +78,22 @@ export async function getMediaStatus(mediaId: string): Promise<StatusResponse> {
  */
 export async function uploadMedia(
   file: File,
-  width: number,
-  outputFormat: OutputFormat = "jpeg",
+  width?: number,
+  outputFormat?: OutputFormat,
+  mediaType?: MediaType,
   idempotencyKey?: string,
 ): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("width", width.toString());
-  formData.append("outputFormat", outputFormat);
+  if (width) {
+    formData.append("width", width.toString());
+  }
+  if (outputFormat) {
+    formData.append("outputFormat", outputFormat);
+  }
+  if (mediaType) {
+    formData.append("mediaType", mediaType);
+  }
 
   const headers: Record<string, string> = {};
   if (idempotencyKey) {

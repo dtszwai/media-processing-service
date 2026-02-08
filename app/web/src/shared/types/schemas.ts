@@ -8,6 +8,8 @@ import { z } from "zod";
 
 export const MediaStatusSchema = z.enum(["PENDING_UPLOAD", "PENDING", "PROCESSING", "COMPLETE", "ERROR", "DELETED"]);
 
+export const MediaTypeSchema = z.enum(["image", "document", "video", "audio", "other"]);
+
 export const OutputFormatSchema = z.enum(["jpeg", "png", "webp"]);
 
 export const MediaSchema = z.object({
@@ -15,8 +17,9 @@ export const MediaSchema = z.object({
   name: z.string(),
   size: z.number(),
   mimetype: z.string(),
+  mediaType: MediaTypeSchema.optional(),
   status: MediaStatusSchema,
-  width: z.number(),
+  width: z.number().optional(),
   outputFormat: OutputFormatSchema.optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
@@ -27,6 +30,7 @@ export const InitUploadRequestSchema = z.object({
   fileName: z.string(),
   fileSize: z.number(),
   contentType: z.string(),
+  mediaType: MediaTypeSchema.optional(),
   width: z.number().optional(),
   outputFormat: OutputFormatSchema.optional(),
   webhookUrl: z.string().url().optional(),
@@ -193,6 +197,7 @@ export const ApiKeyResponseSchema = z.object({
 
 // Media types
 export type MediaStatus = z.infer<typeof MediaStatusSchema>;
+export type MediaType = z.infer<typeof MediaTypeSchema>;
 export type OutputFormat = z.infer<typeof OutputFormatSchema>;
 export type Media = z.infer<typeof MediaSchema>;
 export type InitUploadRequest = z.infer<typeof InitUploadRequestSchema>;

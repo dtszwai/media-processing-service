@@ -13,6 +13,7 @@
   let currentPath = $state(window.location.pathname);
 
   const PUBLIC_ROUTES = ["/login", "/register"];
+  const DEFAULT_MEDIA_PATH = "/media/images";
 
   // Restore auth from localStorage on mount
   authStore.restore();
@@ -51,7 +52,9 @@
     if (!auth.isAuthenticated && !isPublicRoute) {
       navigate("/login");
     } else if (auth.isAuthenticated && isPublicRoute) {
-      navigate("/");
+      navigate(DEFAULT_MEDIA_PATH);
+    } else if (auth.isAuthenticated && (currentPath === "/" || currentPath === "/media")) {
+      navigate(DEFAULT_MEDIA_PATH);
     }
   });
 
@@ -80,8 +83,10 @@
           <DlqPage />
         {:else if currentPath === "/settings/api-keys"}
           <ApiKeysPage />
+        {:else if currentPath === "/media/documents"}
+          <MediaPage mediaType="document" />
         {:else}
-          <MediaPage />
+          <MediaPage mediaType="image" />
         {/if}
       </main>
     {/if}

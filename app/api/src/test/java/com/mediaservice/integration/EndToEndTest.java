@@ -206,7 +206,7 @@ class EndToEndTest extends BaseIntegrationTest {
     assertThat(successCount.get()).isEqualTo(uploadCount);
 
     // Verify all media entries were created
-    var result = dynamoDbService.getMediaPaginated(null, uploadCount + 1);
+    var result = dynamoDbService.getMediaPaginated(null, uploadCount + 1, null);
     assertThat(result.items()).hasSize(uploadCount);
   }
 

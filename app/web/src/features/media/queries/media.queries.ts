@@ -18,7 +18,15 @@ import {
   generateIdempotencyKey,
 } from "../services";
 import { MediaSchema, PagedMediaResponseSchema, StatusResponseSchema } from "../../../shared/types";
-import type { Media, OutputFormat, InitUploadRequest, ResizeRequest, PagedMediaResponse, StatusResponse } from "../../../shared/types";
+import type {
+  Media,
+  OutputFormat,
+  MediaType,
+  InitUploadRequest,
+  ResizeRequest,
+  PagedMediaResponse,
+  StatusResponse,
+} from "../../../shared/types";
 import {
   PRESIGNED_UPLOAD_THRESHOLD,
   MAX_DIRECT_UPLOAD_SIZE,
@@ -31,11 +39,11 @@ export { PRESIGNED_UPLOAD_THRESHOLD, MAX_DIRECT_UPLOAD_SIZE, MAX_PRESIGNED_UPLOA
 /**
  * Query for paginated media list
  */
-export function createMediaListQuery(cursor?: string, limit?: number) {
+export function createMediaListQuery(cursor?: string, limit?: number, mediaType?: MediaType) {
   return createQuery(() => ({
-    queryKey: queryKeys.media.list(cursor, limit),
+    queryKey: queryKeys.media.list(cursor, limit, mediaType),
     queryFn: async (): Promise<PagedMediaResponse> => {
-      const data = await getAllMedia(cursor, limit);
+      const data = await getAllMedia(cursor, limit, mediaType);
       return PagedMediaResponseSchema.parse(data);
     },
     staleTime: 30 * 1000,
@@ -86,14 +94,18 @@ export function createUploadMutation() {
     mutationFn: async ({
       file,
       width,
-      outputFormat = "jpeg",
+      outputFormat,
+      mediaType,
     }: {
       file: File;
-      width: number;
+      width?: number;
       outputFormat?: OutputFormat;
+      mediaType?: MediaType;
     }) => {
       const idempotencyKey = generateIdempotencyKey(file);
-      return uploadMedia(file, width, outputFormat, idempotencyKey);
+      const resolvedFormat =
+        mediaType === "image" || !mediaType ? outputFormat || "jpeg" : undefined;
+      return uploadMedia(file, width, resolvedFormat, mediaType, idempotencyKey);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.media.all });
@@ -110,13 +122,15 @@ export function createPresignedUploadMutation() {
     mutationFn: async ({
       file,
       width,
-      outputFormat = "jpeg",
+      outputFormat,
+      mediaType,
       webhookUrl,
       onProgress,
     }: {
       file: File;
-      width: number;
+      width?: number;
       outputFormat?: OutputFormat;
+      mediaType?: MediaType;
       webhookUrl?: string;
       onProgress?: (progress: number) => void;
     }) => {
@@ -124,8 +138,9 @@ export function createPresignedUploadMutation() {
         fileName: file.name,
         fileSize: file.size,
         contentType: file.type,
+        mediaType,
         width,
-        outputFormat,
+        outputFormat: mediaType === "image" || !mediaType ? outputFormat || "jpeg" : undefined,
         webhookUrl,
       };
 

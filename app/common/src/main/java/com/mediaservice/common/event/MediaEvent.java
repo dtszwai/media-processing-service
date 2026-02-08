@@ -24,46 +24,50 @@ public class MediaEvent {
   public static class MediaEventPayload {
     private String mediaId;
     private String tenantId;
+    private String mediaType;
     private Integer width;
     private String outputFormat;
   }
 
-  public static MediaEvent of(EventType eventType, String mediaId) {
+  public static MediaEvent of(EventType eventType, String mediaId, String mediaType) {
     return MediaEvent.builder()
         .type(eventType.getValue())
-        .payload(MediaEventPayload.builder().mediaId(mediaId).build())
+        .payload(MediaEventPayload.builder().mediaId(mediaId).mediaType(mediaType).build())
         .build();
   }
 
-  public static MediaEvent of(EventType eventType, String mediaId, Integer width, String outputFormat) {
+  public static MediaEvent of(EventType eventType, String mediaId, String mediaType, Integer width, String outputFormat) {
     return MediaEvent.builder()
         .type(eventType.getValue())
         .payload(MediaEventPayload.builder()
             .mediaId(mediaId)
+            .mediaType(mediaType)
             .width(width)
             .outputFormat(outputFormat)
             .build())
         .build();
   }
 
-  public static MediaEvent of(EventType eventType, String mediaId, String tenantId, Integer width, String outputFormat) {
+  public static MediaEvent of(EventType eventType, String mediaId, String tenantId, String mediaType, Integer width, String outputFormat) {
     return MediaEvent.builder()
         .type(eventType.getValue())
         .payload(MediaEventPayload.builder()
             .mediaId(mediaId)
             .tenantId(tenantId)
+            .mediaType(mediaType)
             .width(width)
             .outputFormat(outputFormat)
             .build())
         .build();
   }
 
-  public static MediaEvent of(EventType eventType, String mediaId, String tenantId) {
+  public static MediaEvent of(EventType eventType, String mediaId, String tenantId, String mediaType) {
     return MediaEvent.builder()
         .type(eventType.getValue())
         .payload(MediaEventPayload.builder()
             .mediaId(mediaId)
             .tenantId(tenantId)
+            .mediaType(mediaType)
             .build())
         .build();
   }

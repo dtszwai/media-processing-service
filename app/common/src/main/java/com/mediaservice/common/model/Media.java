@@ -27,6 +27,7 @@ public class Media {
   /** Original filename as uploaded by user (for Content-Disposition header) */
   private String name;
   private String mimetype;
+  private MediaType mediaType;
   private MediaStatus status;
   private Integer width;
   private OutputFormat outputFormat;
@@ -39,6 +40,7 @@ public class Media {
 
   /**
    * Returns the output format, defaulting to JPEG if not set.
+   * Intended for image media types.
    *
    * @return the output format or JPEG as default
    */

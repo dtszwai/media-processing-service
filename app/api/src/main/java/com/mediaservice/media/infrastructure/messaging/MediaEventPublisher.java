@@ -36,19 +36,21 @@ public class MediaEventPublisher {
   @Value("${aws.sns.topic-arn}")
   private String topicArn;
 
-  public void publishProcessMediaEvent(String mediaId, String tenantId, Integer width, String outputFormat) {
-    publishEvent(MediaEvent.of(EventType.PROCESS_MEDIA, mediaId, tenantId, width, outputFormat));
-    log.info("Published process media event for mediaId: {} with width: {}, outputFormat: {}", mediaId, width, outputFormat);
+  public void publishProcessMediaEvent(String mediaId, String tenantId, String mediaType, Integer width, String outputFormat) {
+    publishEvent(MediaEvent.of(EventType.PROCESS_MEDIA, mediaId, tenantId, mediaType, width, outputFormat));
+    log.info("Published process media event for mediaId: {} with width: {}, outputFormat: {}, mediaType: {}",
+        mediaId, width, outputFormat, mediaType);
   }
 
-  public void publishDeleteMediaEvent(String mediaId, String tenantId) {
-    publishEvent(MediaEvent.of(EventType.DELETE_MEDIA, mediaId, tenantId));
-    log.info("Published delete media event for mediaId: {}", mediaId);
+  public void publishDeleteMediaEvent(String mediaId, String tenantId, String mediaType) {
+    publishEvent(MediaEvent.of(EventType.DELETE_MEDIA, mediaId, tenantId, mediaType));
+    log.info("Published delete media event for mediaId: {} (mediaType: {})", mediaId, mediaType);
   }
 
-  public void publishResizeMediaEvent(String mediaId, String tenantId, Integer width, String outputFormat) {
-    publishEvent(MediaEvent.of(EventType.RESIZE_MEDIA, mediaId, tenantId, width, outputFormat));
-    log.info("Published resize media event for mediaId: {} with width: {}, outputFormat: {}", mediaId, width, outputFormat);
+  public void publishResizeMediaEvent(String mediaId, String tenantId, String mediaType, Integer width, String outputFormat) {
+    publishEvent(MediaEvent.of(EventType.RESIZE_MEDIA, mediaId, tenantId, mediaType, width, outputFormat));
+    log.info("Published resize media event for mediaId: {} with width: {}, outputFormat: {}, mediaType: {}",
+        mediaId, width, outputFormat, mediaType);
   }
 
   private void publishEvent(MediaEvent event) {

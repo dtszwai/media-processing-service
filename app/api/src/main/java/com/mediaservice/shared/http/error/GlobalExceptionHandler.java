@@ -37,9 +37,15 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(HttpMessageNotReadableException.class)
   public ResponseEntity<ErrorResponse> handleMessageNotReadable(HttpMessageNotReadableException e) {
+    String message = "Invalid request body. Expected valid JSON.";
+    Throwable cause = e.getMostSpecificCause();
+    if (cause instanceof IllegalArgumentException && cause.getMessage() != null
+        && cause.getMessage().startsWith("Invalid mediaType")) {
+      message = cause.getMessage();
+    }
     return ResponseEntity.badRequest()
         .body(ErrorResponse.builder()
-            .message("Invalid request body. Expected valid JSON.")
+            .message(message)
             .status(400)
             .requestId(getRequestId())
             .build());

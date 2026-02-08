@@ -3,6 +3,7 @@ package com.mediaservice.media.infrastructure.persistence;
 import com.mediaservice.common.constants.StorageConstants;
 import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaStatus;
+import com.mediaservice.common.model.MediaType;
 import com.mediaservice.common.model.OutputFormat;
 import com.mediaservice.shared.persistence.AbstractDynamoDbRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -58,6 +59,7 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
         .size(getLong(item, "size"))
         .name(getString(item, "name"))
         .mimetype(getString(item, "mimetype"))
+        .mediaType(MediaType.fromString(getString(item, "mediaType")))
         .status(MediaStatus.valueOf(getString(item, "status")))
         .width(getInt(item, "width"))
         .createdAt(getInstant(item, "createdAt"))
@@ -84,9 +86,16 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
     item.put("name", s(media.getName()));
     item.put("mimetype", s(media.getMimetype()));
     item.put("status", s(media.getStatus() != null ? media.getStatus().name() : MediaStatus.PENDING.name()));
-    item.put("width", n(String.valueOf(media.getWidth())));
-    item.put("outputFormat",
-        s(media.getOutputFormat() != null ? media.getOutputFormat().getFormat() : OutputFormat.JPEG.getFormat()));
+    if (media.getMediaType() != null) {
+      item.put("mediaType", s(media.getMediaType().getValue()));
+    }
+    if (media.getWidth() != null) {
+      item.put("width", n(String.valueOf(media.getWidth())));
+    }
+    if (media.getMediaType() == null || media.getMediaType() == MediaType.IMAGE) {
+      item.put("outputFormat",
+          s(media.getOutputFormat() != null ? media.getOutputFormat().getFormat() : OutputFormat.JPEG.getFormat()));
+    }
     item.put("createdAt", s(media.getCreatedAt() != null ? media.getCreatedAt().toString() : now.toString()));
     item.put("updatedAt", s(now.toString()));
     if (media.getTenantId() != null) {
@@ -143,48 +152,78 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
   public record MediaPagedResult(List<Media> items, String nextCursor, boolean hasMore) {
   }
 
+  private record MediaFilterSpec(String expression, Map<String, String> names, Map<String, AttributeValue> values) {
+  }
+
+  private MediaFilterSpec buildMediaFilter(MediaType mediaType) {
+    var names = new HashMap<String, String>();
+    var values = new HashMap<String, AttributeValue>();
+
+    names.put("#status", "status");
+    values.put(":deleted", s(MediaStatus.DELETED.name()));
+
+    String filter = "#status <> :deleted";
+
+    if (mediaType != null) {
+      names.put("#mediaType", "mediaType");
+      values.put(":mediaType", s(mediaType.getValue()));
+      if (mediaType == MediaType.IMAGE) {
+        filter += " AND (attribute_not_exists(#mediaType) OR #mediaType = :mediaType)";
+      } else {
+        filter += " AND #mediaType = :mediaType";
+      }
+    }
+
+    return new MediaFilterSpec(filter, names, values);
+  }
+
   /**
    * Get media records with pagination, excluding soft-deleted items.
    */
-  public MediaPagedResult getMediaPaginated(String cursor, Integer limit) {
+  public MediaPagedResult getMediaPaginated(String cursor, Integer limit, MediaType mediaType) {
     int pageSize = (limit != null && limit > 0 && limit <= 100) ? limit : DEFAULT_PAGE_SIZE;
+    var filter = buildMediaFilter(mediaType);
+    var values = new HashMap<>(filter.values());
+    values.put(":sk", s(StorageConstants.DYNAMO_SK_METADATA));
     var result = queryPaginated(
         StorageConstants.DYNAMO_GSI_SK_CREATED_AT,
         "SK = :sk",
-        Map.of(":sk", s(StorageConstants.DYNAMO_SK_METADATA)),
+        filter.expression(),
+        filter.names(),
+        values,
         false, // newest first
         pageSize,
         cursor,
         CURSOR_ATTRIBUTES);
-    // Filter out soft-deleted items
-    var activeItems = result.items().stream()
-        .filter(media -> media.getStatus() != MediaStatus.DELETED)
-        .toList();
-    log.info("Retrieved {} media records (hasMore={})", activeItems.size(), result.hasMore());
-    return new MediaPagedResult(activeItems, result.nextCursor(), result.hasMore());
+    log.info("Retrieved {} media records (mediaType={}, hasMore={})", result.items().size(),
+        mediaType != null ? mediaType.getValue() : "any", result.hasMore());
+    return new MediaPagedResult(result.items(), result.nextCursor(), result.hasMore());
   }
 
   /**
    * Get media records for a specific tenant with pagination, excluding soft-deleted items.
    */
-  public MediaPagedResult getMediaPaginatedByTenant(String tenantId, String cursor, Integer limit) {
+  public MediaPagedResult getMediaPaginatedByTenant(String tenantId, String cursor, Integer limit, MediaType mediaType) {
     int pageSize = (limit != null && limit > 0 && limit <= 100) ? limit : DEFAULT_PAGE_SIZE;
     String[] tenantCursorAttributes = { StorageConstants.DYNAMO_ATTR_TENANT_ID, "createdAt", "PK", "SK" };
+    var filter = buildMediaFilter(mediaType);
+    var values = new HashMap<>(filter.values());
+    values.put(":tenantId", s(tenantId));
+    values.put(":pkPrefix", s(StorageConstants.DYNAMO_PK_PREFIX));
+    String filterExpression = "begins_with(PK, :pkPrefix) AND " + filter.expression();
     var result = queryPaginated(
         StorageConstants.DYNAMO_GSI_TENANT_CREATED_AT,
         "tenantId = :tenantId",
-        "begins_with(PK, :pkPrefix)",
-        null,
-        Map.of(":tenantId", s(tenantId), ":pkPrefix", s(StorageConstants.DYNAMO_PK_PREFIX)),
+        filterExpression,
+        filter.names(),
+        values,
         false, // newest first
         pageSize,
         cursor,
         tenantCursorAttributes);
-    var activeItems = result.items().stream()
-        .filter(media -> media.getStatus() != MediaStatus.DELETED)
-        .toList();
-    log.info("Retrieved {} media records for tenant {} (hasMore={})", activeItems.size(), tenantId, result.hasMore());
-    return new MediaPagedResult(activeItems, result.nextCursor(), result.hasMore());
+    log.info("Retrieved {} media records for tenant {} (mediaType={}, hasMore={})", result.items().size(), tenantId,
+        mediaType != null ? mediaType.getValue() : "any", result.hasMore());
+    return new MediaPagedResult(result.items(), result.nextCursor(), result.hasMore());
   }
 
   /**

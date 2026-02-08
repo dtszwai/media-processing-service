@@ -3,17 +3,32 @@
   import { createMediaListQuery, createDeleteMutation } from "../queries";
   import { currentMediaId } from "../stores";
   import { pollForStatus } from "../services";
+  import type { MediaType } from "../../../shared/types";
 
-  const mediaListQuery = createMediaListQuery();
+  interface Props {
+    mediaType?: MediaType;
+  }
+
+  let { mediaType }: Props = $props();
+
+  const mediaListQuery = createMediaListQuery(undefined, undefined, mediaType);
   const deleteMutation = createDeleteMutation();
 
   // Track items being deleted locally for optimistic UI
   let deletingIds = $state<Set<string>>(new Set());
 
   let mediaList = $derived(mediaListQuery.data?.items ?? []);
+  let filteredList = $derived(
+    mediaType
+      ? mediaList.filter((item) => (item.mediaType || "image") === mediaType)
+      : mediaList,
+  );
+  let listTitle = $derived(
+    mediaType === "image" ? "Images" : mediaType === "document" ? "Documents" : "All Media",
+  );
 
   async function handleDelete(mediaId: string) {
-    const item = mediaList.find((m) => m.mediaId === mediaId);
+    const item = filteredList.find((m) => m.mediaId === mediaId);
     if (!item) return;
     if (deletingIds.has(mediaId)) return;
     // Don't allow deleting an item that is currently being processed
@@ -45,7 +60,7 @@
   }
 
   function handleView(mediaId: string) {
-    const item = mediaList.find((m) => m.mediaId === mediaId);
+    const item = filteredList.find((m) => m.mediaId === mediaId);
     if (!item || deletingIds.has(mediaId)) return;
 
     currentMediaId.set(mediaId);
@@ -62,11 +77,11 @@
 
 <div class="card rounded-lg p-5 sticky top-6">
   <div class="flex items-center justify-between mb-4">
-    <h2 class="text-base font-semibold text-gray-900">All Media</h2>
+    <h2 class="text-base font-semibold text-gray-900">{listTitle}</h2>
     <div class="flex items-center space-x-2">
       <span class="text-xs text-gray-400">
-        {mediaList.length}
-        {mediaList.length === 1 ? "item" : "items"}
+        {filteredList.length}
+        {filteredList.length === 1 ? "item" : "items"}
       </span>
       <button
         onclick={handleRefresh}
@@ -98,10 +113,10 @@
       </div>
     {:else if mediaListQuery.isError}
       <p class="text-sm text-red-500 text-center py-6">Failed to load media</p>
-    {:else if mediaList.length === 0}
+    {:else if filteredList.length === 0}
       <p class="text-sm text-gray-400 text-center py-6">No uploads yet</p>
     {:else}
-      {#each mediaList as item (item.mediaId)}
+      {#each filteredList as item (item.mediaId)}
         <div
           class="p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
           class:opacity-50={isDeleting(item.mediaId)}
@@ -138,7 +153,12 @@
             </div>
           </div>
           <div class="text-xs text-gray-400 space-y-0.5">
-            <p>{item.width}px · {item.size ? formatFileSize(item.size) : "N/A"}</p>
+            <p>
+              {#if item.mediaType === "image"}
+                {item.width || "N/A"}px ·
+              {/if}
+              {item.size ? formatFileSize(item.size) : "N/A"} · {item.mediaType || "image"}
+            </p>
             {#if item.createdAt}
               <p>{formatRelativeTime(item.createdAt)}</p>
             {/if}

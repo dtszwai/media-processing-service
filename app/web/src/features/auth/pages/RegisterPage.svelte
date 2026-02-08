@@ -24,7 +24,7 @@
       { tenantName, email, password },
       {
         onSuccess: () => {
-          navigate("/");
+          navigate("/media/images");
         },
         onError: (error: Error) => {
           errorMessage = error.message || "Registration failed. Please try again.";

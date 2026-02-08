@@ -55,7 +55,7 @@ class MediaDynamoDbRepositoryIntegrationTest extends BaseIntegrationTest {
       dynamoDbService.createMedia(createTestMedia("media-2"));
       dynamoDbService.createMedia(createTestMedia("media-3"));
 
-      var result = dynamoDbService.getMediaPaginated(null, null);
+      var result = dynamoDbService.getMediaPaginated(null, null, null);
 
       assertThat(result.items()).hasSize(3);
     }
@@ -69,18 +69,18 @@ class MediaDynamoDbRepositoryIntegrationTest extends BaseIntegrationTest {
       }
 
       // Get first page with limit 2
-      var page1 = dynamoDbService.getMediaPaginated(null, 2);
+      var page1 = dynamoDbService.getMediaPaginated(null, 2, null);
       assertThat(page1.items()).hasSize(2);
       assertThat(page1.hasMore()).isTrue();
       assertThat(page1.nextCursor()).isNotNull();
 
       // Get second page using cursor
-      var page2 = dynamoDbService.getMediaPaginated(page1.nextCursor(), 2);
+      var page2 = dynamoDbService.getMediaPaginated(page1.nextCursor(), 2, null);
       assertThat(page2.items()).hasSize(2);
       assertThat(page2.hasMore()).isTrue();
 
       // Get third page
-      var page3 = dynamoDbService.getMediaPaginated(page2.nextCursor(), 2);
+      var page3 = dynamoDbService.getMediaPaginated(page2.nextCursor(), 2, null);
       assertThat(page3.items()).hasSize(1);
       assertThat(page3.hasMore()).isFalse();
       assertThat(page3.nextCursor()).isNull();

@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Media Processing App', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/media/images');
   });
 
   test('shows header with title', async ({ page }) => {
@@ -15,12 +15,12 @@ test.describe('Media Processing App', () => {
   });
 
   test('shows upload zone', async ({ page }) => {
-    await expect(page.getByText('Upload Image')).toBeVisible();
-    await expect(page.getByText('Drop image here or click to browse')).toBeVisible();
+    await expect(page.getByText('Upload Images')).toBeVisible();
+    await expect(page.getByText('Drop images here or click to browse')).toBeVisible();
   });
 
   test('shows media list section', async ({ page }) => {
-    await expect(page.getByText('All Media')).toBeVisible();
+    await expect(page.getByText('Images')).toBeVisible();
   });
 
   test('upload zone accepts drag over', async ({ page }) => {
@@ -35,14 +35,14 @@ test.describe('Media Processing App', () => {
   });
 
   test('process button is disabled without file', async ({ page }) => {
-    const button = page.getByRole('button', { name: 'Process Image' });
+    const button = page.getByRole('button', { name: 'Upload' });
     await expect(button).toBeDisabled();
   });
 });
 
 test.describe('File Selection', () => {
   test('shows preview after selecting image', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/media/images');
 
     const fileInput = page.locator('input[type="file"]');
     await fileInput.setInputFiles({
@@ -55,7 +55,7 @@ test.describe('File Selection', () => {
   });
 
   test('enables process button after file selection', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/media/images');
 
     const fileInput = page.locator('input[type="file"]');
     await fileInput.setInputFiles({
@@ -64,12 +64,12 @@ test.describe('File Selection', () => {
       buffer: Buffer.from('fake-image-data'),
     });
 
-    const button = page.getByRole('button', { name: 'Process Image' });
+    const button = page.getByRole('button', { name: 'Upload' });
     await expect(button).toBeEnabled();
   });
 
   test('shows large file indicator for files over 5MB', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/media/images');
 
     const fileInput = page.locator('input[type="file"]');
     const largeBuffer = Buffer.alloc(6 * 1024 * 1024); // 6MB
@@ -85,7 +85,7 @@ test.describe('File Selection', () => {
 
 test.describe('Width Slider', () => {
   test('updates displayed value when slider changes', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/media/images');
 
     const slider = page.locator('#widthSlider');
     await slider.fill('750');

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getDownloadUrl, getPreviewUrl } from "../../media/services";
+  import { getDownloadUrl, getPreviewUrl, getMedia } from "../../media/services";
   import { createMediaViewsQuery } from "../queries";
   import { currentMediaId } from "../../media/stores";
   import type { EntityViewCount } from "../../../shared/types";
@@ -32,15 +32,24 @@
     }
   }
 
-  function handleViewDetails() {
+  async function handleViewDetails() {
     if (media && !media.deleted) {
       currentMediaId.set(media.entityId);
       // Navigate to home page using the global navigate function
       const nav = (window as unknown as { navigate?: (path: string) => void }).navigate;
+      let targetPath = "/media/images";
+      try {
+        const details = await getMedia(media.entityId);
+        if (details.mediaType === "document") {
+          targetPath = "/media/documents";
+        }
+      } catch (error) {
+        console.warn("Failed to fetch media details for navigation", error);
+      }
       if (nav) {
-        nav("/");
+        nav(targetPath);
       } else {
-        window.location.href = "/";
+        window.location.href = targetPath;
       }
       onclose();
     }

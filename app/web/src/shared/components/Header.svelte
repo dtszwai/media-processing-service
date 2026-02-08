@@ -21,6 +21,10 @@
   const versionQuery = createVersionInfoQuery();
 
   let isAdmin = $derived(user?.roles?.includes("ADMIN") ?? false);
+  let isImagesRoute = $derived(
+    currentPath === "/" || currentPath === "/media" || currentPath.startsWith("/media/images"),
+  );
+  let isDocumentsRoute = $derived(currentPath.startsWith("/media/documents"));
 
   function handleClickOutside(event: MouseEvent) {
     if (showDetails && dropdownRef && !dropdownRef.contains(event.target as Node)) {
@@ -98,13 +102,22 @@
         <!-- Navigation -->
         <nav class="flex items-center space-x-4">
           <a
-            href="/"
-            onclick={(e) => handleNavClick(e, "/")}
-            class="text-sm font-medium transition-colors {currentPath === '/'
+            href="/media/images"
+            onclick={(e) => handleNavClick(e, "/media/images")}
+            class="text-sm font-medium transition-colors {isImagesRoute
               ? 'text-gray-900'
               : 'text-gray-500 hover:text-gray-700'}"
           >
-            Upload
+            Images
+          </a>
+          <a
+            href="/media/documents"
+            onclick={(e) => handleNavClick(e, "/media/documents")}
+            class="text-sm font-medium transition-colors {isDocumentsRoute
+              ? 'text-gray-900'
+              : 'text-gray-500 hover:text-gray-700'}"
+          >
+            Documents
           </a>
           <a
             href="/analytics"

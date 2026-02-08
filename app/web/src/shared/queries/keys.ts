@@ -6,7 +6,8 @@ import { queryClient } from "./client";
 export const queryKeys = {
   media: {
     all: ["media"] as const,
-    list: (cursor?: string, limit?: number) => ["media", "list", { cursor, limit }] as const,
+    list: (cursor?: string, limit?: number, mediaType?: string) =>
+      ["media", "list", { cursor, limit, mediaType }] as const,
     detail: (id: string) => ["media", "detail", id] as const,
     status: (id: string) => ["media", "status", id] as const,
   },

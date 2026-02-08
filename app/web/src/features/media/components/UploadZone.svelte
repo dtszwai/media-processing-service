@@ -11,13 +11,20 @@
   import { invalidateMediaList } from "../../../shared/queries";
   import { pollForStatus } from "../services";
   import { isProcessing, currentMediaId } from "../stores";
-  import type { OutputFormat } from "../../../shared/types";
+  import type { OutputFormat, MediaType } from "../../../shared/types";
+
+  interface Props {
+    mediaType?: MediaType;
+  }
+
+  let { mediaType }: Props = $props();
 
   let selectedFile: File | null = $state(null);
   let previewUrl: string | null = $state(null);
   let dragover = $state(false);
   let width = $state(500);
   let outputFormat = $state<OutputFormat>("jpeg");
+  let selectedMediaType = $state<MediaType | null>(null);
   let webhookUrl = $state("");
   let showAdvanced = $state(false);
   let uploadProgress = $state(0);
@@ -33,6 +40,31 @@
     { value: "png", label: "PNG" },
     { value: "webp", label: "WebP" },
   ];
+
+  let uploadTitle = $derived(
+    mediaType === "image" ? "Upload Images" : mediaType === "document" ? "Upload Documents" : "Upload Media",
+  );
+  let promptText = $derived(
+    mediaType === "image"
+      ? "Drop images here or click to browse"
+      : mediaType === "document"
+        ? "Drop PDFs here or click to browse"
+        : "Drop media here or click to browse",
+  );
+  let supportText = $derived(
+    mediaType === "image"
+      ? "JPG, PNG, GIF, WebP supported"
+      : mediaType === "document"
+        ? "PDF supported"
+        : "JPG, PNG, GIF, WebP, PDF supported",
+  );
+  let acceptedTypes = $derived(
+    mediaType === "image"
+      ? "image/*"
+      : mediaType === "document"
+        ? "application/pdf"
+        : "image/*,application/pdf",
+  );
 
   function handleDragOver(e: DragEvent) {
     e.preventDefault();
@@ -65,8 +97,25 @@
 
   async function handleFile(file: File) {
     if ($isProcessing) return;
-    if (!file.type.startsWith("image/")) {
-      alert("Please select an image file");
+    const detectedType = file.type.startsWith("image/")
+      ? "image"
+      : file.type === "application/pdf"
+        ? "document"
+        : null;
+
+    if (!detectedType) {
+      alert(
+        mediaType === "document"
+          ? "Please select a PDF file"
+          : mediaType === "image"
+            ? "Please select an image file"
+            : "Please select an image or PDF file",
+      );
+      return;
+    }
+
+    if (mediaType && detectedType !== mediaType) {
+      alert(mediaType === "document" ? "Please select a PDF file" : "Please select an image file");
       return;
     }
 
@@ -80,15 +129,17 @@
     }
 
     selectedFile = file;
+    selectedMediaType = mediaType || detectedType;
     uploadMethod = usePresigned ? "presigned" : "direct";
 
     // Generate preview (uses thumbnail for large files)
-    previewUrl = await getPreviewUrl(file);
+    previewUrl = detectedType === "image" ? await getPreviewUrl(file) : null;
   }
 
   function clearFile() {
     selectedFile = null;
     previewUrl = null;
+    selectedMediaType = null;
     uploadProgress = 0;
     uploadMethod = null;
     if (fileInput) fileInput.value = "";
@@ -107,8 +158,9 @@
         // Use presigned URL upload for large files or when webhook URL is provided
         const result = await presignedUploadMutation.mutateAsync({
           file: selectedFile,
-          width,
+          width: selectedMediaType === "image" ? width : undefined,
           outputFormat,
+          mediaType: selectedMediaType || undefined,
           webhookUrl: webhookUrl.trim() || undefined,
           onProgress: (progress: number) => {
             uploadProgress = progress;
@@ -119,8 +171,9 @@
         // Use direct upload for smaller files
         const result = await uploadMutation.mutateAsync({
           file: selectedFile,
-          width,
+          width: selectedMediaType === "image" ? width : undefined,
           outputFormat,
+          mediaType: selectedMediaType || undefined,
         });
         mediaId = result.mediaId;
       }
@@ -143,7 +196,7 @@
 </script>
 
 <div class="card rounded-lg p-6">
-  <h2 class="text-base font-semibold text-gray-900 mb-4">Upload Image</h2>
+  <h2 class="text-base font-semibold text-gray-900 mb-4">{uploadTitle}</h2>
 
   <!-- Upload Zone -->
   <div
@@ -160,7 +213,13 @@
     onclick={triggerFileSelect}
     onkeydown={(e) => e.key === "Enter" && triggerFileSelect()}
   >
-    <input type="file" accept="image/*" class="hidden" bind:this={fileInput} onchange={handleFileSelect} />
+    <input
+      type="file"
+      accept={acceptedTypes}
+      class="hidden"
+      bind:this={fileInput}
+      onchange={handleFileSelect}
+    />
 
     {#if !selectedFile}
       <svg class="w-10 h-10 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -171,11 +230,23 @@
           d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
         ></path>
       </svg>
-      <p class="text-gray-600 text-sm">Drop image here or click to browse</p>
-      <p class="text-gray-400 text-xs mt-1">JPG, PNG, GIF, WebP supported (up to 1GB)</p>
+      <p class="text-gray-600 text-sm">{promptText}</p>
+      <p class="text-gray-400 text-xs mt-1">{supportText}</p>
     {:else}
       {#if previewUrl}
         <img src={previewUrl} alt="Preview" class="max-h-24 mx-auto rounded mb-2" />
+      {:else if selectedMediaType === "document"}
+        <div class="h-24 flex items-center justify-center mb-2 text-gray-400">
+          <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.5"
+              d="M7 2h7l5 5v13a2 2 0 01-2 2H7a2 2 0 01-2-2V4a2 2 0 012-2z"
+            ></path>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M14 2v5h5"></path>
+          </svg>
+        </div>
       {:else}
         <div class="h-24 flex items-center justify-center mb-2">
           <svg class="animate-spin h-6 w-6 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -207,34 +278,36 @@
 
   <!-- Options -->
   <div class="flex flex-wrap items-end gap-4 mt-4">
-    <div class="flex-1 min-w-48">
-      <label for="widthSlider" class="block text-xs font-medium text-gray-600 mb-2">Target Width</label>
-      <div class="flex items-center space-x-3">
-        <input
-          type="range"
-          id="widthSlider"
-          min="100"
-          max="1024"
-          bind:value={width}
-          disabled={$isProcessing}
-          class="flex-1 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer disabled:opacity-50"
-        />
-        <span class="text-xs font-mono text-gray-600 bg-gray-100 px-2 py-1 rounded">{width}px</span>
+    {#if selectedMediaType === "image"}
+      <div class="flex-1 min-w-48">
+        <label for="widthSlider" class="block text-xs font-medium text-gray-600 mb-2">Target Width</label>
+        <div class="flex items-center space-x-3">
+          <input
+            type="range"
+            id="widthSlider"
+            min="100"
+            max="1024"
+            bind:value={width}
+            disabled={$isProcessing}
+            class="flex-1 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer disabled:opacity-50"
+          />
+          <span class="text-xs font-mono text-gray-600 bg-gray-100 px-2 py-1 rounded">{width}px</span>
+        </div>
       </div>
-    </div>
-    <div class="min-w-32">
-      <label for="formatSelect" class="block text-xs font-medium text-gray-600 mb-2">Output Format</label>
-      <select
-        id="formatSelect"
-        bind:value={outputFormat}
-        disabled={$isProcessing}
-        class="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
-      >
-        {#each formatOptions as option}
-          <option value={option.value}>{option.label}</option>
-        {/each}
-      </select>
-    </div>
+      <div class="min-w-32">
+        <label for="formatSelect" class="block text-xs font-medium text-gray-600 mb-2">Output Format</label>
+        <select
+          id="formatSelect"
+          bind:value={outputFormat}
+          disabled={$isProcessing}
+          class="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
+        >
+          {#each formatOptions as option}
+            <option value={option.value}>{option.label}</option>
+          {/each}
+        </select>
+      </div>
+    {/if}
     <button
       onclick={handleUpload}
       disabled={!selectedFile || $isProcessing}
@@ -256,7 +329,7 @@
         </svg>
         Processing...
       {:else}
-        Process Image
+        Upload
       {/if}
     </button>
   </div>

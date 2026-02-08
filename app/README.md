@@ -7,7 +7,7 @@ This directory contains the application source code for the media processing ser
 | Directory  | Description                              |
 | ---------- | ---------------------------------------- |
 | `api/`     | Spring Boot REST API (port 9000)         |
-| `lambdas/` | AWS Lambda handlers for image processing |
+| `lambdas/` | AWS Lambda handlers for media processing |
 | `common/`  | Shared models and events                 |
 | `web/`     | Svelte web application                   |
 
@@ -36,18 +36,18 @@ PENDING_UPLOAD → PENDING → PROCESSING → COMPLETE
 
 ### Direct Upload (up to 50MB)
 
-1. Client uploads image → API validates and stores in S3, metadata in DynamoDB (`PENDING`)
-2. API publishes `media.v1.process` event to SNS
+1. Client uploads media → API validates and stores in S3, metadata in DynamoDB (`PENDING` for images, `COMPLETE` for PDFs)
+2. API publishes `media.v1.process` event to SNS (images only)
 3. Lambda receives event, sets status to `PROCESSING`, processes image
-4. Lambda stores result in S3 `resized/` prefix, updates status to `COMPLETE`
+4. Lambda stores result in S3 `processed/` + `preview/` variants, updates status to `COMPLETE`
 5. Client polls status, downloads via presigned URL
 
 ### Presigned URL Upload (up to 1GB)
 
 1. Client calls `POST /v1/media/upload/init` → API returns presigned S3 PUT URL (`PENDING_UPLOAD`)
 2. Client uploads directly to S3 using presigned URL
-3. Client calls `POST /v1/media/{id}/upload/complete` → API verifies and publishes event (`PENDING`)
-4. Processing continues as above
+3. Client calls `POST /v1/media/{id}/upload/complete` → API verifies and publishes event (`PENDING` for images, `COMPLETE` for PDFs)
+4. Processing continues as above (images only)
 
 ### Resize
 

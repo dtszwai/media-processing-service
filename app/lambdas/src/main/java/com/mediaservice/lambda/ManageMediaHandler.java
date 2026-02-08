@@ -10,6 +10,7 @@ import com.mediaservice.common.event.MediaEvent;
 import com.mediaservice.common.model.EventType;
 import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaStatus;
+import com.mediaservice.common.model.MediaType;
 import com.mediaservice.common.model.OutputFormat;
 import com.mediaservice.lambda.service.DynamoDbService;
 import com.mediaservice.lambda.service.ImageProcessingService;
@@ -134,31 +135,47 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
       var mediaId = payload.getMediaId();
       var tenantId = payload.getTenantId() != null ? payload.getTenantId() : "default";
       var width = payload.getWidth();
-      var outputFormat = OutputFormat.fromString(payload.getOutputFormat());
+      var mediaType = MediaType.fromString(payload.getMediaType());
+      if (mediaType == null) {
+        mediaType = MediaType.IMAGE;
+      }
+      var outputFormat = mediaType == MediaType.IMAGE ? OutputFormat.fromString(payload.getOutputFormat()) : null;
 
       span.setAttribute("media.id", mediaId);
       span.setAttribute("tenant.id", tenantId);
       span.setAttribute("event.type", event.getType());
-      span.setAttribute("output.format", outputFormat.getFormat());
+      span.setAttribute("media.type", mediaType.getValue());
+      if (outputFormat != null) {
+        span.setAttribute("output.format", outputFormat.getFormat());
+      }
       if (width != null)
         span.setAttribute("width", width);
-      logger.info("Processing event: type={}, mediaId={}, tenantId={}, outputFormat={}", event.getType(), mediaId,
-          tenantId, outputFormat.getFormat());
+      logger.info("Processing event: type={}, mediaId={}, tenantId={}, mediaType={}, outputFormat={}",
+          event.getType(), mediaId, tenantId, mediaType.getValue(),
+          outputFormat != null ? outputFormat.getFormat() : "n/a");
       var eventType = EventType.fromString(event.getType());
       if (eventType == null) {
         logger.info("Skipping message with unsupported type: {}", event.getType());
         return;
       }
       switch (eventType) {
-        case DELETE_MEDIA -> handleDelete(mediaId, tenantId, span);
+        case DELETE_MEDIA -> handleDelete(mediaId, tenantId, mediaType, span);
         case RESIZE_MEDIA -> {
-          if (width == null) {
+          if (mediaType != MediaType.IMAGE) {
+            logger.info("Skipping resize for non-image media: {}", mediaType.getValue());
+          } else if (width == null) {
             logger.info("Skipping resize message with missing width");
           } else {
             handleMediaProcessing(mediaId, tenantId, width, outputFormat, true, span);
           }
         }
-        case PROCESS_MEDIA -> handleMediaProcessing(mediaId, tenantId, width, outputFormat, false, span);
+        case PROCESS_MEDIA -> {
+          if (mediaType == MediaType.IMAGE) {
+            handleMediaProcessing(mediaId, tenantId, width, outputFormat, false, span);
+          } else {
+            handleDocumentProcessing(mediaId, span);
+          }
+        }
         default -> logger.info("Skipping message with unhandled event type: {}", event.getType());
       }
     } catch (Exception e) {
@@ -174,7 +191,7 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
    * Handle soft delete: S3 files are deleted, DynamoDB record is preserved.
    * The API has already soft-deleted the record (status=DELETED, deletedAt set).
    */
-  private void handleDelete(String mediaId, String tenantId, Span span) {
+  private void handleDelete(String mediaId, String tenantId, MediaType mediaType, Span span) {
     logger.info("Cleaning up S3 files for soft-deleted media: {}", mediaId);
     try {
       var mediaOpt = dynamoDbService.getMedia(mediaId);
@@ -183,17 +200,19 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
         return;
       }
       var media = mediaOpt.get();
-      var outputFormat = media.getOutputFormatOrDefault();
+      var outputFormat = mediaType == MediaType.IMAGE ? media.getOutputFormatOrDefault() : null;
 
       // Delete original file from S3
       s3Service.deleteOriginalFile(tenantId, mediaId, media.getName());
 
-      // Always try to delete processed file (S3 delete is idempotent - no error if
-      // file doesn't exist)
-      s3Service.deleteProcessedFile(tenantId, mediaId, outputFormat);
+      if (mediaType == MediaType.IMAGE) {
+        // Always try to delete processed file (S3 delete is idempotent - no error if
+        // file doesn't exist)
+        s3Service.deleteProcessedFile(tenantId, mediaId, outputFormat);
 
-      // Delete preview file from S3
-      s3Service.deletePreviewFile(tenantId, mediaId, outputFormat);
+        // Delete preview file from S3
+        s3Service.deletePreviewFile(tenantId, mediaId, outputFormat);
+      }
 
       logger.info("S3 cleanup completed for media: {} (DynamoDB record preserved for analytics)", mediaId);
       span.setStatus(StatusCode.OK);
@@ -321,6 +340,29 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
       }
       failureCounter.add(1);
       throw new RuntimeException("Failed to process media", e);
+    }
+  }
+
+  private void handleDocumentProcessing(String mediaId, Span span) {
+    logger.info("Document processing noop: {}", mediaId);
+    try {
+      var mediaOpt = dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.COMPLETE, MediaStatus.PENDING);
+      if (mediaOpt.isEmpty()) {
+        logger.warn("Document {} not found or not in PENDING status", mediaId);
+        return;
+      }
+      span.setStatus(StatusCode.OK);
+      processSuccessCounter.add(1);
+    } catch (Exception e) {
+      logger.error("Failed to complete document {}: {}", mediaId, e.getMessage(), e);
+      span.setStatus(StatusCode.ERROR, e.getMessage());
+      processFailureCounter.add(1);
+      try {
+        dynamoDbService.setMediaStatus(mediaId, MediaStatus.ERROR);
+      } catch (Exception updateErr) {
+        logger.error("Failed to update status to ERROR: {}", updateErr.getMessage());
+      }
+      throw e;
     }
   }
 

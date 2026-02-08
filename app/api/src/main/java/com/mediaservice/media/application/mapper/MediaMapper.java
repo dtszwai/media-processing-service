@@ -14,6 +14,7 @@ public class MediaMapper {
         .size(media.getSize())
         .name(media.getName())
         .mimetype(media.getMimetype())
+        .mediaType(media.getMediaType())
         .status(media.getStatus())
         .width(media.getWidth())
         .outputFormat(media.getOutputFormat())

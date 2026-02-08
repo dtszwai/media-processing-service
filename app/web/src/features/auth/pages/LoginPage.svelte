@@ -23,7 +23,7 @@
       { email, password },
       {
         onSuccess: () => {
-          navigate("/");
+          navigate("/media/images");
         },
         onError: (error: Error) => {
           if (error.message === "Authentication required") {

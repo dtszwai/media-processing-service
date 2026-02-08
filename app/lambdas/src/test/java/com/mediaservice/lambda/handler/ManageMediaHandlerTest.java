@@ -226,7 +226,7 @@ class ManageMediaHandlerTest {
   }
 
   private SQSEvent createSqsEvent(String eventType, String mediaId, Integer width) throws Exception {
-    var payload = new MediaEvent.MediaEventPayload(mediaId, "default", width, "jpeg");
+    var payload = new MediaEvent.MediaEventPayload(mediaId, "default", "image", width, "jpeg");
     var event = new MediaEvent(eventType, payload);
     return createSqsEventFromMediaEvent(event);
   }

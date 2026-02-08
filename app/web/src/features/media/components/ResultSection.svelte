@@ -12,7 +12,13 @@
   import { createMediaListQuery, createResizeMutation, createRetryMutation } from "../queries";
   import { invalidateMediaList } from "../../../shared/queries";
   import { currentMediaId, isProcessing } from "../stores";
-  import type { OutputFormat } from "../../../shared/types";
+  import type { OutputFormat, MediaType } from "../../../shared/types";
+
+  interface Props {
+    mediaType?: MediaType;
+  }
+
+  let { mediaType }: Props = $props();
 
   let resizeWidth = $state(500);
   let resizeFormat = $state<OutputFormat>("jpeg");
@@ -22,7 +28,7 @@
   let resumeProgress = $state(0);
   let resumeFileInput: HTMLInputElement;
 
-  const mediaListQuery = createMediaListQuery();
+  const mediaListQuery = createMediaListQuery(undefined, undefined, mediaType);
   const resizeMutation = createResizeMutation();
   const retryMutation = createRetryMutation();
 
@@ -32,17 +38,23 @@
     { value: "webp", label: "WebP" },
   ];
 
-  let currentMedia = $derived(mediaListQuery.data?.items.find((m) => m.mediaId === $currentMediaId) || null);
+  let mediaList = $derived(mediaListQuery.data?.items ?? []);
+  let filteredList = $derived(
+    mediaType
+      ? mediaList.filter((item) => (item.mediaType || "image") === mediaType)
+      : mediaList,
+  );
+  let currentMedia = $derived(filteredList.find((m) => m.mediaId === $currentMediaId) || null);
 
   $effect(() => {
-    if (currentMedia) {
-      resizeWidth = currentMedia.width;
+    if (currentMedia && (currentMedia.mediaType === "image" || !currentMedia.mediaType)) {
+      resizeWidth = currentMedia.width || 500;
       resizeFormat = currentMedia.outputFormat || "jpeg";
     }
   });
 
   async function handleResize() {
-    if (!currentMedia || isResizing || $isProcessing) return;
+    if (!currentMedia || currentMedia.mediaType === "document" || isResizing || $isProcessing) return;
 
     isResizing = true;
 
@@ -166,7 +178,7 @@
     </div>
 
     <!-- Resize Controls -->
-    {#if currentMedia.status === "COMPLETE"}
+    {#if currentMedia.status === "COMPLETE" && currentMedia.mediaType !== "document"}
       <div class="flex items-center gap-4 mb-4 p-3 bg-gray-50 rounded-lg">
         <label for="resizeSlider" class="text-xs font-medium text-gray-600">Resize to:</label>
         <input
@@ -311,41 +323,25 @@
       </div>
     {/if}
 
-    <!-- Image Comparison -->
-    <div class="grid grid-cols-2 gap-4 mb-4">
-      <div class="image-box">
-        <p class="text-xs font-medium text-gray-500 mb-2">Original</p>
+    <!-- Media Preview -->
+    {#if currentMedia.mediaType === "document"}
+      <div class="mb-4">
+        <p class="text-xs font-medium text-gray-500 mb-2">PDF Preview</p>
         {#if currentMedia.status === "PENDING_UPLOAD"}
-          <div class="h-[180px] flex items-center justify-center text-gray-400 text-sm">
+          <div class="h-[240px] flex items-center justify-center text-gray-400 text-sm">
             <span>Awaiting upload...</span>
           </div>
+        {:else if currentMedia.status === "COMPLETE"}
+          <iframe
+            title="PDF preview"
+            src={getOriginalUrl(currentMedia.mediaId)}
+            class="w-full h-[400px] border rounded"
+          ></iframe>
         {:else}
-          <img src={getOriginalUrl(currentMedia.mediaId)} alt="Original" />
-        {/if}
-        <div class="mt-2 space-y-0.5">
-          <p class="text-xs text-gray-500">Size: {formatFileSize(currentMedia.size)}</p>
-        </div>
-      </div>
-      <div class="image-box">
-        <div class="flex items-center justify-between mb-2">
-          <p class="text-xs font-medium text-gray-500">Processed</p>
-          {#if currentMedia.status === "COMPLETE"}
-            <span class="text-xs text-cyan-600 bg-cyan-50 px-2 py-0.5 rounded-full">CDN Preview</span>
-          {/if}
-        </div>
-        {#if currentMedia.status === "COMPLETE"}
-          <img src="{getPreviewUrl(currentMedia.mediaId)}?t={Date.now()}" alt="Processed" />
-          <div class="mt-2 space-y-0.5">
-            <p class="text-xs text-gray-500">Width: {currentMedia.width}px</p>
-            <p class="text-xs text-gray-500">
-              Format: <span class="uppercase">{currentMedia.outputFormat || "jpeg"}</span>
-            </p>
-          </div>
-        {:else}
-          <div class="h-[180px] flex items-center justify-center text-gray-400 text-sm">
+          <div class="h-[240px] flex items-center justify-center text-gray-400 text-sm">
             {#if currentMedia.status === "PROCESSING"}
               <span class="pulse">Processing...</span>
-            {:else if currentMedia.status === "PENDING" || currentMedia.status === "PENDING_UPLOAD"}
+            {:else if currentMedia.status === "PENDING"}
               <span>Pending...</span>
             {:else}
               <span>{currentMedia.status}</span>
@@ -353,7 +349,50 @@
           </div>
         {/if}
       </div>
-    </div>
+    {:else}
+      <div class="grid grid-cols-2 gap-4 mb-4">
+        <div class="image-box">
+          <p class="text-xs font-medium text-gray-500 mb-2">Original</p>
+          {#if currentMedia.status === "PENDING_UPLOAD"}
+            <div class="h-[180px] flex items-center justify-center text-gray-400 text-sm">
+              <span>Awaiting upload...</span>
+            </div>
+          {:else}
+            <img src={getOriginalUrl(currentMedia.mediaId)} alt="Original" />
+          {/if}
+          <div class="mt-2 space-y-0.5">
+            <p class="text-xs text-gray-500">Size: {formatFileSize(currentMedia.size)}</p>
+          </div>
+        </div>
+        <div class="image-box">
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-xs font-medium text-gray-500">Processed</p>
+            {#if currentMedia.status === "COMPLETE"}
+              <span class="text-xs text-cyan-600 bg-cyan-50 px-2 py-0.5 rounded-full">CDN Preview</span>
+            {/if}
+          </div>
+          {#if currentMedia.status === "COMPLETE"}
+            <img src="{getPreviewUrl(currentMedia.mediaId)}?t={Date.now()}" alt="Processed" />
+            <div class="mt-2 space-y-0.5">
+              <p class="text-xs text-gray-500">Width: {currentMedia.width}px</p>
+              <p class="text-xs text-gray-500">
+                Format: <span class="uppercase">{currentMedia.outputFormat || "jpeg"}</span>
+              </p>
+            </div>
+          {:else}
+            <div class="h-[180px] flex items-center justify-center text-gray-400 text-sm">
+              {#if currentMedia.status === "PROCESSING"}
+                <span class="pulse">Processing...</span>
+              {:else if currentMedia.status === "PENDING" || currentMedia.status === "PENDING_UPLOAD"}
+                <span>Pending...</span>
+              {:else}
+                <span>{currentMedia.status}</span>
+              {/if}
+            </div>
+          {/if}
+        </div>
+      </div>
+    {/if}
 
     <!-- Media Metadata -->
     <div class="p-3 bg-gray-50 rounded-lg">
@@ -375,13 +414,19 @@
           <p class="text-gray-600">{formatFileSize(currentMedia.size)}</p>
         </div>
         <div>
-          <span class="text-gray-400">Width:</span>
-          <p class="text-gray-600">{currentMedia.width}px</p>
+          <span class="text-gray-400">Media Type:</span>
+          <p class="text-gray-600">{currentMedia.mediaType || "image"}</p>
         </div>
-        <div>
-          <span class="text-gray-400">Output Format:</span>
-          <p class="text-gray-600 uppercase">{currentMedia.outputFormat || "jpeg"}</p>
-        </div>
+        {#if currentMedia.mediaType === "image"}
+          <div>
+            <span class="text-gray-400">Width:</span>
+            <p class="text-gray-600">{currentMedia.width}px</p>
+          </div>
+          <div>
+            <span class="text-gray-400">Output Format:</span>
+            <p class="text-gray-600 uppercase">{currentMedia.outputFormat || "jpeg"}</p>
+          </div>
+        {/if}
         <div>
           <span class="text-gray-400">Created:</span>
           <p class="text-gray-600">{formatDateTime(currentMedia.createdAt)}</p>

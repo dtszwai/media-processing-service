@@ -1,10 +1,10 @@
 # Distributed Media Processing Service
 
-An event-driven image processing pipeline built with Spring Boot and AWS Lambda, demonstrating decoupled architecture patterns and distributed tracing.
+An event-driven media processing pipeline built with Spring Boot and AWS Lambda, demonstrating decoupled architecture patterns and distributed tracing. Currently supports images and PDFs.
 
 ## Overview
 
-This service handles image uploads asynchronously using an event-driven architecture. The REST API accepts uploads and publishes events, while Lambda functions handle CPU-intensive image transformations independently, enabling the system to scale ingestion and processing separately.
+This service handles media uploads asynchronously using an event-driven architecture. The REST API accepts uploads and publishes events, while Lambda functions handle CPU-intensive image transformations independently, enabling the system to scale ingestion and processing separately. PDFs are stored and served as original files (processing features will be added later).
 
 ## Architecture
 

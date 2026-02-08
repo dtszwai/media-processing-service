@@ -7,8 +7,11 @@ import com.mediaservice.media.api.dto.MediaResponse;
 import com.mediaservice.common.constants.StorageConstants;
 import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaStatus;
+import com.mediaservice.common.model.MediaType;
 import com.mediaservice.common.model.OutputFormat;
 import com.mediaservice.media.domain.service.ImageValidationService;
+import com.mediaservice.media.domain.service.DocumentValidationService;
+import com.mediaservice.media.domain.service.MediaTypeResolver;
 import com.mediaservice.media.infrastructure.messaging.MediaEventPublisher;
 import com.mediaservice.media.infrastructure.persistence.MediaDynamoDbRepository;
 import com.mediaservice.media.infrastructure.storage.S3StorageService;
@@ -52,6 +55,8 @@ public class MediaApplicationService {
   private final MediaEventPublisher eventPublisher;
   private final MediaProperties mediaProperties;
   private final ImageValidationService imageValidationService;
+  private final DocumentValidationService documentValidationService;
+  private final MediaTypeResolver mediaTypeResolver;
   private final CacheInvalidationService cacheInvalidationService;
   private final MultiLevelCacheOrchestrator cacheOrchestrator;
   private final AnalyticsService analyticsService;
@@ -68,7 +73,8 @@ public class MediaApplicationService {
 
   public MediaApplicationService(MediaDynamoDbRepository mediaRepository, S3StorageService s3Service,
       MediaEventPublisher eventPublisher, MediaProperties mediaProperties,
-      ImageValidationService imageValidationService, CacheInvalidationService cacheInvalidationService,
+      ImageValidationService imageValidationService, DocumentValidationService documentValidationService,
+      MediaTypeResolver mediaTypeResolver, CacheInvalidationService cacheInvalidationService,
       MultiLevelCacheOrchestrator cacheOrchestrator, AnalyticsService analyticsService,
       AuthorizationService authorizationService,
       Tracer tracer, Meter meter) {
@@ -77,6 +83,8 @@ public class MediaApplicationService {
     this.eventPublisher = eventPublisher;
     this.mediaProperties = mediaProperties;
     this.imageValidationService = imageValidationService;
+    this.documentValidationService = documentValidationService;
+    this.mediaTypeResolver = mediaTypeResolver;
     this.cacheInvalidationService = cacheInvalidationService;
     this.cacheOrchestrator = cacheOrchestrator;
     this.analyticsService = analyticsService;
@@ -90,14 +98,19 @@ public class MediaApplicationService {
         .build();
   }
 
-  public MediaResponse uploadMedia(MultipartFile file, Integer width, String outputFormat) throws IOException {
+  public MediaResponse uploadMedia(MultipartFile file, Integer width, String outputFormat, String mediaType) throws IOException {
     String contentType = file.getContentType();
-    if (contentType == null || !contentType.startsWith("image")) {
-      throw new IllegalArgumentException("Invalid file type. Only images are supported.");
+    MediaType resolvedType = mediaTypeResolver.resolve(MediaType.fromString(mediaType), contentType, file.getOriginalFilename());
+    if (resolvedType == null) {
+      throw new IllegalArgumentException("Invalid file type. Only images and PDFs are supported.");
     }
 
-    // Validate actual image content (magic bytes + parsing)
-    imageValidationService.validateImage(file);
+    if (resolvedType == MediaType.IMAGE) {
+      // Validate actual image content (magic bytes + parsing)
+      imageValidationService.validateImage(file);
+    } else if (resolvedType == MediaType.DOCUMENT) {
+      documentValidationService.validatePdf(file);
+    }
 
     Span span = tracer.spanBuilder("upload-media-file")
         .setSpanKind(SpanKind.INTERNAL)
@@ -106,13 +119,20 @@ public class MediaApplicationService {
       String mediaId = UUID.randomUUID().toString();
       span.setAttribute("media.id", mediaId);
 
-      int targetWidth = mediaProperties.resolveWidth(width);
-      OutputFormat targetFormat = OutputFormat.fromString(outputFormat);
+      Integer targetWidth = null;
+      OutputFormat targetFormat = null;
+      if (resolvedType == MediaType.IMAGE) {
+        targetWidth = mediaProperties.resolveWidth(width);
+        targetFormat = OutputFormat.fromString(outputFormat);
+      }
 
       String originalName = file.getOriginalFilename();
       String fileName = (originalName == null || originalName.isEmpty()) ? "image.jpg" : originalName;
       span.setAttribute("file.name", fileName);
-      span.setAttribute("output.format", targetFormat.getFormat());
+      if (targetFormat != null) {
+        span.setAttribute("output.format", targetFormat.getFormat());
+      }
+      span.setAttribute("media.type", resolvedType.getValue());
       String tenantId = TenantContext.getTenantId();
       String userId = TenantContext.getUserId();
 
@@ -127,7 +147,8 @@ public class MediaApplicationService {
             .size(file.getSize())
             .name(fileName)
             .mimetype(contentType)
-            .status(MediaStatus.PENDING)
+            .mediaType(resolvedType)
+            .status(resolvedType == MediaType.DOCUMENT ? MediaStatus.COMPLETE : MediaStatus.PENDING)
             .width(targetWidth)
             .outputFormat(targetFormat)
             .build());
@@ -136,19 +157,23 @@ public class MediaApplicationService {
         compensateS3Upload(tenantId, mediaId, fileName);
         throw e;
       }
-      // Step 3: Publish event to SNS for async processing by Lambda
-      try {
-        eventPublisher.publishProcessMediaEvent(mediaId, tenantId, targetWidth, targetFormat.getFormat());
-      } catch (Exception e) {
-        // Compensate: delete DynamoDB record and S3 object
-        compensateDynamoDb(mediaId);
-        compensateS3Upload(tenantId, mediaId, fileName);
-        throw e;
+      // Step 3: Publish event to SNS for async processing by Lambda (images only for now)
+      if (resolvedType == MediaType.IMAGE) {
+        try {
+          eventPublisher.publishProcessMediaEvent(mediaId, tenantId, resolvedType.getValue(), targetWidth,
+              targetFormat != null ? targetFormat.getFormat() : null);
+        } catch (Exception e) {
+          // Compensate: delete DynamoDB record and S3 object
+          compensateDynamoDb(mediaId);
+          compensateS3Upload(tenantId, mediaId, fileName);
+          throw e;
+        }
       }
       span.setStatus(StatusCode.OK);
       uploadSuccessCounter.add(1);
-      log.info("Media uploaded successfully: mediaId={}, fileName={}, outputFormat={}", mediaId, fileName,
-          targetFormat.getFormat());
+      log.info("Media uploaded successfully: mediaId={}, fileName={}, mediaType={}, outputFormat={}",
+          mediaId, fileName, resolvedType.getValue(),
+          targetFormat != null ? targetFormat.getFormat() : "n/a");
       return MediaResponse.builder().mediaId(mediaId).build();
     } catch (Exception e) {
       uploadFailureCounter.add(1);
@@ -257,7 +282,9 @@ public class MediaApplicationService {
           // Record analytics in application layer
           String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
           analyticsService.recordView(tenantId, mediaId);
-          analyticsService.recordDownload(tenantId, mediaId, media.getOutputFormatOrDefault(), media.getWidth());
+          if (resolveMediaType(media) == MediaType.IMAGE) {
+            analyticsService.recordDownload(tenantId, mediaId, media.getOutputFormatOrDefault(), media.getWidth());
+          }
           return (DownloadResult) new DownloadResult.Ready(url, media);
         })
         .orElse(new DownloadResult.NotFound());
@@ -283,6 +310,10 @@ public class MediaApplicationService {
     }
 
     authorizationService.requireMediaAccess(media);
+
+    if (resolveMediaType(media) != MediaType.IMAGE) {
+      return new PreviewResult.NotFound();
+    }
 
     if (media.getStatus() != MediaStatus.COMPLETE) {
       return new PreviewResult.Processing(mediaId);
@@ -340,8 +371,11 @@ public class MediaApplicationService {
   }
 
   private Optional<String> getDownloadUrl(Media media) {
-    var format = media.getOutputFormatOrDefault();
     String tenantId = media.getTenantId() != null ? media.getTenantId() : "default";
+    if (resolveMediaType(media) == MediaType.DOCUMENT) {
+      return Optional.ofNullable(s3Service.getOriginalPresignedUrl(tenantId, media.getMediaId(), media.getName()));
+    }
+    var format = media.getOutputFormatOrDefault();
     return cacheOrchestrator.getPresignedUrl(
         media.getMediaId(),
         format.getFormat(),
@@ -349,6 +383,9 @@ public class MediaApplicationService {
   }
 
   private Optional<String> getPreviewUrl(Media media) {
+    if (resolveMediaType(media) != MediaType.IMAGE) {
+      return Optional.empty();
+    }
     return Optional.ofNullable(buildPreviewUrl(media));
   }
 
@@ -390,6 +427,9 @@ public class MediaApplicationService {
       return new MediaOperationResult.Deleted(mediaId, media.getDeletedAt());
     }
     authorizationService.requireMediaAccess(media);
+    if (resolveMediaType(media) != MediaType.IMAGE) {
+      return new MediaOperationResult.NotAllowed(mediaId, "Resize is only supported for images.");
+    }
 
     var updated = mediaRepository.updateStatusConditionally(mediaId, MediaStatus.PENDING, MediaStatus.COMPLETE);
     if (!updated) {
@@ -403,7 +443,7 @@ public class MediaApplicationService {
         : media.getOutputFormatOrDefault();
     String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
     try {
-      eventPublisher.publishResizeMediaEvent(mediaId, tenantId, width, targetFormat.getFormat());
+      eventPublisher.publishResizeMediaEvent(mediaId, tenantId, MediaType.IMAGE.getValue(), width, targetFormat.getFormat());
     } catch (Exception e) {
       log.error("Failed to publish resize event for mediaId={}, reverting status to COMPLETE", mediaId, e);
       mediaRepository.updateStatusConditionally(mediaId, MediaStatus.COMPLETE, MediaStatus.PENDING);
@@ -427,7 +467,7 @@ public class MediaApplicationService {
           mediaRepository.softDelete(mediaId, Duration.ofDays(mediaProperties.getSoftDeleteRetentionDays()));
           String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
           try {
-            eventPublisher.publishDeleteMediaEvent(mediaId, tenantId);
+            eventPublisher.publishDeleteMediaEvent(mediaId, tenantId, resolveMediaType(media).getValue());
           } catch (Exception e) {
             log.error("Failed to publish delete event for mediaId={}, reverting soft delete", mediaId, e);
             mediaRepository.revertSoftDelete(mediaId, media.getStatus());
@@ -462,6 +502,9 @@ public class MediaApplicationService {
     }
 
     authorizationService.requireMediaAccess(media);
+    if (resolveMediaType(media) != MediaType.IMAGE) {
+      return new MediaOperationResult.NotAllowed(mediaId, "Retry is only supported for image processing.");
+    }
 
     if (media.getStatus() != MediaStatus.PROCESSING && media.getStatus() != MediaStatus.ERROR) {
       return new MediaOperationResult.NotAllowed(mediaId,
@@ -476,7 +519,8 @@ public class MediaApplicationService {
 
     String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
     try {
-      eventPublisher.publishProcessMediaEvent(mediaId, tenantId, media.getWidth(), media.getOutputFormatOrDefault().getFormat());
+      eventPublisher.publishProcessMediaEvent(mediaId, tenantId, MediaType.IMAGE.getValue(),
+          media.getWidth(), media.getOutputFormatOrDefault().getFormat());
     } catch (Exception e) {
       log.error("Failed to publish retry event for mediaId={}, reverting status to {}", mediaId, media.getStatus(), e);
       mediaRepository.updateStatusConditionally(mediaId, media.getStatus(), MediaStatus.PENDING);
@@ -488,11 +532,11 @@ public class MediaApplicationService {
     return new MediaOperationResult.Success(media);
   }
 
-  public MediaDynamoDbRepository.MediaPagedResult getMediaPaginated(String cursor, Integer limit) {
+  public MediaDynamoDbRepository.MediaPagedResult getMediaPaginated(String cursor, Integer limit, MediaType mediaType) {
     if (TenantContext.isAuthenticated()) {
-      return mediaRepository.getMediaPaginatedByTenant(TenantContext.getTenantId(), cursor, limit);
+      return mediaRepository.getMediaPaginatedByTenant(TenantContext.getTenantId(), cursor, limit, mediaType);
     }
-    return mediaRepository.getMediaPaginated(cursor, limit);
+    return mediaRepository.getMediaPaginated(cursor, limit, mediaType);
   }
 
   public InitUploadResponse initPresignedUpload(InitUploadRequest request) {
@@ -506,11 +550,24 @@ public class MediaApplicationService {
       String tenantId = TenantContext.getTenantId();
       String userId = TenantContext.getUserId();
 
-      int targetWidth = mediaProperties.resolveWidth(request.getWidth());
-      OutputFormat targetFormat = OutputFormat.fromString(request.getOutputFormat());
+      MediaType resolvedType = mediaTypeResolver.resolve(request.getMediaType(),
+          request.getContentType(), request.getFileName());
+      if (resolvedType == null) {
+        throw new IllegalArgumentException("Invalid file type. Only images and PDFs are supported.");
+      }
+
+      Integer targetWidth = null;
+      OutputFormat targetFormat = null;
+      if (resolvedType == MediaType.IMAGE) {
+        targetWidth = mediaProperties.resolveWidth(request.getWidth());
+        targetFormat = OutputFormat.fromString(request.getOutputFormat());
+      }
       int expirationSeconds = mediaProperties.getUpload().getPresignedUrlExpirationSeconds();
 
-      span.setAttribute("output.format", targetFormat.getFormat());
+      span.setAttribute("media.type", resolvedType.getValue());
+      if (targetFormat != null) {
+        span.setAttribute("output.format", targetFormat.getFormat());
+      }
 
       String uploadUrl = s3Service.generatePresignedUploadUrl(
           tenantId,
@@ -527,6 +584,7 @@ public class MediaApplicationService {
           .size(request.getFileSize())
           .name(request.getFileName())
           .mimetype(request.getContentType())
+          .mediaType(resolvedType)
           .status(MediaStatus.PENDING_UPLOAD)
           .width(targetWidth)
           .outputFormat(targetFormat)
@@ -538,7 +596,7 @@ public class MediaApplicationService {
 
       span.setStatus(StatusCode.OK);
       log.info("Presigned upload initialized: mediaId={}, fileName={}, outputFormat={}", mediaId, request.getFileName(),
-          targetFormat.getFormat());
+          targetFormat != null ? targetFormat.getFormat() : "n/a");
 
       return InitUploadResponse.builder()
           .mediaId(mediaId)
@@ -610,24 +668,29 @@ public class MediaApplicationService {
           .filter(media -> media.getStatus() == MediaStatus.PENDING_UPLOAD)
           .flatMap(media -> {
             String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
+            MediaType resolvedType = resolveMediaType(media);
             if (!s3Service.objectExists(tenantId, mediaId, media.getName())) {
               log.warn("File not found in S3 for mediaId: {}", mediaId);
               return Optional.empty();
             }
 
+            MediaStatus nextStatus = resolvedType == MediaType.DOCUMENT ? MediaStatus.COMPLETE : MediaStatus.PENDING;
             boolean updated = mediaRepository.updateStatusConditionally(
-                mediaId, MediaStatus.PENDING, MediaStatus.PENDING_UPLOAD, true);
+                mediaId, nextStatus, MediaStatus.PENDING_UPLOAD, true);
             if (!updated) {
               log.warn("Failed to update status for mediaId: {}", mediaId);
               return Optional.empty();
             }
 
-            try {
-              eventPublisher.publishProcessMediaEvent(mediaId, tenantId, media.getWidth(), media.getOutputFormatOrDefault().getFormat());
-            } catch (Exception e) {
-              log.error("Failed to publish process event for mediaId={}, reverting status to PENDING_UPLOAD", mediaId, e);
-              mediaRepository.updateStatusConditionally(mediaId, MediaStatus.PENDING_UPLOAD, MediaStatus.PENDING);
-              throw e;
+            if (resolvedType == MediaType.IMAGE) {
+              try {
+                eventPublisher.publishProcessMediaEvent(mediaId, tenantId, resolvedType.getValue(),
+                    media.getWidth(), media.getOutputFormatOrDefault().getFormat());
+              } catch (Exception e) {
+                log.error("Failed to publish process event for mediaId={}, reverting status to PENDING_UPLOAD", mediaId, e);
+                mediaRepository.updateStatusConditionally(mediaId, MediaStatus.PENDING_UPLOAD, MediaStatus.PENDING);
+                throw e;
+              }
             }
             uploadSuccessCounter.add(1);
             span.setStatus(StatusCode.OK);
@@ -669,15 +732,20 @@ public class MediaApplicationService {
    * @param contentType the content type
    * @throws IllegalArgumentException if validation fails
    */
-  public void validatePresignedUploadRequest(long fileSize, String contentType) {
+  public void validatePresignedUploadRequest(long fileSize, String contentType, MediaType mediaType, String fileName) {
     Upload uploadConfig = mediaProperties.getUpload();
     long maxUploadSize = uploadConfig.getMaxPresignedUploadSize();
     if (fileSize > maxUploadSize) {
       throw new IllegalArgumentException(
           "File size exceeds maximum allowed size of " + (maxUploadSize / (1024 * 1024 * 1024)) + " GB.");
     }
-    if (contentType == null || !contentType.startsWith("image/")) {
-      throw new IllegalArgumentException("Invalid content type. Only images are supported.");
+    MediaType resolvedType = mediaTypeResolver.resolve(mediaType, contentType, fileName);
+    if (resolvedType == null) {
+      throw new IllegalArgumentException("Invalid content type. Only images and PDFs are supported.");
     }
+  }
+
+  private MediaType resolveMediaType(Media media) {
+    return media.getMediaType() != null ? media.getMediaType() : MediaType.IMAGE;
   }
 }

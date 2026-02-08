@@ -61,7 +61,7 @@ test.describe('Upload Flow (requires API)', () => {
   });
 
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/media/images');
     const connected = await page.getByText('Connected').isVisible({ timeout: 3000 }).catch(() => false);
     test.skip(!connected, 'API server not available - skipping integration tests');
   });
@@ -79,7 +79,7 @@ test.describe('Upload Flow (requires API)', () => {
 
     // Set width and process
     await page.locator('#widthSlider').fill('200');
-    await page.getByRole('button', { name: 'Process Image' }).click();
+    await page.getByRole('button', { name: 'Upload' }).click();
 
     // Step 2: Wait for processing
     console.log('Step 2: Waiting for processing...');
@@ -123,7 +123,7 @@ test.describe('Upload Flow (requires API)', () => {
 
     // Upload image
     await page.locator('input[type="file"]').setInputFiles(testImagePath);
-    await page.getByRole('button', { name: 'Process Image' }).click();
+    await page.getByRole('button', { name: 'Upload' }).click();
 
     // Verify item appears in media list immediately
     const mediaItem = page.locator('.bg-gray-50', { hasText: fileName });

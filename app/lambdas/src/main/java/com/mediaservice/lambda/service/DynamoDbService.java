@@ -5,6 +5,7 @@ import com.mediaservice.lambda.config.LambdaConfig;
 import com.mediaservice.common.constants.StorageConstants;
 import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaStatus;
+import com.mediaservice.common.model.MediaType;
 import com.mediaservice.common.model.OutputFormat;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -94,6 +95,7 @@ public class DynamoDbService {
         .status(MediaStatus.valueOf(attrs.get("status").s()));
     getString(attrs, StorageConstants.DYNAMO_ATTR_TENANT_ID).ifPresent(builder::tenantId);
     getString(attrs, StorageConstants.DYNAMO_ATTR_USER_ID).ifPresent(builder::userId);
+    getString(attrs, "mediaType").map(MediaType::fromString).ifPresent(builder::mediaType);
     getInt(attrs, "width").ifPresent(builder::width);
     getString(attrs, "outputFormat").map(OutputFormat::fromString).ifPresent(builder::outputFormat);
     getString(attrs, "deletedAt").map(Instant::parse).ifPresent(builder::deletedAt);
