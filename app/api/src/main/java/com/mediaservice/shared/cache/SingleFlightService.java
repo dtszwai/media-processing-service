@@ -153,8 +153,7 @@ public class SingleFlightService {
       long timeoutMs = (maxRetries * retryInterval) + 1000;
       return future.get(timeoutMs, TimeUnit.MILLISECONDS);
     } catch (TimeoutException e) {
-      log.warn("Single-flight: async timeout waiting for cache key={}", key);
-      throw new CacheLoadTimeoutException("Timeout waiting for cache population: " + key);
+      throw new CacheLoadTimeoutException("Timeout waiting for cache population: " + key, e);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new CacheLoadTimeoutException("Interrupted while waiting for cache: " + key, e);

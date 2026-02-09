@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -66,15 +67,11 @@ public class L2CacheManager {
   @CircuitBreaker(name = CIRCUIT_BREAKER_NAME, fallbackMethod = "getMediaFallback")
   public Optional<Media> getMedia(String mediaId) {
     String key = CacheKeyProvider.mediaKey(mediaId);
-    Cache cache = cacheManager.getCache(CacheKeyProvider.CACHE_MEDIA);
-    if (cache != null) {
-      Media cached = cache.get(key, Media.class);
-      if (cached != null) {
-        log.debug("L2 cache hit for mediaId={}", mediaId);
-        return Optional.of(cached);
-      }
+    Optional<Media> cached = getCacheValue(CacheKeyProvider.CACHE_MEDIA, key, Media.class);
+    if (cached.isPresent()) {
+      log.debug("L2 cache hit for mediaId={}", mediaId);
     }
-    return Optional.empty();
+    return cached;
   }
 
   @SuppressWarnings("unused")
@@ -118,11 +115,10 @@ public class L2CacheManager {
   @CircuitBreaker(name = CIRCUIT_BREAKER_NAME, fallbackMethod = "invalidateMediaFallback")
   public void invalidateMedia(String mediaId) {
     String key = CacheKeyProvider.mediaKey(mediaId);
-    Cache cache = cacheManager.getCache(CacheKeyProvider.CACHE_MEDIA);
-    if (cache != null) {
+    withCache(CacheKeyProvider.CACHE_MEDIA, cache -> {
       cache.evict(key);
       log.debug("L2 cache invalidated for mediaId={}", mediaId);
-    }
+    });
   }
 
   @SuppressWarnings("unused")
@@ -139,11 +135,10 @@ public class L2CacheManager {
    */
   @CircuitBreaker(name = CIRCUIT_BREAKER_NAME, fallbackMethod = "invalidateMediaStatusFallback")
   public void invalidateMediaStatus(String mediaId) {
-    Cache cache = cacheManager.getCache(CacheKeyProvider.CACHE_MEDIA_STATUS);
-    if (cache != null) {
+    withCache(CacheKeyProvider.CACHE_MEDIA_STATUS, cache -> {
       cache.evict(mediaId);
       log.debug("L2 media status cache invalidated for mediaId={}", mediaId);
-    }
+    });
   }
 
   @SuppressWarnings("unused")
@@ -163,15 +158,11 @@ public class L2CacheManager {
   @CircuitBreaker(name = CIRCUIT_BREAKER_NAME, fallbackMethod = "getPresignedUrlFallback")
   public Optional<String> getPresignedUrl(String mediaId, String format) {
     String key = CacheKeyProvider.presignedUrlKey(mediaId, format);
-    Cache cache = cacheManager.getCache(CacheKeyProvider.CACHE_PRESIGNED_URL);
-    if (cache != null) {
-      String cached = cache.get(key, String.class);
-      if (cached != null) {
-        log.debug("L2 presigned URL cache hit for key={}", key);
-        return Optional.of(cached);
-      }
+    Optional<String> cached = getCacheValue(CacheKeyProvider.CACHE_PRESIGNED_URL, key, String.class);
+    if (cached.isPresent()) {
+      log.debug("L2 presigned URL cache hit for key={}", key);
     }
-    return Optional.empty();
+    return cached;
   }
 
   @SuppressWarnings("unused")
@@ -193,11 +184,10 @@ public class L2CacheManager {
       return;
     }
     String key = CacheKeyProvider.presignedUrlKey(mediaId, format);
-    Cache cache = cacheManager.getCache(CacheKeyProvider.CACHE_PRESIGNED_URL);
-    if (cache != null) {
+    withCache(CacheKeyProvider.CACHE_PRESIGNED_URL, cache -> {
       cache.put(key, url);
       log.debug("L2 presigned URL cache put for key={}", key);
-    }
+    });
   }
 
   @SuppressWarnings("unused")
@@ -212,13 +202,12 @@ public class L2CacheManager {
    */
   @CircuitBreaker(name = CIRCUIT_BREAKER_NAME, fallbackMethod = "invalidatePresignedUrlsFallback")
   public void invalidatePresignedUrls(String mediaId) {
-    Cache cache = cacheManager.getCache(CacheKeyProvider.CACHE_PRESIGNED_URL);
-    if (cache != null) {
+    withCache(CacheKeyProvider.CACHE_PRESIGNED_URL, cache -> {
       for (String key : CacheKeyProvider.allPresignedUrlKeys(mediaId)) {
         cache.evict(key);
       }
       log.debug("L2 presigned URL cache invalidated for mediaId={}", mediaId);
-    }
+    });
   }
 
   @SuppressWarnings("unused")
@@ -233,11 +222,10 @@ public class L2CacheManager {
    */
   @CircuitBreaker(name = CIRCUIT_BREAKER_NAME, fallbackMethod = "clearPaginationCacheFallback")
   public void clearPaginationCache() {
-    Cache cache = cacheManager.getCache(CacheKeyProvider.CACHE_PAGINATION);
-    if (cache != null) {
+    withCache(CacheKeyProvider.CACHE_PAGINATION, cache -> {
       cache.clear();
       log.debug("L2 pagination cache cleared");
-    }
+    });
   }
 
   @SuppressWarnings("unused")
@@ -283,5 +271,22 @@ public class L2CacheManager {
     }
 
     return ttl;
+  }
+
+  private <T> Optional<T> getCacheValue(String cacheName, String key, Class<T> valueType) {
+    Cache cache = cacheManager.getCache(cacheName);
+    if (cache == null) {
+      return Optional.empty();
+    }
+    T value = cache.get(key, valueType);
+    return Optional.ofNullable(value);
+  }
+
+  private void withCache(String cacheName, Consumer<Cache> cacheAction) {
+    Cache cache = cacheManager.getCache(cacheName);
+    if (cache == null) {
+      return;
+    }
+    cacheAction.accept(cache);
   }
 }

@@ -85,7 +85,7 @@ public class MultiLevelCacheOrchestrator {
     // L1: Check local cache (microseconds)
     Optional<Media> l1Result = l1CacheManager.getMedia(mediaId);
     if (l1Result.isPresent()) {
-      hotkeyService.recordAccess(mediaId);
+      recordAccess(mediaId);
       return l1Result;
     }
 
@@ -95,7 +95,7 @@ public class MultiLevelCacheOrchestrator {
       log.debug("L2 cache hit for mediaId={}", mediaId);
       // Populate L1 cache
       l1CacheManager.putMedia(mediaId, l2Result.get());
-      hotkeyService.recordAccess(mediaId);
+      recordAccess(mediaId);
       return l2Result;
     }
 
@@ -110,9 +110,7 @@ public class MultiLevelCacheOrchestrator {
     } catch (CacheLoadTimeoutException e) {
       // Timeout waiting for another instance - fall back to direct load
       log.warn("Single-flight timeout for mediaId={}, loading directly", mediaId);
-      Optional<Media> directResult = dynamoDbService.getMedia(mediaId);
-      directResult.ifPresent(media -> writeMediaToCache(mediaId, media));
-      return directResult;
+      return loadAndCacheMediaDirectly(mediaId);
     }
   }
 
@@ -185,5 +183,15 @@ public class MultiLevelCacheOrchestrator {
     l2CacheManager.putMedia(mediaId, media, isHotKey);
     l1CacheManager.putMedia(mediaId, media);
     log.debug("Cached media {} (hotKey={})", mediaId, isHotKey);
+  }
+
+  private Optional<Media> loadAndCacheMediaDirectly(String mediaId) {
+    Optional<Media> directResult = dynamoDbService.getMedia(mediaId);
+    directResult.ifPresent(media -> writeMediaToCache(mediaId, media));
+    return directResult;
+  }
+
+  private void recordAccess(String mediaId) {
+    hotkeyService.recordAccess(mediaId);
   }
 }

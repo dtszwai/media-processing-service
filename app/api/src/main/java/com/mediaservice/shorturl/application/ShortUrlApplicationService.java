@@ -32,18 +32,14 @@ public class ShortUrlApplicationService {
 
   public ShortUrl createShortUrl(CreateShortUrlRequest request, String tenantId, String userId) {
     authorizationService.requireAuthenticated();
-    if (request.getMediaId() == null || request.getMediaId().isBlank()) {
-      throw new IllegalArgumentException("mediaId is required");
-    }
-    if (request.getAssetId() == null || request.getAssetId().isBlank()) {
-      throw new IllegalArgumentException("assetId is required");
-    }
+    String mediaId = requireNonBlank(request.getMediaId(), "mediaId");
+    String assetId = requireNonBlank(request.getAssetId(), "assetId");
 
-    var media = mediaService.getActiveMedia(request.getMediaId());
+    var media = mediaService.getActiveMedia(mediaId);
     if (media.isEmpty()) {
       throw new IllegalArgumentException("Media not found");
     }
-    var asset = mediaService.getAsset(request.getMediaId(), request.getAssetId());
+    var asset = mediaService.getAsset(mediaId, assetId);
     if (asset.isEmpty() || asset.get().getStatus() == AssetStatus.DELETED) {
       throw new IllegalArgumentException("Asset not found");
     }
@@ -61,8 +57,8 @@ public class ShortUrlApplicationService {
     var shortUrl = ShortUrl.builder()
         .code(alias)
         .tenantId(tenantId)
-        .mediaId(request.getMediaId())
-        .assetId(request.getAssetId())
+        .mediaId(mediaId)
+        .assetId(assetId)
         .isPublic(true)
         .createdAt(Instant.now())
         .createdBy(userId)
@@ -184,6 +180,13 @@ public class ShortUrlApplicationService {
       return null;
     }
     return alias.trim().toLowerCase(Locale.ROOT);
+  }
+
+  private String requireNonBlank(String value, String fieldName) {
+    if (value == null || value.isBlank()) {
+      throw new IllegalArgumentException(fieldName + " is required");
+    }
+    return value;
   }
 
   private void validateAlias(String alias) {

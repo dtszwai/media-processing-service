@@ -299,35 +299,7 @@ public class AnalyticsRollupHandler implements RequestHandler<Map<String, Object
    * Path: analytics/daily/{year}/{month}/analytics-{date}.json
    */
   private void archiveDailyToS3(String tenantId, String dateKey, Map<String, Long> data) {
-    try {
-      String[] parts = dateKey.split("-");
-      String year = parts[0];
-      String month = parts[1];
-      String s3Key = String.format("analytics/%s/daily/%s/%s/analytics-%s.json", tenantId, year, month, dateKey);
-
-      var archive = new AnalyticsArchive(
-          tenantId,
-          dateKey,
-          Instant.now().toString(),
-          data.size(),
-          data.values().stream().mapToLong(Long::longValue).sum(),
-          data);
-
-      String jsonContent = objectMapper.writeValueAsString(archive);
-
-      var putRequest = PutObjectRequest.builder()
-          .bucket(bucketName)
-          .key(s3Key)
-          .contentType("application/json")
-          .build();
-
-      s3Client.putObject(putRequest, RequestBody.fromString(jsonContent));
-
-      logger.info("Archived daily analytics to S3 for tenant {}: s3://{}/{}", tenantId, bucketName, s3Key);
-    } catch (Exception e) {
-      logger.error("Failed to archive daily analytics to S3: {}", e.getMessage(), e);
-      throw new RuntimeException("S3 daily archival failed", e);
-    }
+    archiveToS3(tenantId, "daily", dateKey, data, "S3 daily archival failed");
   }
 
   /**
@@ -335,20 +307,19 @@ public class AnalyticsRollupHandler implements RequestHandler<Map<String, Object
    * Path: analytics/monthly/{year}/{month}/analytics-{year-month}.json
    */
   private void archiveMonthlyToS3(String tenantId, String monthKey, Map<String, Long> data) {
+    archiveToS3(tenantId, "monthly", monthKey, data, "S3 monthly archival failed");
+  }
+
+  private void archiveToS3(String tenantId, String granularity, String periodKey, Map<String, Long> data,
+      String failureMessage) {
     try {
-      String[] parts = monthKey.split("-");
+      String[] parts = periodKey.split("-");
       String year = parts[0];
       String month = parts[1];
-      String s3Key = String.format("analytics/%s/monthly/%s/%s/analytics-%s.json", tenantId, year, month, monthKey);
+      String s3Key = String.format("analytics/%s/%s/%s/%s/analytics-%s.json",
+          tenantId, granularity, year, month, periodKey);
 
-      var archive = new AnalyticsArchive(
-          tenantId,
-          monthKey,
-          Instant.now().toString(),
-          data.size(),
-          data.values().stream().mapToLong(Long::longValue).sum(),
-          data);
-
+      var archive = buildArchiveRecord(tenantId, periodKey, data);
       String jsonContent = objectMapper.writeValueAsString(archive);
 
       var putRequest = PutObjectRequest.builder()
@@ -359,11 +330,21 @@ public class AnalyticsRollupHandler implements RequestHandler<Map<String, Object
 
       s3Client.putObject(putRequest, RequestBody.fromString(jsonContent));
 
-      logger.info("Archived monthly analytics to S3 for tenant {}: s3://{}/{}", tenantId, bucketName, s3Key);
+      logger.info("Archived {} analytics to S3 for tenant {}: s3://{}/{}",
+          granularity, tenantId, bucketName, s3Key);
     } catch (Exception e) {
-      logger.error("Failed to archive monthly analytics to S3: {}", e.getMessage(), e);
-      throw new RuntimeException("S3 monthly archival failed", e);
+      throw new RuntimeException(failureMessage, e);
     }
+  }
+
+  private AnalyticsArchive buildArchiveRecord(String tenantId, String periodKey, Map<String, Long> data) {
+    return new AnalyticsArchive(
+        tenantId,
+        periodKey,
+        Instant.now().toString(),
+        data.size(),
+        data.values().stream().mapToLong(Long::longValue).sum(),
+        data);
   }
 
   private List<String> getDailyKeysForMonth(YearMonth yearMonth) {

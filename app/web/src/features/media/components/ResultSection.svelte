@@ -97,9 +97,7 @@
   const mediaListQuery = createMediaListQuery(undefined, undefined, mediaType);
   let mediaList = $derived(mediaListQuery.data?.items ?? []);
   let filteredList = $derived(
-    mediaType
-      ? mediaList.filter((item) => (item.mediaType || "image") === mediaType)
-      : mediaList,
+    mediaType ? mediaList.filter((item) => (item.mediaType || "image") === mediaType) : mediaList,
   );
   let currentMedia = $derived(filteredList.find((item) => item.mediaId === $currentMediaId) || null);
 
@@ -108,9 +106,7 @@
   let assetCollections = $derived(buildAssetCollections(assets, currentMedia?.originalAssetId ?? null));
   let visibleAssets = $derived([...assetCollections.source, ...assetCollections.generated]);
 
-  let shareableAssets = $derived(
-    visibleAssets.filter((asset) => asset.status === "COMPLETE"),
-  );
+  let shareableAssets = $derived(visibleAssets.filter((asset) => asset.status === "COMPLETE"));
 
   let selectedShareAsset = $derived(
     selectedShareAssetId ? visibleAssets.find((asset) => asset.assetId === selectedShareAssetId) || null : null,
@@ -182,7 +178,9 @@
     const stillValid = selectedShareAssetId && shareableAssets.some((asset) => asset.assetId === selectedShareAssetId);
     if (stillValid) return;
 
-    const preferredGenerated = shareableAssets.find((asset) => !isSourceAsset(asset, currentMedia.originalAssetId || null));
+    const preferredGenerated = shareableAssets.find(
+      (asset) => !isSourceAsset(asset, currentMedia.originalAssetId || null),
+    );
     selectedShareAssetId = preferredGenerated?.assetId || shareableAssets[0]?.assetId || null;
   });
 
@@ -393,9 +391,10 @@
       return "Extracted text";
     }
 
-    const format = asset.outputFormat ? asset.outputFormat.toUpperCase() : null;
-    const dimensions = asset.width && asset.height ? `${asset.width}x${asset.height}` : asset.width ? `${asset.width}px` : null;
-    const isPreview = asset.type === "PREVIEW" || asset.operation === "image.preview" || asset.operation === "document.preview";
+    const format = assetOutputFormat(asset);
+    const dimensions = assetDimensions(asset);
+    const isPreview =
+      asset.type === "PREVIEW" || asset.operation === "image.preview" || asset.operation === "document.preview";
 
     if (isPreview) {
       if (format && dimensions) return `Preview · ${format} · ${dimensions}`;
@@ -441,9 +440,24 @@
       .join(" ");
   }
 
+  function assetOutputFormat(asset: MediaAsset): string | null {
+    if (!asset.outputFormat) return null;
+    return asset.outputFormat.toUpperCase();
+  }
+
+  function assetDimensions(asset: MediaAsset): string | null {
+    if (asset.width && asset.height) {
+      return `${asset.width}x${asset.height}`;
+    }
+    if (asset.width) {
+      return `${asset.width}px`;
+    }
+    return null;
+  }
+
   function assetMeta(asset: MediaAsset) {
-    const format = asset.outputFormat ? asset.outputFormat.toUpperCase() : null;
-    const dimensions = asset.width && asset.height ? `${asset.width}x${asset.height}` : asset.width ? `${asset.width}px` : null;
+    const format = assetOutputFormat(asset);
+    const dimensions = assetDimensions(asset);
     const size = asset.size ? formatFileSize(asset.size) : null;
     const isSource = currentMedia ? isSourceAsset(asset, currentMedia.originalAssetId || null) : false;
 
@@ -723,7 +737,7 @@
       <span class="status-badge status-{workflowSummary.badgeClass}">{workflowSummary.badgeLabel}</span>
     </div>
 
-    <div class="rounded-xl border border-gray-200 bg-gradient-to-r from-slate-50 to-white p-4">
+    <div class="rounded-xl border border-gray-200 bg-linear-to-r from-slate-50 to-white p-4">
       <p class="text-sm font-semibold text-gray-900">{workflowSummary.headline}</p>
       <p class="text-xs text-gray-500 mt-1">{workflowSummary.detail}</p>
       {#if workflowSummary.highlights.length > 0}
@@ -798,14 +812,7 @@
         {#if (currentMedia.mediaType || "image") === "image"}
           <div>
             <label for={outputWidthId} class="text-xs text-gray-500">Width</label>
-            <input
-              id={outputWidthId}
-              type="range"
-              min="100"
-              max="1024"
-              bind:value={width}
-              class="w-full mt-2"
-            />
+            <input id={outputWidthId} type="range" min="100" max="1024" bind:value={width} class="w-full mt-2" />
             <div class="text-xs text-gray-500 mt-1">{width}px</div>
           </div>
           <fieldset>
@@ -879,7 +886,9 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
               {#each assetCollections.source as asset (asset.assetId)}
                 <article
-                  class="rounded-xl border p-3 bg-white {selectedShareAssetId === asset.assetId ? 'ring-1 ring-blue-200 border-blue-200' : 'border-gray-200'}"
+                  class="rounded-xl border p-3 bg-white {selectedShareAssetId === asset.assetId
+                    ? 'ring-1 ring-blue-200 border-blue-200'
+                    : 'border-gray-200'}"
                 >
                   <div class="flex items-start justify-between gap-2">
                     <div>
@@ -899,7 +908,9 @@
                   {/if}
 
                   {#if asset.status === "ERROR" && asset.errorMessage}
-                    <p class="mt-2 text-xs text-red-600 bg-red-50 border border-red-100 rounded p-2">{asset.errorMessage}</p>
+                    <p class="mt-2 text-xs text-red-600 bg-red-50 border border-red-100 rounded p-2">
+                      {asset.errorMessage}
+                    </p>
                   {/if}
 
                   <div class="mt-3 flex flex-wrap gap-2">
@@ -948,7 +959,9 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
               {#each assetCollections.generated as asset (asset.assetId)}
                 <article
-                  class="rounded-xl border p-3 bg-white {selectedShareAssetId === asset.assetId ? 'ring-1 ring-blue-200 border-blue-200' : 'border-gray-200'}"
+                  class="rounded-xl border p-3 bg-white {selectedShareAssetId === asset.assetId
+                    ? 'ring-1 ring-blue-200 border-blue-200'
+                    : 'border-gray-200'}"
                 >
                   <div class="flex items-start justify-between gap-2">
                     <div>
@@ -957,7 +970,9 @@
                       <p class="text-xs text-gray-500">{assetMeta(asset) || "—"}</p>
                       {#if shortUrlCountsByAsset[asset.assetId]}
                         <p class="text-[11px] text-gray-400 mt-1">
-                          {shortUrlCountsByAsset[asset.assetId]} active link{shortUrlCountsByAsset[asset.assetId] === 1 ? "" : "s"}
+                          {shortUrlCountsByAsset[asset.assetId]} active link{shortUrlCountsByAsset[asset.assetId] === 1
+                            ? ""
+                            : "s"}
                         </p>
                       {/if}
                     </div>
@@ -973,7 +988,9 @@
                   {/if}
 
                   {#if asset.status === "ERROR" && asset.errorMessage}
-                    <p class="mt-2 text-xs text-red-600 bg-red-50 border border-red-100 rounded p-2">{asset.errorMessage}</p>
+                    <p class="mt-2 text-xs text-red-600 bg-red-50 border border-red-100 rounded p-2">
+                      {asset.errorMessage}
+                    </p>
                   {/if}
 
                   <div class="mt-3 flex flex-wrap gap-2">
@@ -1125,8 +1142,12 @@
               <div class="bg-white rounded-lg border border-gray-200 p-3">
                 <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                   <div>
-                    <div class="text-sm font-medium text-gray-800">{group.asset ? assetTitle(group.asset) : group.assetId}</div>
-                    <div class="text-xs text-gray-500">{group.asset ? assetMeta(group.asset) || "—" : "Asset unavailable"}</div>
+                    <div class="text-sm font-medium text-gray-800">
+                      {group.asset ? assetTitle(group.asset) : group.assetId}
+                    </div>
+                    <div class="text-xs text-gray-500">
+                      {group.asset ? assetMeta(group.asset) || "—" : "Asset unavailable"}
+                    </div>
                   </div>
                   <button
                     onclick={() => handleCreateAnotherLink(group.assetId)}
@@ -1138,7 +1159,9 @@
                 </div>
                 <div class="mt-3 space-y-2">
                   {#each group.urls as shortUrl (shortUrl.code)}
-                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 p-2 rounded border border-gray-100">
+                    <div
+                      class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 p-2 rounded border border-gray-100"
+                    >
                       <div class="min-w-0">
                         <a
                           href={resolveShortUrlValue(shortUrl)}

@@ -63,26 +63,19 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 
     String clientIp = getClientIp(request);
     String path = request.getRequestURI();
-    boolean isUploadEndpoint = isUploadEndpoint(path, request.getMethod());
-
-    RateLimitResult result = checkRateLimit(clientIp, isUploadEndpoint);
+    RateLimitResult result = checkRateLimit(clientIp, path, request.getMethod());
 
     if (result.allowed()) {
       response.addHeader(RATE_LIMIT_REMAINING_HEADER, String.valueOf(result.remaining()));
       filterChain.doFilter(request, response);
     } else {
-      response.addHeader(RATE_LIMIT_RETRY_AFTER_HEADER, String.valueOf(result.retryAfterSeconds()));
-      response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
-      response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-      response.getWriter().write(
-          "{\"message\":\"Rate limit exceeded. Please retry after " + result.retryAfterSeconds()
-              + " seconds.\",\"status\":429}");
+      writeRateLimitExceededResponse(response, result.retryAfterSeconds());
       log.warn("Rate limit exceeded for client IP: {} on path: {}", clientIp, path);
     }
   }
 
-  private RateLimitResult checkRateLimit(String clientIp, boolean isUploadEndpoint) {
-    if (isUploadEndpoint) {
+  private RateLimitResult checkRateLimit(String clientIp, String path, String method) {
+    if (isUploadEndpoint(path, method)) {
       return rateLimitService.tryConsume(
           clientIp,
           BUCKET_TYPE_UPLOAD,
@@ -99,6 +92,16 @@ public class RateLimitingFilter extends OncePerRequestFilter {
   private boolean isUploadEndpoint(String path, String method) {
     return "POST".equalsIgnoreCase(method) &&
         (path.contains("/upload") || path.endsWith("/v1/media"));
+  }
+
+  private void writeRateLimitExceededResponse(HttpServletResponse response, long retryAfterSeconds)
+      throws IOException {
+    response.addHeader(RATE_LIMIT_RETRY_AFTER_HEADER, String.valueOf(retryAfterSeconds));
+    response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
+    response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+    response.getWriter().write(
+        "{\"message\":\"Rate limit exceeded. Please retry after " + retryAfterSeconds
+            + " seconds.\",\"status\":429}");
   }
 
   private String getClientIp(HttpServletRequest request) {

@@ -27,6 +27,7 @@ public class ApiKeyManagementService {
     byte[] keyBytes = new byte[RAW_KEY_BYTES];
     SECURE_RANDOM.nextBytes(keyBytes);
     String rawKey = Base64.getUrlEncoder().withoutPadding().encodeToString(keyBytes);
+    Instant now = Instant.now();
 
     String keyPrefix = ApiKeyService.extractPrefix(rawKey);
     String hashedKey = ApiKeyService.hashKey(rawKey);
@@ -37,7 +38,7 @@ public class ApiKeyManagementService {
         .hashedKey(hashedKey)
         .name(name)
         .scopes(List.of("USER"))
-        .createdAt(Instant.now())
+        .createdAt(now)
         .build());
 
     log.info("Created API key '{}' for tenant: {}", name, tenantId);
@@ -46,7 +47,7 @@ public class ApiKeyManagementService {
         .keyId(keyPrefix)
         .rawKey(rawKey)
         .name(name)
-        .createdAt(Instant.now())
+        .createdAt(now)
         .build();
   }
 

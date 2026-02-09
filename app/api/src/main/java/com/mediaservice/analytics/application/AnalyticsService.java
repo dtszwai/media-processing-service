@@ -1,6 +1,7 @@
 package com.mediaservice.analytics.application;
 
 import com.mediaservice.common.model.MediaStatus;
+import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.OutputFormat;
 import com.mediaservice.shared.config.properties.AnalyticsProperties;
 import com.mediaservice.analytics.api.dto.*;
@@ -63,6 +64,11 @@ public class AnalyticsService {
   private static final String MEDIA_VIEWS_PREFIX = "media:views:";
   private static final String FORMAT_USAGE_PREFIX = "analytics:formats:";
   private static final String DOWNLOADS_PREFIX = "analytics:downloads:";
+  private static final String DEFAULT_TENANT_ID = "default";
+  private static final String FORMAT_TOTAL_FIELD = "TOTAL";
+  private static final String DOWNLOAD_TOTAL_FIELD = "total";
+  private static final String DOWNLOAD_FORMAT_PREFIX = "format:";
+  private static final String UNKNOWN_FORMAT = "UNKNOWN";
 
   private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
 
@@ -88,8 +94,7 @@ public class AnalyticsService {
       return;
     }
     try {
-      if (tenantId == null || tenantId.isBlank()) {
-        log.warn("Skipping analytics view record: missing tenantId for mediaId {}", mediaId);
+      if (isTenantMissing(tenantId, mediaId, "view")) {
         return;
       }
       trackTenant(tenantId);
@@ -139,15 +144,14 @@ public class AnalyticsService {
     }
 
     try {
-      if (tenantId == null || tenantId.isBlank()) {
-        log.warn("Skipping analytics download record: missing tenantId for mediaId {}", mediaId);
+      if (isTenantMissing(tenantId, mediaId, "download")) {
         return;
       }
       trackTenant(tenantId);
       LocalDate today = LocalDate.now();
       String formatKey = formatUsageKey(tenantId, today);
       String downloadKey = downloadsKey(tenantId, today);
-      String formatName = format != null ? format.getFormat().toUpperCase() : "UNKNOWN";
+      String formatName = format != null ? format.getFormat().toUpperCase() : UNKNOWN_FORMAT;
 
       // Use pipelining to batch all Redis commands into a single round-trip
       redisTemplate.executePipelined((RedisCallback<Object>) connection -> {
@@ -155,11 +159,11 @@ public class AnalyticsService {
 
         // Increment format usage
         hashConn.hIncrBy(formatKey.getBytes(), formatName.getBytes(), 1);
-        hashConn.hIncrBy(formatKey.getBytes(), "TOTAL".getBytes(), 1);
+        hashConn.hIncrBy(formatKey.getBytes(), FORMAT_TOTAL_FIELD.getBytes(), 1);
 
         // Increment download count
-        hashConn.hIncrBy(downloadKey.getBytes(), "total".getBytes(), 1);
-        hashConn.hIncrBy(downloadKey.getBytes(), ("format:" + formatName).getBytes(), 1);
+        hashConn.hIncrBy(downloadKey.getBytes(), DOWNLOAD_TOTAL_FIELD.getBytes(), 1);
+        hashConn.hIncrBy(downloadKey.getBytes(), (DOWNLOAD_FORMAT_PREFIX + formatName).getBytes(), 1);
 
         // Set TTLs (26 hours for persistence window)
         connection.keyCommands().expire(formatKey.getBytes(), TimeUnit.HOURS.toSeconds(DAILY_TTL_HOURS));
@@ -322,10 +326,7 @@ public class AnalyticsService {
 
     for (var entry : viewCounts.entrySet()) {
       var mediaOpt = dynamoDbService.getMedia(entry.getKey());
-      var mediaForTenant = mediaOpt.filter(media -> {
-        var mediaTenantId = media.getTenantId() != null ? media.getTenantId() : "default";
-        return tenantId.equals(mediaTenantId);
-      });
+      var mediaForTenant = mediaOpt.filter(media -> tenantId.equals(resolveTenantId(media)));
       if (mediaForTenant.isEmpty()) {
         continue;
       }
@@ -371,7 +372,7 @@ public class AnalyticsService {
         var dayUsage = redisTemplate.opsForHash().entries(key);
         for (var entry : dayUsage.entrySet()) {
           var format = entry.getKey().toString();
-          if (!"TOTAL".equals(format)) {
+          if (!FORMAT_TOTAL_FIELD.equals(format)) {
             long count = Long.parseLong(entry.getValue().toString());
             usage.merge(format, count, Long::sum);
             total += count;
@@ -407,11 +408,11 @@ public class AnalyticsService {
         for (var entry : dayStats.entrySet()) {
           var field = entry.getKey().toString();
           long count = Long.parseLong(entry.getValue().toString());
-          if ("total".equals(field)) {
+          if (DOWNLOAD_TOTAL_FIELD.equals(field)) {
             dayTotal = count;
             totalDownloads += count;
-          } else if (field.startsWith("format:")) {
-            var format = field.replace("format:", "");
+          } else if (field.startsWith(DOWNLOAD_FORMAT_PREFIX)) {
+            var format = field.replace(DOWNLOAD_FORMAT_PREFIX, "");
             byFormat.merge(format, count, Long::sum);
           }
         }
@@ -439,36 +440,9 @@ public class AnalyticsService {
     // Get today's stats
     var todayDownloads = getDownloadStats(tenantId, Period.TODAY);
     var formatUsage = getFormatUsage(tenantId, Period.ALL_TIME);
-    // Calculate total views from all-time key
-    long totalViews = 0;
-    try {
-      var totalKey = totalViewsKey(tenantId);
-      var size = redisTemplate.opsForZSet().zCard(totalKey);
-      if (size != null && size > 0) {
-        // Sum all scores
-        var all = redisTemplate.opsForZSet().rangeWithScores(totalKey, 0, -1);
-        if (all != null) {
-          totalViews = all.stream()
-              .mapToLong(t -> t.getScore() != null ? t.getScore().longValue() : 0)
-              .sum();
-        }
-      }
-    } catch (Exception e) {
-      log.error("Failed to calculate total views for tenantId={}: {}", tenantId, e.getMessage());
-    }
-    // Get today's views
-    long viewsToday = 0;
-    try {
-      var todayKey = dailyViewsKey(tenantId, LocalDate.now());
-      var todayViews = redisTemplate.opsForZSet().rangeWithScores(todayKey, 0, -1);
-      if (todayViews != null) {
-        viewsToday = todayViews.stream()
-            .mapToLong(t -> t.getScore() != null ? t.getScore().longValue() : 0)
-            .sum();
-      }
-    } catch (Exception e) {
-      log.error("Failed to calculate today's views for tenantId={}: {}", tenantId, e.getMessage());
-    }
+    long totalViews = sumViewsSafely(totalViewsKey(tenantId), tenantId, "total");
+    long viewsToday = sumViewsSafely(dailyViewsKey(tenantId, LocalDate.now()), tenantId, "today");
+
     return AnalyticsSummary.builder()
         .totalViews(totalViews)
         .totalDownloads(todayDownloads.getTotalDownloads())
@@ -484,25 +458,15 @@ public class AnalyticsService {
     var today = LocalDate.now();
     var keys = new ArrayList<String>();
     switch (period) {
-      case TODAY -> keys.add(prefix + tenantId + ":" + today.format(DATE_FORMATTER));
-      case THIS_WEEK -> {
-        var weekStart = today.with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
-        for (var date = weekStart; !date.isAfter(today); date = date.plusDays(1)) {
-          keys.add(prefix + tenantId + ":" + date.format(DATE_FORMATTER));
-        }
-      }
-      case THIS_MONTH -> {
-        var monthStart = today.withDayOfMonth(1);
-        for (LocalDate date = monthStart; !date.isAfter(today); date = date.plusDays(1)) {
-          keys.add(prefix + tenantId + ":" + date.format(DATE_FORMATTER));
-        }
-      }
-      case THIS_YEAR -> {
-        var yearStart = today.withDayOfYear(1);
-        for (LocalDate date = yearStart; !date.isAfter(today); date = date.plusDays(1)) {
-          keys.add(prefix + tenantId + ":" + date.format(DATE_FORMATTER));
-        }
-      }
+      case TODAY -> keys.add(buildDatedKey(prefix, tenantId, today));
+      case THIS_WEEK -> addDateRangeKeys(
+          keys,
+          prefix,
+          tenantId,
+          today.with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)),
+          today);
+      case THIS_MONTH -> addDateRangeKeys(keys, prefix, tenantId, today.withDayOfMonth(1), today);
+      case THIS_YEAR -> addDateRangeKeys(keys, prefix, tenantId, today.withDayOfYear(1), today);
       case ALL_TIME -> {
         // Get all keys matching the pattern
         var allKeys = redisTemplate.keys(prefix + tenantId + ":*");
@@ -513,6 +477,48 @@ public class AnalyticsService {
     }
 
     return keys;
+  }
+
+  private void addDateRangeKeys(List<String> keys, String prefix, String tenantId, LocalDate startDate,
+      LocalDate endDate) {
+    for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
+      keys.add(buildDatedKey(prefix, tenantId, date));
+    }
+  }
+
+  private String buildDatedKey(String prefix, String tenantId, LocalDate date) {
+    return prefix + tenantId + ":" + date.format(DATE_FORMATTER);
+  }
+
+  private boolean isTenantMissing(String tenantId, String mediaId, String metricType) {
+    if (tenantId != null && !tenantId.isBlank()) {
+      return false;
+    }
+    log.warn("Skipping analytics {} record: missing tenantId for mediaId {}", metricType, mediaId);
+    return true;
+  }
+
+  private String resolveTenantId(Media media) {
+    return media.getTenantId() != null ? media.getTenantId() : DEFAULT_TENANT_ID;
+  }
+
+  private long sumViewsSafely(String key, String tenantId, String period) {
+    try {
+      return sumViewsFromZSet(key);
+    } catch (Exception e) {
+      log.error("Failed to calculate {} views for tenantId={}: {}", period, tenantId, e.getMessage());
+      return 0;
+    }
+  }
+
+  private long sumViewsFromZSet(String key) {
+    var values = redisTemplate.opsForZSet().rangeWithScores(key, 0, -1);
+    if (values == null) {
+      return 0;
+    }
+    return values.stream()
+        .mapToLong(entry -> entry.getScore() != null ? entry.getScore().longValue() : 0)
+        .sum();
   }
 
   private void trackTenant(String tenantId) {

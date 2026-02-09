@@ -5,7 +5,6 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,7 +17,6 @@ import java.util.Map;
  *
  * <p>All endpoints require DLQ to be configured (via @RequiresDlqConfigured aspect).
  */
-@Slf4j
 @RestController
 @RequestMapping("/admin/dlq")
 @RequiredArgsConstructor
@@ -77,16 +75,10 @@ public class DlqAdminController {
     @PostMapping("/messages/{receiptHandle}/replay")
     public ResponseEntity<Map<String, Object>> replayMessage(@PathVariable String receiptHandle) {
         boolean success = dlqAdminService.replayMessage(receiptHandle);
-        if (success) {
-            return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "message", "Message replayed and removed from DLQ"
-            ));
-        }
-        return ResponseEntity.badRequest().body(Map.of(
-                "success", false,
-                "message", "Failed to replay message"
-        ));
+        return operationResult(
+                success,
+                "Message replayed and removed from DLQ",
+                "Failed to replay message");
     }
 
     @Operation(summary = "Delete DLQ message", description = "Remove message from DLQ without replaying")
@@ -99,16 +91,10 @@ public class DlqAdminController {
     @DeleteMapping("/messages/{receiptHandle}")
     public ResponseEntity<Map<String, Object>> deleteMessage(@PathVariable String receiptHandle) {
         boolean success = dlqAdminService.deleteMessage(receiptHandle);
-        if (success) {
-            return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "message", "Message deleted from DLQ"
-            ));
-        }
-        return ResponseEntity.badRequest().body(Map.of(
-                "success", false,
-                "message", "Failed to delete message"
-        ));
+        return operationResult(
+                success,
+                "Message deleted from DLQ",
+                "Failed to delete message");
     }
 
     @Operation(summary = "Purge DLQ", description = "Delete all messages from the DLQ")
@@ -121,15 +107,20 @@ public class DlqAdminController {
     @DeleteMapping("/purge")
     public ResponseEntity<Map<String, Object>> purgeQueue() {
         boolean success = dlqAdminService.purgeQueue();
+        return operationResult(success, "DLQ purged successfully", "Failed to purge DLQ");
+    }
+
+    private ResponseEntity<Map<String, Object>> operationResult(
+            boolean success, String successMessage, String failureMessage) {
         if (success) {
             return ResponseEntity.ok(Map.of(
                     "success", true,
-                    "message", "DLQ purged successfully"
+                    "message", successMessage
             ));
         }
         return ResponseEntity.badRequest().body(Map.of(
                 "success", false,
-                "message", "Failed to purge DLQ"
+                "message", failureMessage
         ));
     }
 }

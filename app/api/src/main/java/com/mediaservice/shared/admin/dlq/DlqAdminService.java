@@ -21,6 +21,7 @@ import java.util.Optional;
 @Slf4j
 @Service
 public class DlqAdminService {
+    private static final int SQS_MAX_BATCH_SIZE = 10;
 
     private final SqsClient sqsClient;
     private final SnsClient snsClient;
@@ -45,7 +46,7 @@ public class DlqAdminService {
      * Check if DLQ service is configured.
      */
     public boolean isConfigured() {
-        return dlqUrl != null && !dlqUrl.isEmpty();
+        return hasConfiguredValue(dlqUrl);
     }
 
     /**
@@ -78,16 +79,9 @@ public class DlqAdminService {
         if (!isConfigured()) {
             return List.of();
         }
-        int limit = Math.min(Math.max(maxMessages, 1), 10);
+        int limit = Math.min(Math.max(maxMessages, 1), SQS_MAX_BATCH_SIZE);
         try {
-            var response = sqsClient.receiveMessage(ReceiveMessageRequest.builder()
-                    .queueUrl(dlqUrl)
-                    .maxNumberOfMessages(limit)
-                    .visibilityTimeout(0) // Don't hide messages (peek mode)
-                    .attributeNames(QueueAttributeName.ALL)
-                    .messageAttributeNames("All")
-                    .build());
-            return response.messages().stream()
+            return receiveMessagesForPeek(limit).stream()
                     .map(this::toDto)
                     .toList();
         } catch (Exception e) {
@@ -101,7 +95,7 @@ public class DlqAdminService {
      * Note: SQS doesn't support direct get by ID, so this peeks all and filters.
      */
     public Optional<DlqMessage> getMessage(String messageId) {
-        return listMessages(10).stream()
+        return listMessages(SQS_MAX_BATCH_SIZE).stream()
                 .filter(m -> m.getMessageId().equals(messageId))
                 .findFirst();
     }
@@ -113,21 +107,12 @@ public class DlqAdminService {
      * @return true if replay was successful
      */
     public boolean replayMessage(String receiptHandle) {
-        if (!isConfigured() || snsTopicArn == null || snsTopicArn.isEmpty()) {
+        if (!isReplayConfigured()) {
             log.warn("Cannot replay message: DLQ or SNS not configured");
             return false;
         }
         try {
-            // First, receive the message to get its body
-            var receiveResponse = sqsClient.receiveMessage(ReceiveMessageRequest.builder()
-                    .queueUrl(dlqUrl)
-                    .maxNumberOfMessages(10)
-                    .visibilityTimeout(30)
-                    .build());
-
-            var targetMessage = receiveResponse.messages().stream()
-                    .filter(m -> m.receiptHandle().equals(receiptHandle))
-                    .findFirst();
+            var targetMessage = findMessageByReceiptHandle(receiptHandle, receiveMessagesForReplay());
 
             if (targetMessage.isEmpty()) {
                 log.warn("Message not found with receipt handle: {}", receiptHandle);
@@ -149,10 +134,7 @@ public class DlqAdminService {
             log.info("Replayed message {} to SNS", message.messageId());
 
             // Delete from DLQ after successful replay
-            sqsClient.deleteMessage(DeleteMessageRequest.builder()
-                    .queueUrl(dlqUrl)
-                    .receiptHandle(receiptHandle)
-                    .build());
+            deleteMessageFromQueue(receiptHandle);
 
             log.info("Deleted replayed message from DLQ: {}", message.messageId());
             return true;
@@ -173,10 +155,7 @@ public class DlqAdminService {
             return false;
         }
         try {
-            sqsClient.deleteMessage(DeleteMessageRequest.builder()
-                    .queueUrl(dlqUrl)
-                    .receiptHandle(receiptHandle)
-                    .build());
+            deleteMessageFromQueue(receiptHandle);
             log.info("Deleted message from DLQ");
             return true;
         } catch (Exception e) {
@@ -229,6 +208,47 @@ public class DlqAdminService {
                 .sentTimestamp(Instant.ofEpochMilli(sentTimestampMs))
                 .approximateReceiveCount(receiveCount)
                 .build();
+    }
+
+    private List<Message> receiveMessagesForPeek(int limit) {
+        var response = sqsClient.receiveMessage(ReceiveMessageRequest.builder()
+                .queueUrl(dlqUrl)
+                .maxNumberOfMessages(limit)
+                .visibilityTimeout(0) // Don't hide messages (peek mode)
+                .attributeNames(QueueAttributeName.ALL)
+                .messageAttributeNames("All")
+                .build());
+        return response.messages();
+    }
+
+    private List<Message> receiveMessagesForReplay() {
+        var response = sqsClient.receiveMessage(ReceiveMessageRequest.builder()
+                .queueUrl(dlqUrl)
+                .maxNumberOfMessages(SQS_MAX_BATCH_SIZE)
+                .visibilityTimeout(30)
+                .build());
+        return response.messages();
+    }
+
+    private Optional<Message> findMessageByReceiptHandle(String receiptHandle, List<Message> messages) {
+        return messages.stream()
+                .filter(message -> message.receiptHandle().equals(receiptHandle))
+                .findFirst();
+    }
+
+    private void deleteMessageFromQueue(String receiptHandle) {
+        sqsClient.deleteMessage(DeleteMessageRequest.builder()
+                .queueUrl(dlqUrl)
+                .receiptHandle(receiptHandle)
+                .build());
+    }
+
+    private boolean isReplayConfigured() {
+        return isConfigured() && hasConfiguredValue(snsTopicArn);
+    }
+
+    private boolean hasConfiguredValue(String value) {
+        return value != null && !value.isEmpty();
     }
 
     /**

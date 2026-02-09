@@ -20,6 +20,13 @@
     mediaType?: MediaType;
   }
 
+  interface UploadTextConfig {
+    title: string;
+    prompt: string;
+    support: string;
+    accept: string;
+  }
+
   let { mediaType }: Props = $props();
 
   let selectedFile: File | null = $state(null);
@@ -51,30 +58,51 @@
     { value: "webp", label: "WebP" },
   ];
 
-  let uploadTitle = $derived(
-    mediaType === "image" ? "Upload Images" : mediaType === "document" ? "Upload Documents" : "Upload Media",
-  );
-  let promptText = $derived(
-    mediaType === "image"
-      ? "Drop images here or click to browse"
-      : mediaType === "document"
-        ? "Drop PDFs here or click to browse"
-        : "Drop media here or click to browse",
-  );
-  let supportText = $derived(
-    mediaType === "image"
-      ? "JPG, PNG, GIF, WebP supported"
-      : mediaType === "document"
-        ? `PDF supported (max ${DOCUMENT_MAX_PAGES} pages)`
-        : `JPG, PNG, GIF, WebP, PDF supported (PDF max ${DOCUMENT_MAX_PAGES} pages)`,
-  );
-  let acceptedTypes = $derived(
-    mediaType === "image"
-      ? "image/*"
-      : mediaType === "document"
-        ? "application/pdf"
-        : "image/*,application/pdf",
-  );
+  let uploadText = $derived(getUploadText(mediaType));
+
+  function getUploadText(type?: MediaType): UploadTextConfig {
+    if (type === "image") {
+      return {
+        title: "Upload Images",
+        prompt: "Drop images here or click to browse",
+        support: "JPG, PNG, GIF, WebP supported",
+        accept: "image/*",
+      };
+    }
+
+    if (type === "document") {
+      return {
+        title: "Upload Documents",
+        prompt: "Drop PDFs here or click to browse",
+        support: `PDF supported (max ${DOCUMENT_MAX_PAGES} pages)`,
+        accept: "application/pdf",
+      };
+    }
+
+    return {
+      title: "Upload Media",
+      prompt: "Drop media here or click to browse",
+      support: `JPG, PNG, GIF, WebP, PDF supported (PDF max ${DOCUMENT_MAX_PAGES} pages)`,
+      accept: "image/*,application/pdf",
+    };
+  }
+
+  function detectMediaType(fileType: string): "image" | "document" | null {
+    if (fileType.startsWith("image/")) return "image";
+    if (fileType === "application/pdf") return "document";
+    return null;
+  }
+
+  function unsupportedFileMessage(type?: MediaType): string {
+    if (type === "document") return "Please select a PDF file";
+    if (type === "image") return "Please select an image file";
+    return "Please select an image or PDF file";
+  }
+
+  function mismatchedFileMessage(type: MediaType): string {
+    if (type === "document") return "Please select a PDF file";
+    return "Please select an image file";
+  }
 
   function handleDragOver(e: DragEvent) {
     e.preventDefault();
@@ -122,25 +150,15 @@
     if ($isProcessing) return;
     pdfValidationError = null;
     pdfPageCount = null;
-    const detectedType = file.type.startsWith("image/")
-      ? "image"
-      : file.type === "application/pdf"
-        ? "document"
-        : null;
+    const detectedType = detectMediaType(file.type);
 
     if (!detectedType) {
-      alert(
-        mediaType === "document"
-          ? "Please select a PDF file"
-          : mediaType === "image"
-            ? "Please select an image file"
-            : "Please select an image or PDF file",
-      );
+      alert(unsupportedFileMessage(mediaType));
       return;
     }
 
     if (mediaType && detectedType !== mediaType) {
-      alert(mediaType === "document" ? "Please select a PDF file" : "Please select an image file");
+      alert(mismatchedFileMessage(mediaType));
       return;
     }
 
@@ -182,7 +200,11 @@
     uploadMethod = usePresigned ? "presigned" : "direct";
 
     // Generate preview (uses thumbnail for large files)
-    previewUrl = detectedType === "image" ? await getPreviewUrl(file) : null;
+    if (detectedType === "image") {
+      previewUrl = await getPreviewUrl(file);
+    } else {
+      previewUrl = null;
+    }
   }
 
   function clearFile() {
@@ -260,7 +282,7 @@
 </script>
 
 <div class="card rounded-lg p-6">
-  <h2 class="text-base font-semibold text-gray-900 mb-4">{uploadTitle}</h2>
+  <h2 class="text-base font-semibold text-gray-900 mb-4">{uploadText.title}</h2>
 
   <!-- Upload Zone -->
   <div
@@ -279,7 +301,7 @@
   >
     <input
       type="file"
-      accept={acceptedTypes}
+      accept={uploadText.accept}
       class="hidden"
       bind:this={fileInput}
       onchange={handleFileSelect}
@@ -294,8 +316,8 @@
           d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
         ></path>
       </svg>
-      <p class="text-gray-600 text-sm">{promptText}</p>
-      <p class="text-gray-400 text-xs mt-1">{supportText}</p>
+      <p class="text-gray-600 text-sm">{uploadText.prompt}</p>
+      <p class="text-gray-400 text-xs mt-1">{uploadText.support}</p>
       {#if isValidatingPdf}
         <p class="text-xs text-amber-600 mt-2">Validating PDF page count...</p>
       {:else if pdfValidationError}

@@ -66,9 +66,6 @@ public class AnalyticsDynamoDbService {
     } catch (ConditionalCheckFailedException e) {
       logger.info("Rollup already processed (idempotency check): {}", rollupKey);
       return false;
-    } catch (Exception e) {
-      logger.error("Failed to acquire idempotency lock for {}: {}", rollupKey, e.getMessage());
-      throw e;
     }
   }
 
@@ -229,39 +226,34 @@ public class AnalyticsDynamoDbService {
     if (writeRequests.isEmpty()) {
       return;
     }
-    try {
-      var request = BatchWriteItemRequest.builder()
-          .requestItems(Map.of(tableName, new ArrayList<>(writeRequests)))
+    var request = BatchWriteItemRequest.builder()
+        .requestItems(Map.of(tableName, new ArrayList<>(writeRequests)))
+        .build();
+
+    var response = client.batchWriteItem(request);
+
+    // Handle unprocessed items with exponential backoff
+    var unprocessed = response.unprocessedItems();
+    int retries = 0;
+    while (unprocessed != null && !unprocessed.isEmpty() && retries < 3) {
+      try {
+        Thread.sleep(100L * (retries + 1));
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new RuntimeException("Batch write interrupted", e);
+      }
+
+      var retryRequest = BatchWriteItemRequest.builder()
+          .requestItems(unprocessed)
           .build();
+      response = client.batchWriteItem(retryRequest);
+      unprocessed = response.unprocessedItems();
+      retries++;
+    }
 
-      var response = client.batchWriteItem(request);
-
-      // Handle unprocessed items with exponential backoff
-      var unprocessed = response.unprocessedItems();
-      int retries = 0;
-      while (unprocessed != null && !unprocessed.isEmpty() && retries < 3) {
-        try {
-          Thread.sleep(100L * (retries + 1));
-        } catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-          throw new RuntimeException("Batch write interrupted", e);
-        }
-
-        var retryRequest = BatchWriteItemRequest.builder()
-            .requestItems(unprocessed)
-            .build();
-        response = client.batchWriteItem(retryRequest);
-        unprocessed = response.unprocessedItems();
-        retries++;
-      }
-
-      if (unprocessed != null && !unprocessed.isEmpty()) {
-        logger.warn("Failed to write {} items after {} retries",
-            unprocessed.values().stream().mapToInt(List::size).sum(), retries);
-      }
-    } catch (Exception e) {
-      logger.error("Batch write failed: {}", e.getMessage());
-      throw e;
+    if (unprocessed != null && !unprocessed.isEmpty()) {
+      logger.warn("Failed to write {} items after {} retries",
+          unprocessed.values().stream().mapToInt(List::size).sum(), retries);
     }
   }
 

@@ -20,7 +20,13 @@
   let filteredList = $derived(
     mediaType ? mediaList.filter((item) => (item.mediaType || "image") === mediaType) : mediaList,
   );
-  let listTitle = $derived(mediaType === "image" ? "Images" : mediaType === "document" ? "Documents" : "All Media");
+  let listTitle = $derived(getListTitle(mediaType));
+
+  function getListTitle(type?: MediaType): string {
+    if (type === "image") return "Images";
+    if (type === "document") return "Documents";
+    return "All Media";
+  }
 
   async function handleDelete(mediaId: string) {
     const item = filteredList.find((m) => m.mediaId === mediaId);

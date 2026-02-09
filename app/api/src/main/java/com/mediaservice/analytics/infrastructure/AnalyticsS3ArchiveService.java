@@ -84,8 +84,9 @@ public class AnalyticsS3ArchiveService {
                     tenantId, yearMonth, bucketName, s3Key, data.size(), archiveRecord.totalViews());
 
         } catch (Exception e) {
-            log.error("Failed to archive analytics for tenant {} on {} to S3: {}", tenantId, yearMonth, e.getMessage(), e);
-            throw new RuntimeException("S3 archival failed", e);
+            throw new RuntimeException(
+                    "Failed to archive analytics for tenant %s on %s to S3".formatted(tenantId, yearMonth),
+                    e);
         }
     }
 

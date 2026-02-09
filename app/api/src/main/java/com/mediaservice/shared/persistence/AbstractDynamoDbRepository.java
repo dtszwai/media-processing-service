@@ -109,11 +109,7 @@ public abstract class AbstractDynamoDbRepository<T> implements DynamoDbRepositor
         .limit(limit)
         .build();
     var response = dynamoDbClient.query(request);
-    var results = new ArrayList<T>();
-    for (var item : response.items()) {
-      results.add(mapFromItem(item));
-    }
-    return results;
+    return mapItems(response.items());
   }
 
   // ==================== Extended Operations ====================
@@ -214,11 +210,7 @@ public abstract class AbstractDynamoDbRepository<T> implements DynamoDbRepositor
         .limit(limit)
         .build();
     var response = dynamoDbClient.query(request);
-    var results = new ArrayList<T>();
-    for (var item : response.items()) {
-      results.add(mapFromItem(item));
-    }
-    return results;
+    return mapItems(response.items());
   }
 
   /**
@@ -276,10 +268,7 @@ public abstract class AbstractDynamoDbRepository<T> implements DynamoDbRepositor
       }
     }
     var response = dynamoDbClient.query(requestBuilder.build());
-    var results = new ArrayList<T>();
-    for (var item : response.items()) {
-      results.add(mapFromItem(item));
-    }
+    var results = mapItems(response.items());
     String nextCursor = null;
     boolean hasMore = response.hasLastEvaluatedKey() && !response.lastEvaluatedKey().isEmpty();
     if (hasMore) {
@@ -289,6 +278,14 @@ public abstract class AbstractDynamoDbRepository<T> implements DynamoDbRepositor
   }
 
   // ==================== Helper Methods ====================
+
+  private List<T> mapItems(List<Map<String, AttributeValue>> items) {
+    var results = new ArrayList<T>(items.size());
+    for (var item : items) {
+      results.add(mapFromItem(item));
+    }
+    return results;
+  }
 
   /**
    * Build a key map for DynamoDB operations.

@@ -11,10 +11,7 @@ import org.apache.pdfbox.pdmodel.PDDocumentInformation;
 import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -25,7 +22,7 @@ import java.util.Calendar;
 import java.util.List;
 
 public class DocumentProcessingService {
-  private static final Logger logger = LoggerFactory.getLogger(DocumentProcessingService.class);
+  private static final String WATERMARK_RESOURCE_PATH = "/media-service-watermark.png";
 
   static {
     System.setProperty("java.awt.headless", "true");
@@ -38,7 +35,7 @@ public class DocumentProcessingService {
   public DocumentProcessingService(ObjectMapper objectMapper) {
     this.config = LambdaConfig.getInstance();
     this.objectMapper = objectMapper;
-    this.watermarkImage = loadWatermark();
+    this.watermarkImage = WatermarkLoader.load(WATERMARK_RESOURCE_PATH, DocumentProcessingService.class);
   }
 
   public DocumentProcessingResult process(String mediaId, byte[] pdfBytes) throws IOException {
@@ -140,21 +137,6 @@ public class DocumentProcessingService {
         .outputQuality(StorageConstants.PREVIEW_QUALITY)
         .toOutputStream(outputStream);
     return outputStream.toByteArray();
-  }
-
-  private BufferedImage loadWatermark() {
-    try (var watermarkStream = DocumentProcessingService.class.getResourceAsStream("/media-service-watermark.png")) {
-      if (watermarkStream == null) {
-        throw new IllegalStateException("Watermark image not found at /media-service-watermark.png");
-      }
-      var image = ImageIO.read(watermarkStream);
-      if (image == null) {
-        throw new IllegalStateException("Failed to decode watermark image");
-      }
-      return image;
-    } catch (IOException e) {
-      throw new IllegalStateException("Failed to load watermark image", e);
-    }
   }
 
   private Instant toInstant(Calendar calendar) {

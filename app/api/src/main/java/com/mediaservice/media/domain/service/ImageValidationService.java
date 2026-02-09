@@ -48,8 +48,7 @@ public class ImageValidationService {
       byte[] bytes = file.getBytes();
       validateImageBytes(bytes, file.getOriginalFilename());
     } catch (IOException e) {
-      log.error("Failed to read file bytes: {}", e.getMessage());
-      throw new InvalidImageException("Failed to read file content");
+      throw new InvalidImageException("Failed to read file content", e);
     }
   }
 

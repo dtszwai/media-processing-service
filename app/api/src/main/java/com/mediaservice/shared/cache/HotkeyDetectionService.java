@@ -110,7 +110,8 @@ public class HotkeyDetectionService {
     }
     var config = cacheProperties.getHotkey();
     var warmUpConfig = config.getWarmUp();
-    String knownHotKeysKey = config.getKnownHotKeysKey();
+    String knownHotKeysKey = knownHotKeysKey();
+    Duration knownHotKeysTtl = Duration.ofMinutes(warmUpConfig.getKnownKeysTtlMinutes());
     try {
       var tenants = stringRedisTemplate.opsForSet().members(ANALYTICS_TENANTS_SET);
       if (tenants == null || tenants.isEmpty()) {
@@ -133,7 +134,7 @@ public class HotkeyDetectionService {
       String tempKey = knownHotKeysKey + ":temp:" + System.currentTimeMillis();
       // Add all hot media IDs to temporary set
       stringRedisTemplate.opsForSet().add(tempKey, hotMediaIds.toArray(new String[0]));
-      stringRedisTemplate.expire(tempKey, Duration.ofMinutes(warmUpConfig.getKnownKeysTtlMinutes()));
+      stringRedisTemplate.expire(tempKey, knownHotKeysTtl);
       // Atomically rename to replace the old set
       try {
         stringRedisTemplate.rename(tempKey, knownHotKeysKey);
@@ -143,7 +144,7 @@ public class HotkeyDetectionService {
         throw e;
       }
       // Set TTL on the new set
-      stringRedisTemplate.expire(knownHotKeysKey, Duration.ofMinutes(warmUpConfig.getKnownKeysTtlMinutes()));
+      stringRedisTemplate.expire(knownHotKeysKey, knownHotKeysTtl);
       log.info("Refreshed known hot keys: {} items from analytics", hotMediaIds.size());
     } catch (Exception e) {
       log.warn("Failed to refresh known hot keys from analytics: {}", e.getMessage());
@@ -165,7 +166,7 @@ public class HotkeyDetectionService {
       return;
     }
     try {
-      String counterKey = cacheProperties.getHotkey().getKeyPrefix() + key;
+      String counterKey = counterKey(key);
       Long count = stringRedisTemplate.opsForValue().increment(counterKey);
       // Set expiry on first increment
       if (count != null && count == 1) {
@@ -196,15 +197,7 @@ public class HotkeyDetectionService {
     if (!cacheProperties.isEnabled() || !cacheProperties.getHotkey().isEnabled()) {
       return false;
     }
-    // Check 1: Real-time counter
-    if (isHotByCounter(key)) {
-      return true;
-    }
-    // Check 2: Known hot keys set (from analytics warm-up)
-    if (isKnownHotKey(key)) {
-      return true;
-    }
-    return false;
+    return isHotByCounter(key) || isKnownHotKey(key);
   }
 
   /**
@@ -212,7 +205,7 @@ public class HotkeyDetectionService {
    */
   private boolean isHotByCounter(String key) {
     try {
-      String counterKey = cacheProperties.getHotkey().getKeyPrefix() + key;
+      String counterKey = counterKey(key);
       String countStr = stringRedisTemplate.opsForValue().get(counterKey);
       if (countStr != null) {
         long count = Long.parseLong(countStr);
@@ -233,8 +226,7 @@ public class HotkeyDetectionService {
       return false;
     }
     try {
-      String knownHotKeysKey = cacheProperties.getHotkey().getKnownHotKeysKey();
-      return Boolean.TRUE.equals(stringRedisTemplate.opsForSet().isMember(knownHotKeysKey, key));
+      return Boolean.TRUE.equals(stringRedisTemplate.opsForSet().isMember(knownHotKeysKey(), key));
     } catch (Exception e) {
       log.debug("Failed to check known hot keys for {}: {}", key, e.getMessage());
     }
@@ -249,7 +241,7 @@ public class HotkeyDetectionService {
    */
   public long getAccessCount(String key) {
     try {
-      String counterKey = cacheProperties.getHotkey().getKeyPrefix() + key;
+      String counterKey = counterKey(key);
       String countStr = stringRedisTemplate.opsForValue().get(counterKey);
       return countStr != null ? Long.parseLong(countStr) : 0;
     } catch (Exception e) {
@@ -290,8 +282,7 @@ public class HotkeyDetectionService {
    */
   public void clearCounter(String key) {
     try {
-      String counterKey = cacheProperties.getHotkey().getKeyPrefix() + key;
-      stringRedisTemplate.delete(counterKey);
+      stringRedisTemplate.delete(counterKey(key));
     } catch (Exception e) {
       log.debug("Failed to clear hotkey counter for {}: {}", key, e.getMessage());
     }
@@ -307,8 +298,7 @@ public class HotkeyDetectionService {
       return Set.of();
     }
     try {
-      String knownHotKeysKey = cacheProperties.getHotkey().getKnownHotKeysKey();
-      var keys = stringRedisTemplate.opsForSet().members(knownHotKeysKey);
+      var keys = stringRedisTemplate.opsForSet().members(knownHotKeysKey());
       return keys != null ? keys : Set.of();
     } catch (Exception e) {
       log.debug("Failed to get known hot keys: {}", e.getMessage());
@@ -334,5 +324,13 @@ public class HotkeyDetectionService {
     return cacheProperties.isEnabled()
         && cacheProperties.getHotkey().isEnabled()
         && cacheProperties.getHotkey().getWarmUp().isEnabled();
+  }
+
+  private String counterKey(String key) {
+    return cacheProperties.getHotkey().getKeyPrefix() + key;
+  }
+
+  private String knownHotKeysKey() {
+    return cacheProperties.getHotkey().getKnownHotKeysKey();
   }
 }

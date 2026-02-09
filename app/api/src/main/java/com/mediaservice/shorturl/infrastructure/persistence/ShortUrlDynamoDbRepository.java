@@ -8,7 +8,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
@@ -16,7 +15,6 @@ import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
 
-@Slf4j
 @Repository
 public class ShortUrlDynamoDbRepository extends AbstractDynamoDbRepository<ShortUrl> {
   private static final int DEFAULT_LIST_LIMIT = 50;
@@ -31,12 +29,7 @@ public class ShortUrlDynamoDbRepository extends AbstractDynamoDbRepository<Short
   public ShortUrl mapFromItem(Map<String, AttributeValue> item) {
     String pk = getString(item, "PK");
     String sk = getString(item, "SK");
-    String code = null;
-    if (pk != null && pk.startsWith(StorageConstants.DYNAMO_PK_SHORT_URL_PREFIX)) {
-      code = pk.replace(StorageConstants.DYNAMO_PK_SHORT_URL_PREFIX, "");
-    } else if (sk != null && sk.startsWith(StorageConstants.DYNAMO_SK_SHORT_URL_PREFIX)) {
-      code = sk.replace(StorageConstants.DYNAMO_SK_SHORT_URL_PREFIX, "");
-    }
+    String code = extractCode(pk, sk);
     var expiresAtEpoch = getLong(item, "expiresAt");
     Instant expiresAt = expiresAtEpoch != null ? Instant.ofEpochSecond(expiresAtEpoch) : null;
     Boolean isPublic = getBoolean(item, "public");
@@ -63,23 +56,12 @@ public class ShortUrlDynamoDbRepository extends AbstractDynamoDbRepository<Short
     item.put("SK", s(StorageConstants.DYNAMO_SK_METADATA));
     item.put("tenantId", s(shortUrl.getTenantId()));
     item.put("mediaId", s(shortUrl.getMediaId()));
-    if (shortUrl.getAssetId() != null) {
-      item.put("assetId", s(shortUrl.getAssetId()));
+    if (shortUrl.getCreatedAt() != null) {
+      item.put("createdAt", s(shortUrl.getCreatedAt().toString()));
+    } else {
+      item.put("createdAt", s(now.toString()));
     }
-    item.put("public", bool(shortUrl.isPublic()));
-    item.put("createdAt", s(shortUrl.getCreatedAt() != null ? shortUrl.getCreatedAt().toString() : now.toString()));
-    if (shortUrl.getCreatedBy() != null) {
-      item.put("createdBy", s(shortUrl.getCreatedBy()));
-    }
-    if (shortUrl.getExpiresAt() != null) {
-      item.put("expiresAt", n(String.valueOf(shortUrl.getExpiresAt().getEpochSecond())));
-    }
-    if (shortUrl.getRevokedAt() != null) {
-      item.put("revokedAt", s(shortUrl.getRevokedAt().toString()));
-    }
-    if (shortUrl.getLabel() != null) {
-      item.put("label", s(shortUrl.getLabel()));
-    }
+    putSharedAttributes(item, shortUrl);
     return item;
   }
 
@@ -98,7 +80,6 @@ public class ShortUrlDynamoDbRepository extends AbstractDynamoDbRepository<Short
     try {
       putMediaIndex(shortUrl);
     } catch (Exception e) {
-      log.warn("Failed to write media index for short URL {}: {}", shortUrl.getCode(), e.getMessage());
       delete(StorageConstants.DYNAMO_PK_SHORT_URL_PREFIX + shortUrl.getCode(), StorageConstants.DYNAMO_SK_METADATA);
       throw e;
     }
@@ -147,13 +128,32 @@ public class ShortUrlDynamoDbRepository extends AbstractDynamoDbRepository<Short
     item.put("SK", s(StorageConstants.DYNAMO_SK_SHORT_URL_PREFIX + shortUrl.getCode()));
     item.put("tenantId", s(shortUrl.getTenantId()));
     item.put("mediaId", s(shortUrl.getMediaId()));
+    if (shortUrl.getCreatedAt() != null) {
+      item.put("createdAt", s(shortUrl.getCreatedAt().toString()));
+    }
+    putSharedAttributes(item, shortUrl);
+    var request = PutItemRequest.builder()
+        .tableName(tableName)
+        .item(item)
+        .build();
+    dynamoDbClient.putItem(request);
+  }
+
+  private String extractCode(String pk, String sk) {
+    if (pk != null && pk.startsWith(StorageConstants.DYNAMO_PK_SHORT_URL_PREFIX)) {
+      return pk.replace(StorageConstants.DYNAMO_PK_SHORT_URL_PREFIX, "");
+    }
+    if (sk != null && sk.startsWith(StorageConstants.DYNAMO_SK_SHORT_URL_PREFIX)) {
+      return sk.replace(StorageConstants.DYNAMO_SK_SHORT_URL_PREFIX, "");
+    }
+    return null;
+  }
+
+  private void putSharedAttributes(Map<String, AttributeValue> item, ShortUrl shortUrl) {
     if (shortUrl.getAssetId() != null) {
       item.put("assetId", s(shortUrl.getAssetId()));
     }
     item.put("public", bool(shortUrl.isPublic()));
-    if (shortUrl.getCreatedAt() != null) {
-      item.put("createdAt", s(shortUrl.getCreatedAt().toString()));
-    }
     if (shortUrl.getCreatedBy() != null) {
       item.put("createdBy", s(shortUrl.getCreatedBy()));
     }
@@ -166,10 +166,5 @@ public class ShortUrlDynamoDbRepository extends AbstractDynamoDbRepository<Short
     if (shortUrl.getLabel() != null) {
       item.put("label", s(shortUrl.getLabel()));
     }
-    var request = PutItemRequest.builder()
-        .tableName(tableName)
-        .item(item)
-        .build();
-    dynamoDbClient.putItem(request);
   }
 }

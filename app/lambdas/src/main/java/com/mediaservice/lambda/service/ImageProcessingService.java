@@ -18,6 +18,7 @@ import java.util.Iterator;
 
 public class ImageProcessingService {
   private static final Logger logger = LoggerFactory.getLogger(ImageProcessingService.class);
+  private static final String WATERMARK_RESOURCE_PATH = "/media-service-watermark.png";
 
   private final LambdaConfig config;
   private final BufferedImage watermarkImage;
@@ -35,22 +36,7 @@ public class ImageProcessingService {
 
   public ImageProcessingService() {
     this.config = LambdaConfig.getInstance();
-    this.watermarkImage = loadWatermark();
-  }
-
-  private BufferedImage loadWatermark() {
-    try (var watermarkStream = ImageProcessingService.class.getResourceAsStream("/media-service-watermark.png")) {
-      if (watermarkStream == null) {
-        throw new IllegalStateException("Watermark image not found at /media-service-watermark.png");
-      }
-      var image = ImageIO.read(watermarkStream);
-      if (image == null) {
-        throw new IllegalStateException("Failed to decode watermark image");
-      }
-      return image;
-    } catch (IOException e) {
-      throw new IllegalStateException("Failed to load watermark image", e);
-    }
+    this.watermarkImage = WatermarkLoader.load(WATERMARK_RESOURCE_PATH, ImageProcessingService.class);
   }
 
   public byte[] processImage(byte[] imageData, Integer targetWidth, OutputFormat outputFormat) throws IOException {

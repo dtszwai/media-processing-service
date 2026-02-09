@@ -49,8 +49,7 @@ public class DocumentValidationService {
       }
       log.info("PDF validation passed: file={}, size={}, pages<=max", file.getOriginalFilename(), file.getSize());
     } catch (IOException e) {
-      log.warn("Failed to read or parse PDF: {}", e.getMessage());
-      throw new IllegalArgumentException("Failed to read or parse PDF");
+      throw new IllegalArgumentException("Failed to read or parse PDF", e);
     }
   }
 

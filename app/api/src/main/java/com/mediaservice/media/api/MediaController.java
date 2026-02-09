@@ -8,6 +8,8 @@ import com.mediaservice.media.api.dto.MediaAssetResponse;
 import com.mediaservice.media.api.dto.MediaResponse;
 import com.mediaservice.media.application.MediaApplicationService;
 import com.mediaservice.media.application.mapper.MediaMapper;
+import com.mediaservice.common.model.MediaAsset;
+import com.mediaservice.common.model.AssetStatus;
 import com.mediaservice.common.model.MediaType;
 import com.mediaservice.shared.http.PagedResponse;
 import com.mediaservice.shared.http.error.ErrorResponse;
@@ -187,7 +189,7 @@ public class MediaController {
       return ResponseEntity.notFound().build();
     }
     var asset = assetOpt.get();
-    if (asset.getStatus() != com.mediaservice.common.model.AssetStatus.COMPLETE) {
+    if (!isAssetComplete(asset)) {
       return ResponseEntity.status(HttpStatus.ACCEPTED).build();
     }
     return mediaService.getAssetDownloadUrl(mediaId, assetId)
@@ -220,12 +222,8 @@ public class MediaController {
       return ResponseEntity.notFound().build();
     }
     var asset = assetOpt.get();
-    if (asset.getStatus() != com.mediaservice.common.model.AssetStatus.COMPLETE) {
-      var headers = new HttpHeaders();
-      headers.add("Retry-After", "60");
-      headers.add("Location", "%s://%s:%d/v1/media/%s/assets/%s"
-          .formatted(request.getScheme(), request.getServerName(), request.getServerPort(), mediaId, assetId));
-      return ResponseEntity.accepted().headers(headers).build();
+    if (!isAssetComplete(asset)) {
+      return acceptedAssetPendingResponse(request, mediaId, assetId);
     }
     return mediaService.getAssetDownloadUrl(mediaId, assetId)
         .map(url -> ResponseEntity.status(HttpStatus.FOUND).location(URI.create(url)).build())
@@ -256,5 +254,17 @@ public class MediaController {
     return mediaService.deleteMedia(mediaId)
         .map(media -> ResponseEntity.ok(mediaMapper.toResponse(media)))
         .orElse(ResponseEntity.notFound().build());
+  }
+
+  private boolean isAssetComplete(MediaAsset asset) {
+    return asset.getStatus() == AssetStatus.COMPLETE;
+  }
+
+  private ResponseEntity<Void> acceptedAssetPendingResponse(HttpServletRequest request, String mediaId, String assetId) {
+    var headers = new HttpHeaders();
+    headers.add("Retry-After", "60");
+    headers.add("Location", "%s://%s:%d/v1/media/%s/assets/%s"
+        .formatted(request.getScheme(), request.getServerName(), request.getServerPort(), mediaId, assetId));
+    return ResponseEntity.accepted().headers(headers).build();
   }
 }

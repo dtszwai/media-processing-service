@@ -297,8 +297,18 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
     var assets = dynamoDbService.listAssets(mediaId);
     boolean anyProcessing = assets.stream().anyMatch(a -> a.getStatus() == AssetStatus.PENDING || a.getStatus() == AssetStatus.PROCESSING);
     boolean anyError = assets.stream().anyMatch(a -> a.getStatus() == AssetStatus.ERROR);
-    MediaStatus newStatus = anyProcessing ? MediaStatus.PROCESSING : (anyError ? MediaStatus.ERROR : MediaStatus.COMPLETE);
+    MediaStatus newStatus = resolveMediaStatus(anyProcessing, anyError);
     dynamoDbService.updateMediaStatus(mediaId, newStatus);
+  }
+
+  private MediaStatus resolveMediaStatus(boolean anyProcessing, boolean anyError) {
+    if (anyProcessing) {
+      return MediaStatus.PROCESSING;
+    }
+    if (anyError) {
+      return MediaStatus.ERROR;
+    }
+    return MediaStatus.COMPLETE;
   }
 
   private void sendWebhookIfComplete(String mediaId) {

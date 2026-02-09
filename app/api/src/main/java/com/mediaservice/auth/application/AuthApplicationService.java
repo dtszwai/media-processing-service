@@ -64,13 +64,7 @@ public class AuthApplicationService {
 
     log.info("Registered tenant: {} with admin user: {}", tenantId, userId);
 
-    return AuthResponse.builder()
-        .token(token)
-        .refreshToken(refreshToken)
-        .tenantId(tenantId)
-        .userId(userId)
-        .expiresIn(authProperties.getJwt().getExpirationSeconds())
-        .build();
+    return buildAuthResponse(token, refreshToken, tenantId, userId);
   }
 
   public Optional<AuthResponse> login(LoginRequest request) {
@@ -82,13 +76,7 @@ public class AuthApplicationService {
 
           log.info("User logged in: userId={}, tenantId={}", user.getUserId(), user.getTenantId());
 
-          return AuthResponse.builder()
-              .token(token)
-              .refreshToken(refreshToken)
-              .tenantId(user.getTenantId())
-              .userId(user.getUserId())
-              .expiresIn(authProperties.getJwt().getExpirationSeconds())
-              .build();
+          return buildAuthResponse(token, refreshToken, user.getTenantId(), user.getUserId());
         });
   }
 
@@ -104,14 +92,18 @@ public class AuthApplicationService {
                 String newToken = jwtService.createToken(userId, tenantId, user.getEmail(), user.getRoles());
                 String newRefreshToken = jwtService.createRefreshToken(userId, tenantId);
 
-                return AuthResponse.builder()
-                    .token(newToken)
-                    .refreshToken(newRefreshToken)
-                    .tenantId(tenantId)
-                    .userId(userId)
-                    .expiresIn(authProperties.getJwt().getExpirationSeconds())
-                    .build();
+                return buildAuthResponse(newToken, newRefreshToken, tenantId, userId);
               });
         });
+  }
+
+  private AuthResponse buildAuthResponse(String token, String refreshToken, String tenantId, String userId) {
+    return AuthResponse.builder()
+        .token(token)
+        .refreshToken(refreshToken)
+        .tenantId(tenantId)
+        .userId(userId)
+        .expiresIn(authProperties.getJwt().getExpirationSeconds())
+        .build();
   }
 }
