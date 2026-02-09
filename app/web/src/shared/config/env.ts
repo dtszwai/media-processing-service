@@ -19,3 +19,6 @@ export const SHORT_URL_BASE = `${API_URL}/v1/short-urls`;
 export const MAX_DIRECT_UPLOAD_SIZE = 50 * 1024 * 1024; // 50MB for direct upload
 export const MAX_PRESIGNED_UPLOAD_SIZE = 1024 * 1024 * 1024; // 1GB for presigned upload
 export const PRESIGNED_UPLOAD_THRESHOLD = 5 * 1024 * 1024; // Use presigned for files > 5MB
+
+// Document limits
+export const DOCUMENT_MAX_PAGES = Number(import.meta.env.VITE_DOCUMENT_MAX_PAGES || 200);

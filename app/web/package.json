@@ -34,6 +34,7 @@
   },
   "dependencies": {
     "@tanstack/svelte-query": "^6.0.9",
+    "pdfjs-dist": "^4.2.67",
     "zod": "^4.1.13"
   }
 }

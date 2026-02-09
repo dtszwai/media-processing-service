@@ -305,8 +305,8 @@ class MediaApiIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    @DisplayName("should reject non-image content type")
-    void shouldRejectNonImageContentType() {
+    @DisplayName("should reject unsupported content type")
+    void shouldRejectUnsupportedContentType() {
       var headers = new HttpHeaders();
       headers.setContentType(MediaType.APPLICATION_JSON);
 
@@ -314,15 +314,15 @@ class MediaApiIntegrationTest extends BaseIntegrationTest {
           baseUrl() + "/upload/init",
           new HttpEntity<>("""
               {
-                "fileName": "document.pdf",
+                "fileName": "archive.zip",
                 "fileSize": 1024,
-                "contentType": "application/pdf"
+                "contentType": "application/zip"
               }
               """, headers),
           String.class);
 
       assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-      assertThat(response.getBody()).contains("Only images are supported");
+      assertThat(response.getBody()).contains("Only images and PDFs are supported");
     }
 
     @Test

@@ -24,6 +24,16 @@ export const MediaSchema = z.object({
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
   deletedAt: z.string().optional(),
+  documentPageCount: z.number().optional(),
+  documentTitle: z.string().optional(),
+  documentAuthor: z.string().optional(),
+  documentSubject: z.string().optional(),
+  documentCreator: z.string().optional(),
+  documentProducer: z.string().optional(),
+  documentCreationDate: z.string().optional(),
+  documentModifiedDate: z.string().optional(),
+  documentTextLength: z.number().optional(),
+  documentTextTruncated: z.boolean().optional(),
 });
 
 export const InitUploadRequestSchema = z.object({
@@ -55,6 +65,21 @@ export const UploadResponseSchema = z.object({
 export const ResizeRequestSchema = z.object({
   width: z.number(),
   outputFormat: OutputFormatSchema.optional(),
+});
+
+// ============= Document Text Schemas =============
+
+export const DocumentTextPageSchema = z.object({
+  page: z.number(),
+  text: z.string(),
+});
+
+export const DocumentTextSchema = z.object({
+  mediaId: z.string(),
+  pageCount: z.number(),
+  extractedAt: z.string(),
+  truncated: z.boolean(),
+  pages: z.array(DocumentTextPageSchema),
 });
 
 // ============= Short URL Schemas =============
@@ -233,6 +258,7 @@ export type InitUploadResponse = z.infer<typeof InitUploadResponseSchema>;
 export type StatusResponse = z.infer<typeof StatusResponseSchema>;
 export type UploadResponse = z.infer<typeof UploadResponseSchema>;
 export type ResizeRequest = z.infer<typeof ResizeRequestSchema>;
+export type DocumentText = z.infer<typeof DocumentTextSchema>;
 export type PagedMediaResponse = z.infer<typeof PagedMediaResponseSchema>;
 export type ApiError = z.infer<typeof ApiErrorSchema>;
 export type ShortUrlVariant = z.infer<typeof ShortUrlVariantSchema>;

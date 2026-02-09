@@ -1,6 +1,7 @@
 <script lang="ts">
   import { formatFileSize } from "../../../shared/utils";
   import { getPreviewUrl } from "../../../shared/utils/image";
+  import { DOCUMENT_MAX_PAGES } from "../../../shared/config/env";
   import {
     createUploadMutation,
     createPresignedUploadMutation,
@@ -8,6 +9,8 @@
     MAX_DIRECT_UPLOAD_SIZE,
     MAX_PRESIGNED_UPLOAD_SIZE,
   } from "../queries";
+  import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf.mjs";
+  import workerSrc from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
   import { invalidateMediaList } from "../../../shared/queries";
   import { pollForStatus } from "../services";
   import { isProcessing, currentMediaId } from "../stores";
@@ -29,8 +32,14 @@
   let showAdvanced = $state(false);
   let uploadProgress = $state(0);
   let uploadMethod = $state<"direct" | "presigned" | null>(null);
+  let isValidatingPdf = $state(false);
+  let pdfValidationError = $state<string | null>(null);
+  let pdfPageCount = $state<number | null>(null);
+  let pdfValidationRequestId = 0;
 
   let fileInput: HTMLInputElement;
+
+  GlobalWorkerOptions.workerSrc = workerSrc;
 
   const uploadMutation = createUploadMutation();
   const presignedUploadMutation = createPresignedUploadMutation();
@@ -55,8 +64,8 @@
     mediaType === "image"
       ? "JPG, PNG, GIF, WebP supported"
       : mediaType === "document"
-        ? "PDF supported"
-        : "JPG, PNG, GIF, WebP, PDF supported",
+        ? `PDF supported (max ${DOCUMENT_MAX_PAGES} pages)`
+        : `JPG, PNG, GIF, WebP, PDF supported (PDF max ${DOCUMENT_MAX_PAGES} pages)`,
   );
   let acceptedTypes = $derived(
     mediaType === "image"
@@ -95,8 +104,23 @@
     if (file) handleFile(file);
   }
 
+  async function getPdfPageCount(file: File): Promise<number> {
+    const arrayBuffer = await file.arrayBuffer();
+    const task = getDocument({ data: arrayBuffer });
+    try {
+      const doc = await task.promise;
+      const count = doc.numPages;
+      await doc.destroy();
+      return count;
+    } finally {
+      task.destroy();
+    }
+  }
+
   async function handleFile(file: File) {
     if ($isProcessing) return;
+    pdfValidationError = null;
+    pdfPageCount = null;
     const detectedType = file.type.startsWith("image/")
       ? "image"
       : file.type === "application/pdf"
@@ -128,6 +152,30 @@
       return;
     }
 
+    if (detectedType === "document") {
+      isValidatingPdf = true;
+      const requestId = ++pdfValidationRequestId;
+      try {
+        const pageCount = await getPdfPageCount(file);
+        if (requestId !== pdfValidationRequestId) return;
+        pdfPageCount = pageCount;
+        if (pageCount > DOCUMENT_MAX_PAGES) {
+          pdfValidationError = `PDF has ${pageCount} pages. Max allowed is ${DOCUMENT_MAX_PAGES}.`;
+          alert(pdfValidationError);
+          return;
+        }
+      } catch (error) {
+        if (requestId !== pdfValidationRequestId) return;
+        pdfValidationError = "Failed to read PDF pages. Please try a different file.";
+        alert(pdfValidationError);
+        return;
+      } finally {
+        if (requestId === pdfValidationRequestId) {
+          isValidatingPdf = false;
+        }
+      }
+    }
+
     selectedFile = file;
     selectedMediaType = mediaType || detectedType;
     uploadMethod = usePresigned ? "presigned" : "direct";
@@ -142,6 +190,9 @@
     selectedMediaType = null;
     uploadProgress = 0;
     uploadMethod = null;
+    isValidatingPdf = false;
+    pdfValidationError = null;
+    pdfPageCount = null;
     if (fileInput) fileInput.value = "";
   }
 
@@ -232,6 +283,11 @@
       </svg>
       <p class="text-gray-600 text-sm">{promptText}</p>
       <p class="text-gray-400 text-xs mt-1">{supportText}</p>
+      {#if isValidatingPdf}
+        <p class="text-xs text-amber-600 mt-2">Validating PDF page count...</p>
+      {:else if pdfValidationError}
+        <p class="text-xs text-red-600 mt-2">{pdfValidationError}</p>
+      {/if}
     {:else}
       {#if previewUrl}
         <img src={previewUrl} alt="Preview" class="max-h-24 mx-auto rounded mb-2" />

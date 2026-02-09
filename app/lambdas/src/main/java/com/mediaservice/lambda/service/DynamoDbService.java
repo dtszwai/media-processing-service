@@ -7,6 +7,7 @@ import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaStatus;
 import com.mediaservice.common.model.MediaType;
 import com.mediaservice.common.model.OutputFormat;
+import com.mediaservice.lambda.service.DocumentProcessingService.DocumentMetadata;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
@@ -81,6 +82,60 @@ public class DynamoDbService {
     return toMedia(mediaId, client.getItem(request).item());
   }
 
+  public void updateDocumentMetadata(String mediaId, DocumentMetadata metadata) {
+    var values = new HashMap<String, AttributeValue>();
+    var update = new StringBuilder("SET updatedAt = :updatedAt");
+    values.put(":updatedAt", s(Instant.now().toString()));
+
+    if (metadata.pageCount() > 0) {
+      update.append(", documentPageCount = :documentPageCount");
+      values.put(":documentPageCount", n(metadata.pageCount()));
+    }
+    if (metadata.title() != null) {
+      update.append(", documentTitle = :documentTitle");
+      values.put(":documentTitle", s(metadata.title()));
+    }
+    if (metadata.author() != null) {
+      update.append(", documentAuthor = :documentAuthor");
+      values.put(":documentAuthor", s(metadata.author()));
+    }
+    if (metadata.subject() != null) {
+      update.append(", documentSubject = :documentSubject");
+      values.put(":documentSubject", s(metadata.subject()));
+    }
+    if (metadata.creator() != null) {
+      update.append(", documentCreator = :documentCreator");
+      values.put(":documentCreator", s(metadata.creator()));
+    }
+    if (metadata.producer() != null) {
+      update.append(", documentProducer = :documentProducer");
+      values.put(":documentProducer", s(metadata.producer()));
+    }
+    if (metadata.createdAt() != null) {
+      update.append(", documentCreationDate = :documentCreationDate");
+      values.put(":documentCreationDate", s(metadata.createdAt().toString()));
+    }
+    if (metadata.modifiedAt() != null) {
+      update.append(", documentModifiedDate = :documentModifiedDate");
+      values.put(":documentModifiedDate", s(metadata.modifiedAt().toString()));
+    }
+    if (metadata.textLength() != null) {
+      update.append(", documentTextLength = :documentTextLength");
+      values.put(":documentTextLength", n(metadata.textLength()));
+    }
+    if (metadata.textTruncated() != null) {
+      update.append(", documentTextTruncated = :documentTextTruncated");
+      values.put(":documentTextTruncated", bool(metadata.textTruncated()));
+    }
+
+    client.updateItem(UpdateItemRequest.builder()
+        .tableName(tableName)
+        .key(keyFor(mediaId))
+        .updateExpression(update.toString())
+        .expressionAttributeValues(values)
+        .build());
+  }
+
   private Map<String, AttributeValue> keyFor(String mediaId) {
     return Map.of("PK", s(StorageConstants.DYNAMO_PK_PREFIX + mediaId), "SK", s(StorageConstants.DYNAMO_SK_METADATA));
   }
@@ -111,6 +166,14 @@ public class DynamoDbService {
 
   private AttributeValue n(Integer value) {
     return AttributeValue.builder().n(String.valueOf(value)).build();
+  }
+
+  private AttributeValue n(Long value) {
+    return AttributeValue.builder().n(String.valueOf(value)).build();
+  }
+
+  private AttributeValue bool(Boolean value) {
+    return AttributeValue.builder().bool(value).build();
   }
 
   private Optional<String> getString(Map<String, AttributeValue> attrs, String key) {

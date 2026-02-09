@@ -148,7 +148,7 @@ public class MediaApplicationService {
             .name(fileName)
             .mimetype(contentType)
             .mediaType(resolvedType)
-            .status(resolvedType == MediaType.DOCUMENT ? MediaStatus.COMPLETE : MediaStatus.PENDING)
+            .status(MediaStatus.PENDING)
             .width(targetWidth)
             .outputFormat(targetFormat)
             .build());
@@ -157,17 +157,15 @@ public class MediaApplicationService {
         compensateS3Upload(tenantId, mediaId, fileName);
         throw e;
       }
-      // Step 3: Publish event to SNS for async processing by Lambda (images only for now)
-      if (resolvedType == MediaType.IMAGE) {
-        try {
-          eventPublisher.publishProcessMediaEvent(mediaId, tenantId, resolvedType.getValue(), targetWidth,
-              targetFormat != null ? targetFormat.getFormat() : null);
-        } catch (Exception e) {
-          // Compensate: delete DynamoDB record and S3 object
-          compensateDynamoDb(mediaId);
-          compensateS3Upload(tenantId, mediaId, fileName);
-          throw e;
-        }
+      // Step 3: Publish event to SNS for async processing by Lambda
+      try {
+        eventPublisher.publishProcessMediaEvent(mediaId, tenantId, resolvedType.getValue(), targetWidth,
+            targetFormat != null ? targetFormat.getFormat() : null);
+      } catch (Exception e) {
+        // Compensate: delete DynamoDB record and S3 object
+        compensateDynamoDb(mediaId);
+        compensateS3Upload(tenantId, mediaId, fileName);
+        throw e;
       }
       span.setStatus(StatusCode.OK);
       uploadSuccessCounter.add(1);
@@ -273,7 +271,12 @@ public class MediaApplicationService {
     }
     authorizationService.requireMediaAccess(media);
 
-    if (media.getStatus() != MediaStatus.COMPLETE) {
+    MediaType resolvedType = resolveMediaType(media);
+    if (resolvedType == MediaType.DOCUMENT) {
+      if (media.getStatus() == MediaStatus.PENDING_UPLOAD) {
+        return new DownloadResult.Processing(mediaId);
+      }
+    } else if (media.getStatus() != MediaStatus.COMPLETE) {
       return new DownloadResult.Processing(mediaId);
     }
 
@@ -282,7 +285,7 @@ public class MediaApplicationService {
           // Record analytics in application layer
           String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
           analyticsService.recordView(tenantId, mediaId);
-          if (resolveMediaType(media) == MediaType.IMAGE) {
+          if (resolvedType == MediaType.IMAGE) {
             analyticsService.recordDownload(tenantId, mediaId, media.getOutputFormatOrDefault(), media.getWidth());
           }
           return (DownloadResult) new DownloadResult.Ready(url, media);
@@ -304,7 +307,12 @@ public class MediaApplicationService {
       throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
     }
 
-    if (media.getStatus() != MediaStatus.COMPLETE) {
+    MediaType resolvedType = resolveMediaType(media);
+    if (resolvedType == MediaType.DOCUMENT) {
+      if (media.getStatus() == MediaStatus.PENDING_UPLOAD) {
+        return new DownloadResult.Processing(mediaId);
+      }
+    } else if (media.getStatus() != MediaStatus.COMPLETE) {
       return new DownloadResult.Processing(mediaId);
     }
 
@@ -312,7 +320,7 @@ public class MediaApplicationService {
         .map(url -> {
           String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
           analyticsService.recordView(tenantId, mediaId);
-          if (resolveMediaType(media) == MediaType.IMAGE) {
+          if (resolvedType == MediaType.IMAGE) {
             analyticsService.recordDownload(tenantId, mediaId, media.getOutputFormatOrDefault(), media.getWidth());
           }
           return (DownloadResult) new DownloadResult.Ready(url, media);
@@ -341,11 +349,17 @@ public class MediaApplicationService {
 
     authorizationService.requireMediaAccess(media);
 
-    if (resolveMediaType(media) != MediaType.IMAGE) {
+    MediaType resolvedType = resolveMediaType(media);
+    if (resolvedType == MediaType.DOCUMENT) {
+      if (media.getStatus() == MediaStatus.PENDING_UPLOAD) {
+        return new PreviewResult.NotFound();
+      }
+      if (!documentPreviewExists(media)) {
+        return new PreviewResult.Processing(mediaId);
+      }
+    } else if (resolvedType != MediaType.IMAGE) {
       return new PreviewResult.NotFound();
-    }
-
-    if (media.getStatus() != MediaStatus.COMPLETE) {
+    } else if (media.getStatus() != MediaStatus.COMPLETE) {
       return new PreviewResult.Processing(mediaId);
     }
 
@@ -373,11 +387,17 @@ public class MediaApplicationService {
       throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
     }
 
-    if (resolveMediaType(media) != MediaType.IMAGE) {
+    MediaType resolvedType = resolveMediaType(media);
+    if (resolvedType == MediaType.DOCUMENT) {
+      if (media.getStatus() == MediaStatus.PENDING_UPLOAD) {
+        return new PreviewResult.NotFound();
+      }
+      if (!documentPreviewExists(media)) {
+        return new PreviewResult.Processing(mediaId);
+      }
+    } else if (resolvedType != MediaType.IMAGE) {
       return new PreviewResult.NotFound();
-    }
-
-    if (media.getStatus() != MediaStatus.COMPLETE) {
+    } else if (media.getStatus() != MediaStatus.COMPLETE) {
       return new PreviewResult.Processing(mediaId);
     }
 
@@ -388,6 +408,53 @@ public class MediaApplicationService {
           return (PreviewResult) new PreviewResult.Ready(url);
         })
         .orElse(new PreviewResult.NotFound());
+  }
+
+  /**
+   * Prepare extracted document text for access.
+   */
+  public DocumentTextResult prepareDocumentText(String mediaId) {
+    return prepareDocumentText(mediaId, false);
+  }
+
+  /**
+   * Prepare extracted document text for access.
+   *
+   * @param inline if true, returns inline JSON content instead of a presigned URL
+   */
+  public DocumentTextResult prepareDocumentText(String mediaId, boolean inline) {
+    var mediaOpt = mediaRepository.getMedia(mediaId);
+    if (mediaOpt.isEmpty()) {
+      return new DocumentTextResult.NotFound();
+    }
+
+    var media = mediaOpt.get();
+    if (media.getStatus() == MediaStatus.DELETED) {
+      return new DocumentTextResult.NotFound();
+    }
+
+    authorizationService.requireMediaAccess(media);
+    if (resolveMediaType(media) != MediaType.DOCUMENT) {
+      return new DocumentTextResult.NotFound();
+    }
+    if (media.getStatus() == MediaStatus.PENDING_UPLOAD) {
+      return new DocumentTextResult.NotFound();
+    }
+
+    String tenantId = media.getTenantId() != null ? media.getTenantId() : "default";
+    if (!s3Service.textExists(tenantId, mediaId)) {
+      return new DocumentTextResult.Processing(mediaId);
+    }
+
+    if (inline) {
+      return s3Service.getTextContent(tenantId, mediaId)
+          .map(content -> (DocumentTextResult) new DocumentTextResult.ReadyInline(content))
+          .orElse(new DocumentTextResult.NotFound());
+    }
+
+    return s3Service.getTextPresignedUrl(tenantId, mediaId)
+        .map(url -> (DocumentTextResult) new DocumentTextResult.Ready(url))
+        .orElse(new DocumentTextResult.NotFound());
   }
 
   /**
@@ -461,14 +528,17 @@ public class MediaApplicationService {
   }
 
   private Optional<String> getPreviewUrl(Media media) {
-    if (resolveMediaType(media) != MediaType.IMAGE) {
-      return Optional.empty();
+    MediaType resolvedType = resolveMediaType(media);
+    if (resolvedType == MediaType.IMAGE) {
+      return Optional.ofNullable(buildPreviewUrl(media, media.getOutputFormatOrDefault()));
     }
-    return Optional.ofNullable(buildPreviewUrl(media));
+    if (resolvedType == MediaType.DOCUMENT) {
+      return Optional.ofNullable(buildPreviewUrl(media, OutputFormat.PNG));
+    }
+    return Optional.empty();
   }
 
-  private String buildPreviewUrl(Media media) {
-    var format = media.getOutputFormatOrDefault();
+  private String buildPreviewUrl(Media media, OutputFormat format) {
     String tenantId = media.getTenantId() != null ? media.getTenantId() : "default";
     String key = StorageConstants.buildS3Key(tenantId, media.getMediaId(), StorageConstants.VARIANT_PREVIEW,
         format.getExtension());
@@ -478,6 +548,11 @@ public class MediaApplicationService {
     }
     // Fallback to S3 presigned URL if CloudFront not configured
     return s3Service.getPreviewPresignedUrl(tenantId, media.getMediaId(), format).orElse(null);
+  }
+
+  private boolean documentPreviewExists(Media media) {
+    String tenantId = media.getTenantId() != null ? media.getTenantId() : "default";
+    return s3Service.previewExists(tenantId, media.getMediaId(), OutputFormat.PNG);
   }
 
   public boolean isMediaProcessing(String mediaId) {
@@ -580,8 +655,9 @@ public class MediaApplicationService {
     }
 
     authorizationService.requireMediaAccess(media);
-    if (resolveMediaType(media) != MediaType.IMAGE) {
-      return new MediaOperationResult.NotAllowed(mediaId, "Retry is only supported for image processing.");
+    MediaType resolvedType = resolveMediaType(media);
+    if (resolvedType != MediaType.IMAGE && resolvedType != MediaType.DOCUMENT) {
+      return new MediaOperationResult.NotAllowed(mediaId, "Retry is only supported for images or documents.");
     }
 
     if (media.getStatus() != MediaStatus.PROCESSING && media.getStatus() != MediaStatus.ERROR) {
@@ -597,8 +673,9 @@ public class MediaApplicationService {
 
     String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
     try {
-      eventPublisher.publishProcessMediaEvent(mediaId, tenantId, MediaType.IMAGE.getValue(),
-          media.getWidth(), media.getOutputFormatOrDefault().getFormat());
+      Integer width = resolvedType == MediaType.IMAGE ? media.getWidth() : null;
+      String format = resolvedType == MediaType.IMAGE ? media.getOutputFormatOrDefault().getFormat() : null;
+      eventPublisher.publishProcessMediaEvent(mediaId, tenantId, resolvedType.getValue(), width, format);
     } catch (Exception e) {
       log.error("Failed to publish retry event for mediaId={}, reverting status to {}", mediaId, media.getStatus(), e);
       mediaRepository.updateStatusConditionally(mediaId, media.getStatus(), MediaStatus.PENDING);
@@ -752,7 +829,7 @@ public class MediaApplicationService {
               return Optional.empty();
             }
 
-            MediaStatus nextStatus = resolvedType == MediaType.DOCUMENT ? MediaStatus.COMPLETE : MediaStatus.PENDING;
+            MediaStatus nextStatus = MediaStatus.PENDING;
             boolean updated = mediaRepository.updateStatusConditionally(
                 mediaId, nextStatus, MediaStatus.PENDING_UPLOAD, true);
             if (!updated) {
@@ -760,15 +837,14 @@ public class MediaApplicationService {
               return Optional.empty();
             }
 
-            if (resolvedType == MediaType.IMAGE) {
-              try {
-                eventPublisher.publishProcessMediaEvent(mediaId, tenantId, resolvedType.getValue(),
-                    media.getWidth(), media.getOutputFormatOrDefault().getFormat());
-              } catch (Exception e) {
-                log.error("Failed to publish process event for mediaId={}, reverting status to PENDING_UPLOAD", mediaId, e);
-                mediaRepository.updateStatusConditionally(mediaId, MediaStatus.PENDING_UPLOAD, MediaStatus.PENDING);
-                throw e;
-              }
+            try {
+              Integer width = resolvedType == MediaType.IMAGE ? media.getWidth() : null;
+              String format = resolvedType == MediaType.IMAGE ? media.getOutputFormatOrDefault().getFormat() : null;
+              eventPublisher.publishProcessMediaEvent(mediaId, tenantId, resolvedType.getValue(), width, format);
+            } catch (Exception e) {
+              log.error("Failed to publish process event for mediaId={}, reverting status to PENDING_UPLOAD", mediaId, e);
+              mediaRepository.updateStatusConditionally(mediaId, MediaStatus.PENDING_UPLOAD, MediaStatus.PENDING);
+              throw e;
             }
             uploadSuccessCounter.add(1);
             span.setStatus(StatusCode.OK);

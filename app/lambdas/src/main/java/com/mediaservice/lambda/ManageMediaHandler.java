@@ -13,6 +13,7 @@ import com.mediaservice.common.model.MediaStatus;
 import com.mediaservice.common.model.MediaType;
 import com.mediaservice.common.model.OutputFormat;
 import com.mediaservice.lambda.service.DynamoDbService;
+import com.mediaservice.lambda.service.DocumentProcessingService;
 import com.mediaservice.lambda.service.ImageProcessingService;
 import com.mediaservice.lambda.service.S3Service;
 import com.mediaservice.lambda.service.WebhookService;
@@ -55,6 +56,7 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
   private final DynamoDbService dynamoDbService;
   private final S3Service s3Service;
   private final ImageProcessingService imageProcessingService;
+  private final DocumentProcessingService documentProcessingService;
   private final WebhookService webhookService;
   private final ObjectMapper objectMapper;
   private final OpenTelemetry openTelemetry;
@@ -79,6 +81,7 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
     this.dynamoDbService = dynamoDbService;
     this.s3Service = s3Service;
     this.imageProcessingService = imageProcessingService;
+    this.documentProcessingService = new DocumentProcessingService(objectMapper);
     this.webhookService = webhookService;
     this.objectMapper = objectMapper;
 
@@ -173,7 +176,7 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
           if (mediaType == MediaType.IMAGE) {
             handleMediaProcessing(mediaId, tenantId, width, outputFormat, false, span);
           } else {
-            handleDocumentProcessing(mediaId, span);
+            handleDocumentProcessing(mediaId, tenantId, span);
           }
         }
         default -> logger.info("Skipping message with unhandled event type: {}", event.getType());
@@ -212,6 +215,10 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
 
         // Delete preview file from S3
         s3Service.deletePreviewFile(tenantId, mediaId, outputFormat);
+      } else if (mediaType == MediaType.DOCUMENT) {
+        // Delete document preview and extracted text if present
+        s3Service.deletePreviewFile(tenantId, mediaId, OutputFormat.PNG);
+        s3Service.deleteTextFile(tenantId, mediaId);
       }
 
       logger.info("S3 cleanup completed for media: {} (DynamoDB record preserved for analytics)", mediaId);
@@ -343,26 +350,96 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
     }
   }
 
-  private void handleDocumentProcessing(String mediaId, Span span) {
-    logger.info("Document processing noop: {}", mediaId);
+  private void handleDocumentProcessing(String mediaId, String tenantId, Span span) {
+    logger.info("Processing document: {}", mediaId);
     try {
-      var mediaOpt = dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.COMPLETE, MediaStatus.PENDING);
-      if (mediaOpt.isEmpty()) {
-        logger.warn("Document {} not found or not in PENDING status", mediaId);
+      Media media;
+      try {
+        var mediaOpt = dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.PROCESSING, MediaStatus.PENDING);
+        if (mediaOpt.isEmpty()) {
+          logger.warn("Document {} not found or not in PENDING status", mediaId);
+          return;
+        }
+        media = mediaOpt.get();
+      } catch (ConditionalCheckFailedException e) {
+        var existingMedia = dynamoDbService.getMedia(mediaId);
+        if (existingMedia.isPresent() && existingMedia.get().getStatus() == MediaStatus.PROCESSING) {
+          logger.info("Document {} already PROCESSING, continuing as retry", mediaId);
+          media = existingMedia.get();
+        } else if (existingMedia.isPresent() && existingMedia.get().getStatus() == MediaStatus.COMPLETE) {
+          logger.info("Document {} already COMPLETE, skipping duplicate processing", mediaId);
+          span.setStatus(StatusCode.OK);
+          processSuccessCounter.add(1);
+          return;
+        } else {
+          logger.warn("Document {} in unexpected status: {}", mediaId,
+              existingMedia.map(m -> m.getStatus().name()).orElse("NOT_FOUND"));
+          return;
+        }
+      }
+
+      byte[] pdfData = s3Service.getMediaFile(tenantId, mediaId, media.getName());
+      var result = documentProcessingService.process(mediaId, pdfData);
+
+      var preUploadStatus = dynamoDbService.getMedia(mediaId).map(Media::getStatus).orElse(null);
+      if (preUploadStatus == MediaStatus.DELETED) {
+        logger.info("Document {} was deleted during processing, aborting upload", mediaId);
+        span.setStatus(StatusCode.OK);
         return;
       }
+
+      s3Service.uploadPreview(tenantId, mediaId, result.previewPng(), OutputFormat.PNG);
+      s3Service.uploadText(tenantId, mediaId, result.textJson());
+
+      dynamoDbService.updateDocumentMetadata(mediaId, result.metadata());
+      var completedMedia = dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.COMPLETE,
+          MediaStatus.PROCESSING);
+
+      logger.info("Document processing complete for: {}", mediaId);
+
+      if (completedMedia.isPresent() && completedMedia.get().getWebhookUrl() != null) {
+        try {
+          webhookService.sendCompletionNotification(completedMedia.get(), completedMedia.get().getWebhookUrl());
+        } catch (Exception webhookErr) {
+          logger.warn("Webhook notification failed for document {}: {}", mediaId, webhookErr.getMessage());
+        }
+      }
+
       span.setStatus(StatusCode.OK);
       processSuccessCounter.add(1);
-    } catch (Exception e) {
-      logger.error("Failed to complete document {}: {}", mediaId, e.getMessage(), e);
-      span.setStatus(StatusCode.ERROR, e.getMessage());
+    } catch (ConditionalCheckFailedException e) {
+      var actual = dynamoDbService.getMedia(mediaId).map(m -> m.getStatus().name()).orElse("NOT_FOUND");
+      if ("COMPLETE".equals(actual)) {
+        logger.info("Document {} already COMPLETE, skipping duplicate processing", mediaId);
+        span.setStatus(StatusCode.OK);
+        processSuccessCounter.add(1);
+        return;
+      }
+      if ("DELETED".equals(actual)) {
+        logger.info("Document {} was deleted during processing, cleaning up uploaded files", mediaId);
+        try {
+          s3Service.deletePreviewFile(tenantId, mediaId, OutputFormat.PNG);
+          s3Service.deleteTextFile(tenantId, mediaId);
+        } catch (Exception cleanupErr) {
+          logger.warn("Failed to clean up files for deleted document {}: {}", mediaId, cleanupErr.getMessage());
+        }
+        span.setStatus(StatusCode.OK);
+        return;
+      }
+      logger.error("Failed to complete document {}: unexpected status={}", mediaId, actual);
+      span.setStatus(StatusCode.ERROR, "unexpected_status=" + actual);
       processFailureCounter.add(1);
+      throw e;
+    } catch (Exception e) {
+      logger.error("Failed to process document {}: {}", mediaId, e.getMessage(), e);
+      span.setStatus(StatusCode.ERROR, e.getMessage());
       try {
         dynamoDbService.setMediaStatus(mediaId, MediaStatus.ERROR);
       } catch (Exception updateErr) {
         logger.error("Failed to update status to ERROR: {}", updateErr.getMessage());
       }
-      throw e;
+      processFailureCounter.add(1);
+      throw new RuntimeException("Failed to process document", e);
     }
   }
 

@@ -20,6 +20,16 @@ public class MediaMapper {
         .outputFormat(media.getOutputFormat())
         .createdAt(media.getCreatedAt())
         .updatedAt(media.getUpdatedAt())
+        .documentPageCount(media.getDocumentPageCount())
+        .documentTitle(media.getDocumentTitle())
+        .documentAuthor(media.getDocumentAuthor())
+        .documentSubject(media.getDocumentSubject())
+        .documentCreator(media.getDocumentCreator())
+        .documentProducer(media.getDocumentProducer())
+        .documentCreationDate(media.getDocumentCreationDate())
+        .documentModifiedDate(media.getDocumentModifiedDate())
+        .documentTextLength(media.getDocumentTextLength())
+        .documentTextTruncated(media.getDocumentTextTruncated())
         .build();
   }
 

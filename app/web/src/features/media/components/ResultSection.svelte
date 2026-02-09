@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { formatFileSize, formatDateTime } from "../../../shared/utils";
+  import { formatFileSize, formatDateTime, formatNumber } from "../../../shared/utils";
   import {
     getDownloadUrl,
     getOriginalUrl,
     getPreviewUrl,
+    getDocumentText,
     pollForStatus,
     refreshPresignedUploadUrl,
     uploadToPresignedUrl,
@@ -13,7 +14,7 @@
   import { createMediaListQuery, createResizeMutation, createRetryMutation } from "../queries";
   import { invalidateMediaList } from "../../../shared/queries";
   import { currentMediaId, isProcessing } from "../stores";
-  import type { OutputFormat, MediaType, ShortUrlResponse, ShortUrlVariant } from "../../../shared/types";
+  import type { OutputFormat, MediaType, ShortUrlResponse, ShortUrlVariant, DocumentText } from "../../../shared/types";
 
   interface Props {
     mediaType?: MediaType;
@@ -43,6 +44,13 @@
   let showAllActiveShortUrls = $state(false);
   let showAllInvalidShortUrls = $state(false);
   const MAX_VISIBLE_SHORT_URLS = 4;
+  const MAX_VISIBLE_TEXT_PAGES = 3;
+
+  let documentText = $state<DocumentText | null>(null);
+  let documentTextStatus = $state<"idle" | "loading" | "processing" | "ready" | "not_found" | "error">("idle");
+  let documentTextError = $state<string | null>(null);
+  let showAllTextPages = $state(false);
+  let documentTextRequestId = 0;
 
   const mediaListQuery = createMediaListQuery(undefined, undefined, mediaType);
   const resizeMutation = createResizeMutation();
@@ -71,8 +79,12 @@
   );
   let availableVariants = $derived(
     currentMedia?.mediaType === "document"
-      ? (["download", "original"] as ShortUrlVariant[])
+      ? (["preview", "download", "original"] as ShortUrlVariant[])
       : (["preview", "download", "original"] as ShortUrlVariant[]),
+  );
+
+  let visibleTextPages = $derived(
+    documentText ? (showAllTextPages ? documentText.pages : documentText.pages.slice(0, MAX_VISIBLE_TEXT_PAGES)) : [],
   );
 
   $effect(() => {
@@ -91,6 +103,37 @@
     if (!availableVariants.includes(shortUrlVariant)) {
       shortUrlVariant = availableVariants[0];
     }
+  });
+
+  $effect(() => {
+    documentText = null;
+    documentTextError = null;
+    documentTextStatus = "idle";
+    showAllTextPages = false;
+
+    if (!currentMedia || currentMedia.mediaType !== "document") return;
+    if (currentMedia.status === "PENDING_UPLOAD") return;
+
+    const requestId = ++documentTextRequestId;
+    documentTextStatus = "loading";
+
+    getDocumentText(currentMedia.mediaId)
+      .then((result) => {
+        if (requestId !== documentTextRequestId) return;
+        if (result.status === "READY") {
+          documentText = result.data;
+          documentTextStatus = "ready";
+        } else if (result.status === "PROCESSING") {
+          documentTextStatus = "processing";
+        } else {
+          documentTextStatus = "not_found";
+        }
+      })
+      .catch((error) => {
+        if (requestId !== documentTextRequestId) return;
+        documentTextError = error instanceof Error ? error.message : "Failed to load document text";
+        documentTextStatus = "error";
+      });
   });
 
   $effect(() => {
@@ -482,20 +525,23 @@
             <span>Awaiting upload...</span>
           </div>
         {:else if currentMedia.status === "COMPLETE"}
-          <iframe
-            title="PDF preview"
-            src={getOriginalUrl(currentMedia.mediaId)}
-            class="w-full h-[400px] border rounded"
-          ></iframe>
+          <div class="border rounded overflow-hidden bg-white">
+            <img src="{getPreviewUrl(currentMedia.mediaId)}?t={Date.now()}" alt="PDF preview" />
+          </div>
+          <div class="mt-2 flex items-center justify-between text-xs">
+            <span class="text-gray-500">Preview is watermarked</span>
+            <a
+              href={getOriginalUrl(currentMedia.mediaId)}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-blue-600 hover:text-blue-700"
+            >
+              Open original PDF
+            </a>
+          </div>
         {:else}
           <div class="h-[240px] flex items-center justify-center text-gray-400 text-sm">
-            {#if currentMedia.status === "PROCESSING"}
-              <span class="pulse">Processing...</span>
-            {:else if currentMedia.status === "PENDING"}
-              <span>Pending...</span>
-            {:else}
-              <span>{currentMedia.status}</span>
-            {/if}
+            <span class="pulse">Processing preview...</span>
           </div>
         {/if}
       </div>
@@ -587,6 +633,111 @@
         </div>
       </div>
     </div>
+
+    {#if currentMedia.mediaType === "document"}
+      <!-- Document Metadata -->
+      <div class="mt-4 p-3 bg-gray-50 rounded-lg">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-sm font-semibold text-gray-900">Document Details</h3>
+          {#if currentMedia.documentTextTruncated}
+            <span class="text-[11px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">Text truncated</span>
+          {/if}
+        </div>
+        <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+          <div>
+            <span class="text-gray-400">Pages:</span>
+            <p class="text-gray-600">{currentMedia.documentPageCount ?? "N/A"}</p>
+          </div>
+          <div>
+            <span class="text-gray-400">Text Length:</span>
+            <p class="text-gray-600">
+              {currentMedia.documentTextLength ? formatNumber(currentMedia.documentTextLength) : "N/A"}
+            </p>
+          </div>
+          <div>
+            <span class="text-gray-400">Title:</span>
+            <p class="text-gray-600">{currentMedia.documentTitle ?? "N/A"}</p>
+          </div>
+          <div>
+            <span class="text-gray-400">Author:</span>
+            <p class="text-gray-600">{currentMedia.documentAuthor ?? "N/A"}</p>
+          </div>
+          <div>
+            <span class="text-gray-400">Subject:</span>
+            <p class="text-gray-600">{currentMedia.documentSubject ?? "N/A"}</p>
+          </div>
+          <div>
+            <span class="text-gray-400">Creator:</span>
+            <p class="text-gray-600">{currentMedia.documentCreator ?? "N/A"}</p>
+          </div>
+          <div>
+            <span class="text-gray-400">Producer:</span>
+            <p class="text-gray-600">{currentMedia.documentProducer ?? "N/A"}</p>
+          </div>
+          <div>
+            <span class="text-gray-400">Created:</span>
+            <p class="text-gray-600">{formatDateTime(currentMedia.documentCreationDate)}</p>
+          </div>
+          <div>
+            <span class="text-gray-400">Modified:</span>
+            <p class="text-gray-600">{formatDateTime(currentMedia.documentModifiedDate)}</p>
+          </div>
+          <div>
+            <span class="text-gray-400">Text Truncated:</span>
+            <p class="text-gray-600">
+              {currentMedia.documentTextTruncated == null ? "N/A" : currentMedia.documentTextTruncated ? "Yes" : "No"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Document Text -->
+      <div class="mt-4 p-3 bg-gray-50 rounded-lg">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-sm font-semibold text-gray-900">Extracted Text</h3>
+          {#if documentTextStatus === "loading"}
+            <span class="text-xs text-gray-500">Loading...</span>
+          {:else if documentTextStatus === "processing"}
+            <span class="text-xs text-gray-500">Processing...</span>
+          {:else if documentTextStatus === "ready" && documentText?.truncated}
+            <span class="text-[11px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">Truncated</span>
+          {/if}
+        </div>
+
+        {#if documentTextStatus === "error"}
+          <p class="text-xs text-red-600">{documentTextError}</p>
+        {:else if documentTextStatus === "loading"}
+          <p class="text-xs text-gray-500">Loading extracted text...</p>
+        {:else if documentTextStatus === "processing"}
+          <p class="text-xs text-gray-500">Text extraction in progress. Check back shortly.</p>
+        {:else if documentTextStatus === "not_found"}
+          <p class="text-xs text-gray-500">No extracted text available.</p>
+        {:else if documentTextStatus === "ready" && documentText}
+          <div class="text-[11px] text-gray-400 mb-2">
+            Extracted {formatDateTime(documentText.extractedAt)} · {documentText.pageCount} pages
+          </div>
+          {#each visibleTextPages as page (page.page)}
+            <div class="mb-3">
+              <div class="flex items-center justify-between text-[11px] text-gray-500 mb-1">
+                <span>Page {page.page}</span>
+                <span>{formatNumber(page.text.length)} chars</span>
+              </div>
+              <pre class="whitespace-pre-wrap text-xs font-mono bg-white border rounded p-2 max-h-48 overflow-auto">{page.text || " "}</pre>
+            </div>
+          {/each}
+          {#if documentText.pages.length > MAX_VISIBLE_TEXT_PAGES}
+            <button
+              onclick={() => (showAllTextPages = !showAllTextPages)}
+              class="text-xs text-blue-600 hover:text-blue-700"
+            >
+              {showAllTextPages ? "Show less" : `Show all (${documentText.pages.length})`}
+            </button>
+          {/if}
+        {:else}
+          <p class="text-xs text-gray-500">No extracted text available.</p>
+        {/if}
+      </div>
+    {/if}
 
     <!-- Short URLs -->
     <div class="mt-4 p-4 bg-gray-50 rounded-lg">

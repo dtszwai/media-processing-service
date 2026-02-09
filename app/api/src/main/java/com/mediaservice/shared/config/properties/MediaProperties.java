@@ -11,6 +11,7 @@ public class MediaProperties {
   private Width width = new Width();
   private long maxFileSize;
   private Upload upload = new Upload();
+  private Document document = new Document();
   private int softDeleteRetentionDays = 90;
 
   @Data
@@ -41,6 +42,11 @@ public class MediaProperties {
   }
 
   private Download download = new Download();
+
+  @Data
+  public static class Document {
+    private int maxPages = 200;
+  }
 
   public boolean isWidthValid(Integer width) {
     return width != null && width >= this.width.min && width <= this.width.max;

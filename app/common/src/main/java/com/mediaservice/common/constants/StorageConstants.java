@@ -14,6 +14,7 @@ package com.mediaservice.common.constants;
  *   thumb_md.{ext}     - Medium thumbnail (future)
  *   thumb_lg.{ext}     - Large thumbnail (future)
  *   resize_{size}.{ext} - Resized variants (future)
+ *   text.json          - Extracted document text (future)
  * </pre>
  *
  * @see <a href="docs/adr/0001-s3-storage-structure.md">ADR-0001: S3 Storage Structure</a>
@@ -28,6 +29,7 @@ public final class StorageConstants {
   public static final String S3_VARIANT_ORIGINAL = "original";
   public static final String S3_VARIANT_PROCESSED = "processed";
   public static final String VARIANT_PREVIEW = "preview";
+  public static final String S3_VARIANT_TEXT = "text";
 
   // Preview generation settings
   public static final int PREVIEW_MAX_WIDTH = 800;

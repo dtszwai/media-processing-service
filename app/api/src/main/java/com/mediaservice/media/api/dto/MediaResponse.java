@@ -26,5 +26,15 @@ public class MediaResponse {
   private OutputFormat outputFormat;
   private Instant createdAt;
   private Instant updatedAt;
+  private Integer documentPageCount;
+  private String documentTitle;
+  private String documentAuthor;
+  private String documentSubject;
+  private String documentCreator;
+  private String documentProducer;
+  private Instant documentCreationDate;
+  private Instant documentModifiedDate;
+  private Long documentTextLength;
+  private Boolean documentTextTruncated;
   private String message;
 }

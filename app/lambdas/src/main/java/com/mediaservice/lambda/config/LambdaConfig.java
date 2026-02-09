@@ -25,6 +25,11 @@ public final class LambdaConfig {
   private final float jpegQuality;
   private final float webpQuality;
 
+  // Document Processing Configuration
+  private final int documentMaxPages;
+  private final int documentPreviewDpi;
+  private final int documentMaxTextChars;
+
   // Webhook Configuration
   private final String webhookSecret;
 
@@ -43,6 +48,10 @@ public final class LambdaConfig {
     this.watermarkWidthRatio = getEnvFloat("IMAGE_WATERMARK_WIDTH_RATIO", 1.0f / 7.0f);
     this.jpegQuality = getEnvFloat("IMAGE_JPEG_QUALITY", 0.9f);
     this.webpQuality = getEnvFloat("IMAGE_WEBP_QUALITY", 0.85f);
+
+    this.documentMaxPages = getEnvInt("DOCUMENT_MAX_PAGES", 200);
+    this.documentPreviewDpi = getEnvInt("DOCUMENT_PREVIEW_DPI", 120);
+    this.documentMaxTextChars = getEnvInt("DOCUMENT_MAX_TEXT_CHARS", 2_000_000);
 
     this.webhookSecret = getEnv("WEBHOOK_SECRET", null);
   }

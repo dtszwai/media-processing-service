@@ -10,6 +10,7 @@ import com.mediaservice.media.api.dto.InitUploadResponse;
 import com.mediaservice.media.api.dto.MediaResponse;
 import com.mediaservice.media.api.dto.ResizeRequest;
 import com.mediaservice.media.api.dto.StatusResponse;
+import com.mediaservice.media.application.DocumentTextResult;
 import com.mediaservice.media.application.DownloadResult;
 import com.mediaservice.media.application.MediaOperationResult;
 import com.mediaservice.media.application.PreviewResult;
@@ -202,6 +203,30 @@ public class MediaController {
       case PreviewResult.Processing ignored ->
           ResponseEntity.accepted().build();
       case PreviewResult.NotFound ignored ->
+          ResponseEntity.notFound().build();
+    };
+  }
+
+  @Operation(summary = "Get extracted document text", description = "Redirects to presigned S3 URL for extracted text JSON")
+  @ApiResponses({
+      @ApiResponse(responseCode = "200", description = "Extracted text JSON"),
+      @ApiResponse(responseCode = "302", description = "Redirect to text URL"),
+      @ApiResponse(responseCode = "404", description = "Media not found"),
+      @ApiResponse(responseCode = "202", description = "Text still processing")
+  })
+  @GetMapping("/{mediaId}/text")
+  public ResponseEntity<?> getDocumentText(@PathVariable String mediaId,
+      @RequestParam(name = "inline", defaultValue = "false") boolean inline) {
+    log.info("Document text request: mediaId={}, inline={}", mediaId, inline);
+
+    return switch (mediaService.prepareDocumentText(mediaId, inline)) {
+      case DocumentTextResult.Ready ready ->
+          ResponseEntity.status(HttpStatus.FOUND).location(URI.create(ready.url())).build();
+      case DocumentTextResult.ReadyInline readyInline ->
+          ResponseEntity.ok().contentType(org.springframework.http.MediaType.APPLICATION_JSON).body(readyInline.content());
+      case DocumentTextResult.Processing ignored ->
+          ResponseEntity.accepted().build();
+      case DocumentTextResult.NotFound ignored ->
           ResponseEntity.notFound().build();
     };
   }

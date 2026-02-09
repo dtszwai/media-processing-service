@@ -64,7 +64,17 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
         .width(getInt(item, "width"))
         .createdAt(getInstant(item, "createdAt"))
         .updatedAt(getInstant(item, "updatedAt"))
-        .deletedAt(getInstant(item, "deletedAt"));
+        .deletedAt(getInstant(item, "deletedAt"))
+        .documentPageCount(getInt(item, "documentPageCount"))
+        .documentTitle(getString(item, "documentTitle"))
+        .documentAuthor(getString(item, "documentAuthor"))
+        .documentSubject(getString(item, "documentSubject"))
+        .documentCreator(getString(item, "documentCreator"))
+        .documentProducer(getString(item, "documentProducer"))
+        .documentCreationDate(getInstant(item, "documentCreationDate"))
+        .documentModifiedDate(getInstant(item, "documentModifiedDate"))
+        .documentTextLength(getLong(item, "documentTextLength"))
+        .documentTextTruncated(getBoolean(item, "documentTextTruncated"));
     var outputFormat = getString(item, "outputFormat");
     if (outputFormat != null) {
       builder.outputFormat(OutputFormat.fromString(outputFormat));
@@ -109,6 +119,36 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
     }
     if (media.getWebhookUrl() != null) {
       item.put("webhookUrl", s(media.getWebhookUrl()));
+    }
+    if (media.getDocumentPageCount() != null) {
+      item.put("documentPageCount", n(String.valueOf(media.getDocumentPageCount())));
+    }
+    if (media.getDocumentTitle() != null) {
+      item.put("documentTitle", s(media.getDocumentTitle()));
+    }
+    if (media.getDocumentAuthor() != null) {
+      item.put("documentAuthor", s(media.getDocumentAuthor()));
+    }
+    if (media.getDocumentSubject() != null) {
+      item.put("documentSubject", s(media.getDocumentSubject()));
+    }
+    if (media.getDocumentCreator() != null) {
+      item.put("documentCreator", s(media.getDocumentCreator()));
+    }
+    if (media.getDocumentProducer() != null) {
+      item.put("documentProducer", s(media.getDocumentProducer()));
+    }
+    if (media.getDocumentCreationDate() != null) {
+      item.put("documentCreationDate", s(media.getDocumentCreationDate().toString()));
+    }
+    if (media.getDocumentModifiedDate() != null) {
+      item.put("documentModifiedDate", s(media.getDocumentModifiedDate().toString()));
+    }
+    if (media.getDocumentTextLength() != null) {
+      item.put("documentTextLength", n(String.valueOf(media.getDocumentTextLength())));
+    }
+    if (media.getDocumentTextTruncated() != null) {
+      item.put("documentTextTruncated", bool(media.getDocumentTextTruncated()));
     }
     return item;
   }

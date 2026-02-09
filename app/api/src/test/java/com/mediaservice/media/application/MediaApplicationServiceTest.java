@@ -43,6 +43,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -128,12 +129,24 @@ class MediaApplicationServiceTest {
     }
 
     @Test
-    @DisplayName("should reject non-image content type")
-    void shouldRejectNonImageContentType() {
-      var file = new MockMultipartFile("file", "test.pdf", "application/pdf", "test".getBytes());
+    @DisplayName("should upload valid PDF and publish process event")
+    void shouldUploadValidPdf() throws IOException {
+      var file = new MockMultipartFile("file", "test.pdf", "application/pdf", "test-pdf".getBytes());
+      var response = mediaService.uploadMedia(file, null, null, null);
+      assertThat(response.getMediaId()).isNotBlank();
+      verify(documentValidationService).validatePdf(eq(file));
+      verify(s3Service).uploadMedia(eq("default"), anyString(), eq("test.pdf"), eq(file));
+      verify(dynamoDbService).createMedia(any(Media.class));
+      verify(snsService).publishProcessMediaEvent(anyString(), eq("default"), eq("document"), isNull(), isNull());
+    }
+
+    @Test
+    @DisplayName("should reject unsupported content type")
+    void shouldRejectUnsupportedContentType() {
+      var file = new MockMultipartFile("file", "test.zip", "application/zip", "test".getBytes());
       assertThatThrownBy(() -> mediaService.uploadMedia(file, null, null, null))
           .isInstanceOf(IllegalArgumentException.class)
-          .hasMessage("Invalid file type. Only images are supported.");
+          .hasMessage("Invalid file type. Only images and PDFs are supported.");
     }
 
     @Test
@@ -142,7 +155,7 @@ class MediaApplicationServiceTest {
       var file = new MockMultipartFile("file", "test.jpg", null, "test".getBytes());
       assertThatThrownBy(() -> mediaService.uploadMedia(file, null, null, null))
           .isInstanceOf(IllegalArgumentException.class)
-          .hasMessage("Invalid file type. Only images are supported.");
+          .hasMessage("Invalid file type. Only images and PDFs are supported.");
     }
 
     @Test

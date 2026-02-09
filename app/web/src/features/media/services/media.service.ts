@@ -15,9 +15,15 @@ import type {
   OutputFormat,
   MediaType,
   PagedResponse,
+  DocumentText,
 } from "../../../shared/types";
 
 export { uploadToPresignedUrl };
+
+export type DocumentTextResult =
+  | { status: "READY"; data: DocumentText }
+  | { status: "PROCESSING" }
+  | { status: "NOT_FOUND" };
 
 /**
  * Get all media with optional pagination
@@ -231,6 +237,35 @@ export function getOriginalUrl(mediaId: string): string {
  */
 export function getPreviewUrl(mediaId: string): string {
   return `${API_BASE}/${mediaId}/preview`;
+}
+
+/**
+ * Get extracted document text (JSON).
+ */
+export async function getDocumentText(mediaId: string): Promise<DocumentTextResult> {
+  const response = await authenticatedFetch(`${API_BASE}/${mediaId}/text?inline=true`, {
+    headers: { Accept: "application/json" },
+  });
+
+  if (response.status === 401) {
+    throw new AuthenticationError("Authentication required", 401);
+  }
+  if (response.status === 429) {
+    const retryAfter = parseInt(response.headers.get("X-Rate-Limit-Retry-After-Seconds") || "60", 10);
+    throw new RateLimitError(retryAfter);
+  }
+  if (response.status === 202) {
+    return { status: "PROCESSING" };
+  }
+  if (response.status === 404) {
+    return { status: "NOT_FOUND" };
+  }
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: "Request failed" }));
+    throw new ApiRequestError(error.message || "Request failed", response.status);
+  }
+
+  return { status: "READY", data: (await response.json()) as DocumentText };
 }
 
 /**

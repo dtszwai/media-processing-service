@@ -37,6 +37,17 @@ public class Media {
   private Instant deletedAt;
   /** Optional webhook URL to call when processing completes */
   private String webhookUrl;
+  /** Document metadata (PDF) */
+  private Integer documentPageCount;
+  private String documentTitle;
+  private String documentAuthor;
+  private String documentSubject;
+  private String documentCreator;
+  private String documentProducer;
+  private Instant documentCreationDate;
+  private Instant documentModifiedDate;
+  private Long documentTextLength;
+  private Boolean documentTextTruncated;
 
   /**
    * Returns the output format, defaulting to JPEG if not set.

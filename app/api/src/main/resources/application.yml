@@ -90,6 +90,8 @@ media:
     max: 1024
   max-file-size: 52428800 # 50MB in bytes (direct upload)
   soft-delete-retention-days: 90 # DynamoDB TTL for soft-deleted records
+  document:
+    max-pages: 200
   upload:
     presigned-url-expiration-seconds: 3600 # 1 hour
     max-presigned-upload-size: 1073741824 # 1GB (presigned S3 upload)

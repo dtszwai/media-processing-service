@@ -19,6 +19,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
  *   original.{ext}   - Original uploaded file
  *   processed.{ext}  - Processed/resized output
  *   preview.{ext}    - Watermarked preview for CDN
+ *   text.json        - Extracted document text
  * </pre>
  */
 public class S3Service {
@@ -106,11 +107,37 @@ public class S3Service {
   }
 
   /**
+   * Upload extracted document text (JSON).
+   */
+  public void uploadText(String tenantId, String mediaId, byte[] textData) {
+    String key = StorageConstants.buildS3Key(tenantId, mediaId, StorageConstants.S3_VARIANT_TEXT, ".json");
+    var request = PutObjectRequest.builder()
+        .bucket(bucketName)
+        .key(key)
+        .contentType("application/json")
+        .cacheControl("public, max-age=31536000")
+        .build();
+    client.putObject(request, RequestBody.fromBytes(textData));
+  }
+
+  /**
    * Delete the preview media file.
    */
   public void deletePreviewFile(String tenantId, String mediaId, OutputFormat outputFormat) {
     OutputFormat format = (outputFormat != null) ? outputFormat : OutputFormat.JPEG;
     String key = StorageConstants.buildS3Key(tenantId, mediaId, StorageConstants.VARIANT_PREVIEW, format.getExtension());
+    var request = DeleteObjectRequest.builder()
+        .bucket(bucketName)
+        .key(key)
+        .build();
+    client.deleteObject(request);
+  }
+
+  /**
+   * Delete extracted document text file.
+   */
+  public void deleteTextFile(String tenantId, String mediaId) {
+    String key = StorageConstants.buildS3Key(tenantId, mediaId, StorageConstants.S3_VARIANT_TEXT, ".json");
     var request = DeleteObjectRequest.builder()
         .bucket(bucketName)
         .key(key)

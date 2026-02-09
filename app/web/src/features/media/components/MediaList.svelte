@@ -66,6 +66,13 @@
     currentMediaId.set(mediaId);
   }
 
+  function handleCardKeydown(event: KeyboardEvent, mediaId: string) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      handleView(mediaId);
+    }
+  }
+
   function handleRefresh() {
     mediaListQuery.refetch();
   }
@@ -122,15 +129,15 @@
             ? 'bg-blue-50 border-blue-200 shadow-sm ring-1 ring-blue-100'
             : 'bg-gray-50 border-transparent hover:bg-white hover:border-gray-200'}"
           class:opacity-50={isDeleting(item.mediaId)}
+          class:cursor-pointer={!isDeleting(item.mediaId)}
+          role="button"
+          tabindex="0"
+          onclick={() => handleView(item.mediaId)}
+          onkeydown={(e) => handleCardKeydown(e, item.mediaId)}
         >
           <div class="flex items-center justify-between mb-1">
             <div
               class="flex-1 min-w-0 mr-3"
-              class:cursor-pointer={!isDeleting(item.mediaId)}
-              role="button"
-              tabindex="0"
-              onclick={() => handleView(item.mediaId)}
-              onkeydown={(e) => e.key === "Enter" && handleView(item.mediaId)}
             >
               <p class="text-sm text-gray-800 truncate font-medium">{item.name}</p>
             </div>
@@ -138,7 +145,10 @@
               <span class="status-badge status-{item.status.toLowerCase()}">{item.status}</span>
               {#if !isDeleting(item.mediaId)}
                 <button
-                  onclick={() => handleDelete(item.mediaId)}
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    handleDelete(item.mediaId);
+                  }}
                   class="text-gray-400 hover:text-red-500 p-1"
                   title="Delete"
                 >

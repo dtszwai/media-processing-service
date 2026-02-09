@@ -60,6 +60,10 @@ public class S3StorageService extends AbstractS3StorageRepository {
     return StorageConstants.buildS3Key(tenantId, mediaId, StorageConstants.VARIANT_PREVIEW, format.getExtension());
   }
 
+  private String buildTextKey(String tenantId, String mediaId) {
+    return StorageConstants.buildS3Key(tenantId, mediaId, StorageConstants.S3_VARIANT_TEXT, ".json");
+  }
+
   // ==================== Media-Specific Operations ====================
 
   /**
@@ -135,6 +139,54 @@ public class S3StorageService extends AbstractS3StorageRepository {
       return Optional.of(url);
     } catch (Exception e) {
       log.warn("Failed to generate preview presigned URL for mediaId={}: {}", mediaId, e.getMessage());
+      return Optional.empty();
+    }
+  }
+
+  /**
+   * Check if a preview object exists.
+   */
+  public boolean previewExists(String tenantId, String mediaId, OutputFormat outputFormat) {
+    OutputFormat format = outputFormat != null ? outputFormat : OutputFormat.JPEG;
+    String key = buildPreviewKey(tenantId, mediaId, format);
+    return exists(key);
+  }
+
+  /**
+   * Get a presigned download URL for extracted document text (JSON).
+   */
+  public Optional<String> getTextPresignedUrl(String tenantId, String mediaId) {
+    try {
+      String key = buildTextKey(tenantId, mediaId);
+      Duration expiration = Duration.ofSeconds(mediaProperties.getDownload().getPresignedUrlExpirationSeconds());
+      String url = generatePresignedDownloadUrl(key, expiration);
+      log.info("Generated presigned text URL for: {}", key);
+      return Optional.of(url);
+    } catch (Exception e) {
+      log.warn("Failed to generate text presigned URL for mediaId={}: {}", mediaId, e.getMessage());
+      return Optional.empty();
+    }
+  }
+
+  /**
+   * Check if extracted document text exists.
+   */
+  public boolean textExists(String tenantId, String mediaId) {
+    String key = buildTextKey(tenantId, mediaId);
+    return exists(key);
+  }
+
+  /**
+   * Download extracted document text JSON.
+   */
+  public Optional<byte[]> getTextContent(String tenantId, String mediaId) {
+    String key = buildTextKey(tenantId, mediaId);
+    try (var inputStream = download(key)) {
+      return Optional.of(inputStream.readAllBytes());
+    } catch (software.amazon.awssdk.services.s3.model.NoSuchKeyException e) {
+      return Optional.empty();
+    } catch (Exception e) {
+      log.warn("Failed to download text content for mediaId={}: {}", mediaId, e.getMessage());
       return Optional.empty();
     }
   }
