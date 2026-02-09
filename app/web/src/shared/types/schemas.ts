@@ -57,6 +57,34 @@ export const ResizeRequestSchema = z.object({
   outputFormat: OutputFormatSchema.optional(),
 });
 
+// ============= Short URL Schemas =============
+
+export const ShortUrlVariantSchema = z.enum(["preview", "download", "original"]);
+
+export const CreateShortUrlRequestSchema = z.object({
+  mediaId: z.string(),
+  variant: ShortUrlVariantSchema,
+  alias: z.string().optional(),
+  expiresAt: z.string().datetime().optional(),
+  label: z.string().optional(),
+});
+
+export const ShortUrlResponseSchema = z
+  .object({
+    code: z.string(),
+    shortUrl: z.string().optional().nullable(),
+    mediaId: z.string(),
+    variant: ShortUrlVariantSchema,
+    isPublic: z.boolean().optional(),
+    public: z.boolean().optional(),
+    createdAt: z.string().optional(),
+    createdBy: z.string().optional(),
+    expiresAt: z.string().optional().nullable(),
+    revokedAt: z.string().optional().nullable(),
+    label: z.string().optional(),
+  })
+  .passthrough();
+
 // ============= Pagination Schemas =============
 
 export const PagedResponseSchema = <T extends z.ZodTypeAny>(itemSchema: T) =>
@@ -207,6 +235,9 @@ export type UploadResponse = z.infer<typeof UploadResponseSchema>;
 export type ResizeRequest = z.infer<typeof ResizeRequestSchema>;
 export type PagedMediaResponse = z.infer<typeof PagedMediaResponseSchema>;
 export type ApiError = z.infer<typeof ApiErrorSchema>;
+export type ShortUrlVariant = z.infer<typeof ShortUrlVariantSchema>;
+export type CreateShortUrlRequest = z.infer<typeof CreateShortUrlRequestSchema>;
+export type ShortUrlResponse = z.infer<typeof ShortUrlResponseSchema>;
 
 // Health types
 export type HealthStatus = z.infer<typeof HealthStatusSchema>;

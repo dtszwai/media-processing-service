@@ -185,10 +185,12 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
     var filter = buildMediaFilter(mediaType);
     var values = new HashMap<>(filter.values());
     values.put(":sk", s(StorageConstants.DYNAMO_SK_METADATA));
-    var result = queryPaginated(
+    values.put(":pkPrefix", s(StorageConstants.DYNAMO_PK_PREFIX));
+    String filterExpression = "begins_with(PK, :pkPrefix) AND " + filter.expression();
+    var result = queryMediaPaginated(
         StorageConstants.DYNAMO_GSI_SK_CREATED_AT,
         "SK = :sk",
-        filter.expression(),
+        filterExpression,
         filter.names(),
         values,
         false, // newest first
@@ -210,8 +212,9 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
     var values = new HashMap<>(filter.values());
     values.put(":tenantId", s(tenantId));
     values.put(":pkPrefix", s(StorageConstants.DYNAMO_PK_PREFIX));
-    String filterExpression = "begins_with(PK, :pkPrefix) AND " + filter.expression();
-    var result = queryPaginated(
+    values.put(":sk", s(StorageConstants.DYNAMO_SK_METADATA));
+    String filterExpression = "begins_with(PK, :pkPrefix) AND SK = :sk AND " + filter.expression();
+    var result = queryMediaPaginated(
         StorageConstants.DYNAMO_GSI_TENANT_CREATED_AT,
         "tenantId = :tenantId",
         filterExpression,
@@ -224,6 +227,89 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
     log.info("Retrieved {} media records for tenant {} (mediaType={}, hasMore={})", result.items().size(), tenantId,
         mediaType != null ? mediaType.getValue() : "any", result.hasMore());
     return new MediaPagedResult(result.items(), result.nextCursor(), result.hasMore());
+  }
+
+  private PagedResult<Media> queryMediaPaginated(
+      String indexName,
+      String keyExpression,
+      String filterExpression,
+      Map<String, String> expressionAttributeNames,
+      Map<String, AttributeValue> attributeValues,
+      boolean scanIndexForward,
+      int limit,
+      String cursor,
+      String[] cursorAttributes) {
+    List<Media> collected = new java.util.ArrayList<>();
+    String cursorValue = cursor;
+    String nextCursor = null;
+    boolean hasMore = false;
+    int attempts = 0;
+
+    while (collected.size() < limit && attempts < 5) {
+      var result = queryPaginated(
+          indexName,
+          keyExpression,
+          filterExpression,
+          expressionAttributeNames,
+          attributeValues,
+          scanIndexForward,
+          limit,
+          cursorValue,
+          cursorAttributes);
+
+      if (result.items().isEmpty()) {
+        if (!result.hasMore()) {
+          hasMore = false;
+          nextCursor = null;
+          break;
+        }
+        cursorValue = result.nextCursor();
+        hasMore = true;
+        attempts++;
+        continue;
+      }
+
+      boolean trimmed = false;
+      for (int i = 0; i < result.items().size(); i++) {
+        Media media = result.items().get(i);
+        collected.add(media);
+        if (collected.size() == limit) {
+          trimmed = i < result.items().size() - 1;
+          nextCursor = encodeCursorFromMedia(media, cursorAttributes);
+          hasMore = trimmed || result.hasMore();
+          break;
+        }
+      }
+
+      if (collected.size() >= limit) {
+        break;
+      }
+
+      if (result.hasMore()) {
+        cursorValue = result.nextCursor();
+        hasMore = true;
+        attempts++;
+      } else {
+        hasMore = false;
+        nextCursor = null;
+        break;
+      }
+    }
+
+    return new PagedResult<>(collected, hasMore ? nextCursor : null, hasMore);
+  }
+
+  private String encodeCursorFromMedia(Media media, String[] cursorAttributes) {
+    var key = new HashMap<String, AttributeValue>();
+    if (media.getTenantId() != null) {
+      key.put(StorageConstants.DYNAMO_ATTR_TENANT_ID, s(media.getTenantId()));
+    }
+    if (media.getCreatedAt() != null) {
+      key.put("createdAt", s(media.getCreatedAt().toString()));
+    }
+    key.put("PK", s(StorageConstants.DYNAMO_PK_PREFIX + media.getMediaId()));
+    key.put("SK", s(StorageConstants.DYNAMO_SK_METADATA));
+    return encodeCursor(key, cursorAttributes);
   }
 
   /**

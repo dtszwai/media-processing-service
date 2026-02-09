@@ -38,6 +38,10 @@ public final class StorageConstants {
   public static final String DYNAMO_SK_METADATA = "METADATA";
   public static final String DYNAMO_GSI_SK_CREATED_AT = "SK-createdAt-index";
 
+  // Short URL key patterns
+  public static final String DYNAMO_PK_SHORT_URL_PREFIX = "SHORT#";
+  public static final String DYNAMO_SK_SHORT_URL_PREFIX = "SHORT#";
+
   // DynamoDB attribute names
   public static final String DYNAMO_ATTR_ORIGINAL_FILENAME = "originalFilename";
   public static final String DYNAMO_ATTR_TENANT_ID = "tenantId";

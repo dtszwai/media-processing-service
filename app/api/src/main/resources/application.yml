@@ -74,6 +74,14 @@ auth:
   enforcement:
     enabled: ${AUTH_ENFORCEMENT_ENABLED:false}
 
+# Short URL Configuration
+short-url:
+  base-domain: ${SHORT_URL_BASE_DOMAIN:}
+  generated-length: ${SHORT_URL_GENERATED_LENGTH:8}
+  min-alias-length: ${SHORT_URL_MIN_ALIAS_LENGTH:4}
+  max-alias-length: ${SHORT_URL_MAX_ALIAS_LENGTH:64}
+  reserved-aliases: ${SHORT_URL_RESERVED_ALIASES:}
+
 # Media Configuration
 media:
   width:

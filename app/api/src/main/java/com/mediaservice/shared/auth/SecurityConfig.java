@@ -31,6 +31,7 @@ public class SecurityConfig {
           .requestMatchers("/actuator/**", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
           .requestMatchers("/v1/media/health").permitAll()
           .requestMatchers("/v1/auth/**").permitAll()
+          .requestMatchers("/s/**").permitAll()
           .requestMatchers(org.springframework.http.HttpMethod.GET, "/v1/media/*/preview").permitAll()
           .requestMatchers("/admin/**").hasRole("ADMIN")
           .anyRequest().authenticated());

@@ -291,6 +291,36 @@ public class MediaApplicationService {
   }
 
   /**
+   * Prepare download for public access (no tenant authorization enforced).
+   */
+  public DownloadResult prepareDownloadPublic(String mediaId) {
+    var mediaOpt = mediaRepository.getMedia(mediaId);
+    if (mediaOpt.isEmpty()) {
+      return new DownloadResult.NotFound();
+    }
+
+    var media = mediaOpt.get();
+    if (media.getStatus() == MediaStatus.DELETED) {
+      throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
+    }
+
+    if (media.getStatus() != MediaStatus.COMPLETE) {
+      return new DownloadResult.Processing(mediaId);
+    }
+
+    return getDownloadUrl(media)
+        .map(url -> {
+          String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
+          analyticsService.recordView(tenantId, mediaId);
+          if (resolveMediaType(media) == MediaType.IMAGE) {
+            analyticsService.recordDownload(tenantId, mediaId, media.getOutputFormatOrDefault(), media.getWidth());
+          }
+          return (DownloadResult) new DownloadResult.Ready(url, media);
+        })
+        .orElse(new DownloadResult.NotFound());
+  }
+
+  /**
    * Prepare preview for media.
    * Handles all business logic: not found, processing, and ready states.
    * Records view analytics when preview is ready.
@@ -330,6 +360,37 @@ public class MediaApplicationService {
   }
 
   /**
+   * Prepare preview for public access (no tenant authorization enforced).
+   */
+  public PreviewResult preparePreviewPublic(String mediaId) {
+    var mediaOpt = mediaRepository.getMedia(mediaId);
+    if (mediaOpt.isEmpty()) {
+      return new PreviewResult.NotFound();
+    }
+
+    var media = mediaOpt.get();
+    if (media.getStatus() == MediaStatus.DELETED) {
+      throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
+    }
+
+    if (resolveMediaType(media) != MediaType.IMAGE) {
+      return new PreviewResult.NotFound();
+    }
+
+    if (media.getStatus() != MediaStatus.COMPLETE) {
+      return new PreviewResult.Processing(mediaId);
+    }
+
+    return getPreviewUrl(media)
+        .map(url -> {
+          String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
+          analyticsService.recordView(tenantId, mediaId);
+          return (PreviewResult) new PreviewResult.Ready(url);
+        })
+        .orElse(new PreviewResult.NotFound());
+  }
+
+  /**
    * Get presigned URL for the original uploaded file.
    *
    * @param mediaId the media ID
@@ -343,6 +404,23 @@ public class MediaApplicationService {
             throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
           }
           authorizationService.requireMediaAccess(media);
+          if (media.getStatus() == MediaStatus.PENDING_UPLOAD) {
+            return null;
+          }
+          String tenantId = media.getTenantId() != null ? media.getTenantId() : "default";
+          return s3Service.getOriginalPresignedUrl(tenantId, mediaId, media.getName());
+        });
+  }
+
+  /**
+   * Get presigned URL for the original uploaded file (public access).
+   */
+  public Optional<String> getOriginalUrlPublic(String mediaId) {
+    return mediaRepository.getMedia(mediaId)
+        .map(media -> {
+          if (media.getStatus() == MediaStatus.DELETED) {
+            throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
+          }
           if (media.getStatus() == MediaStatus.PENDING_UPLOAD) {
             return null;
           }

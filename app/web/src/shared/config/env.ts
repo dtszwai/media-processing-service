@@ -13,6 +13,7 @@ export const AUTH_BASE = `${API_URL}/v1/auth`;
 export const ANALYTICS_BASE = `${API_URL}/v1/analytics`;
 export const ACTUATOR_BASE = `${API_URL}/actuator`;
 export const ADMIN_BASE = `${API_URL}/admin`;
+export const SHORT_URL_BASE = `${API_URL}/v1/short-urls`;
 
 // File size limits
 export const MAX_DIRECT_UPLOAD_SIZE = 50 * 1024 * 1024; // 50MB for direct upload
