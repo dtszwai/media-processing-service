@@ -2,7 +2,6 @@
   import { formatFileSize, formatRelativeTime } from "../../../shared/utils";
   import { createMediaListQuery, createDeleteMutation } from "../queries";
   import { currentMediaId } from "../stores";
-  import { pollForStatus } from "../services";
   import type { MediaType } from "../../../shared/types";
 
   interface Props {
@@ -19,13 +18,9 @@
 
   let mediaList = $derived(mediaListQuery.data?.items ?? []);
   let filteredList = $derived(
-    mediaType
-      ? mediaList.filter((item) => (item.mediaType || "image") === mediaType)
-      : mediaList,
+    mediaType ? mediaList.filter((item) => (item.mediaType || "image") === mediaType) : mediaList,
   );
-  let listTitle = $derived(
-    mediaType === "image" ? "Images" : mediaType === "document" ? "Documents" : "All Media",
-  );
+  let listTitle = $derived(mediaType === "image" ? "Images" : mediaType === "document" ? "Documents" : "All Media");
 
   async function handleDelete(mediaId: string) {
     const item = filteredList.find((m) => m.mediaId === mediaId);
@@ -45,12 +40,8 @@
         currentMediaId.set(null);
       }
 
-      // Poll until deleted
-      const status = await pollForStatus(mediaId, [], undefined, 3000);
-      if (status === "DELETED") {
-        // Refetch the list after successful deletion
-        mediaListQuery.refetch();
-      }
+      // Refetch the list after successful deletion
+      mediaListQuery.refetch();
     } catch (error) {
       console.error("Delete error:", error);
       alert("Delete failed: " + (error instanceof Error ? error.message : "Unknown error"));
@@ -79,6 +70,26 @@
 
   function isDeleting(mediaId: string): boolean {
     return deletingIds.has(mediaId);
+  }
+
+  function statusBadgeLabel(status: string): string {
+    switch (status) {
+      case "COMPLETE":
+        return "READY";
+      case "PENDING_UPLOAD":
+        return "UPLOAD";
+      case "PENDING":
+        return "QUEUED";
+      default:
+        return status;
+    }
+  }
+
+  function statusHint(status: string): string | null {
+    if (status === "PENDING" || status === "PROCESSING") {
+      return "Asset jobs are still running";
+    }
+    return null;
   }
 </script>
 
@@ -125,7 +136,7 @@
     {:else}
       {#each filteredList as item (item.mediaId)}
         <div
-          class="p-3 rounded-lg border transition-colors { $currentMediaId === item.mediaId
+          class="p-3 rounded-lg border transition-colors {$currentMediaId === item.mediaId
             ? 'bg-blue-50 border-blue-200 shadow-sm ring-1 ring-blue-100'
             : 'bg-gray-50 border-transparent hover:bg-white hover:border-gray-200'}"
           class:opacity-50={isDeleting(item.mediaId)}
@@ -136,13 +147,11 @@
           onkeydown={(e) => handleCardKeydown(e, item.mediaId)}
         >
           <div class="flex items-center justify-between mb-1">
-            <div
-              class="flex-1 min-w-0 mr-3"
-            >
+            <div class="flex-1 min-w-0 mr-3">
               <p class="text-sm text-gray-800 truncate font-medium">{item.name}</p>
             </div>
             <div class="flex items-center space-x-2">
-              <span class="status-badge status-{item.status.toLowerCase()}">{item.status}</span>
+              <span class="status-badge status-{item.status.toLowerCase()}">{statusBadgeLabel(item.status)}</span>
               {#if !isDeleting(item.mediaId)}
                 <button
                   onclick={(e) => {
@@ -165,14 +174,12 @@
             </div>
           </div>
           <div class="text-xs text-gray-400 space-y-0.5">
-            <p>
-              {#if item.mediaType === "image"}
-                {item.width || "N/A"}px ·
-              {/if}
-              {item.size ? formatFileSize(item.size) : "N/A"} · {item.mediaType || "image"}
-            </p>
+            <p>{item.size ? formatFileSize(item.size) : "N/A"} · {item.mediaType || "image"}</p>
             {#if item.createdAt}
               <p>{formatRelativeTime(item.createdAt)}</p>
+            {/if}
+            {#if statusHint(item.status)}
+              <p>{statusHint(item.status)}</p>
             {/if}
           </div>
         </div>

@@ -2,7 +2,6 @@ package com.mediaservice.shared.cache;
 
 import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaStatus;
-import com.mediaservice.common.model.OutputFormat;
 import com.mediaservice.shared.http.error.CacheLoadTimeoutException;
 import com.mediaservice.media.infrastructure.persistence.MediaDynamoDbRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,8 +57,6 @@ class MultiLevelCacheOrchestratorTest {
         .mimetype("image/jpeg")
         .size(1024L)
         .status(MediaStatus.COMPLETE)
-        .width(500)
-        .outputFormat(OutputFormat.JPEG)
         .build();
   }
 

@@ -13,6 +13,7 @@ import java.util.Map;
 @AllArgsConstructor
 public class InitUploadResponse {
   private String mediaId;
+  private String assetId;
   private String uploadUrl;
   private int expiresIn;
   private String method;

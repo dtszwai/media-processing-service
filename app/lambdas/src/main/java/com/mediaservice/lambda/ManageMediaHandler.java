@@ -5,13 +5,17 @@ import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.SQSEvent;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mediaservice.lambda.config.OpenTelemetryInitializer;
 import com.mediaservice.common.event.MediaEvent;
+import com.mediaservice.common.model.AssetOperation;
+import com.mediaservice.common.model.AssetStatus;
 import com.mediaservice.common.model.EventType;
 import com.mediaservice.common.model.Media;
+import com.mediaservice.common.model.MediaAsset;
 import com.mediaservice.common.model.MediaStatus;
 import com.mediaservice.common.model.MediaType;
 import com.mediaservice.common.model.OutputFormat;
+import com.mediaservice.common.model.ProcessingJobStatus;
+import com.mediaservice.lambda.config.OpenTelemetryInitializer;
 import com.mediaservice.lambda.service.DynamoDbService;
 import com.mediaservice.lambda.service.DocumentProcessingService;
 import com.mediaservice.lambda.service.ImageProcessingService;
@@ -27,12 +31,12 @@ import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.propagation.TextMapGetter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
-
+import java.io.ByteArrayInputStream;
 import java.util.HashMap;
 import java.util.Map;
+import javax.imageio.ImageIO;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
   static {
@@ -62,20 +66,12 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
   private final OpenTelemetry openTelemetry;
   private final Tracer tracer;
   private final LongCounter deleteSuccessCounter, deleteFailureCounter;
-  private final LongCounter resizeSuccessCounter, resizeFailureCounter;
   private final LongCounter processSuccessCounter, processFailureCounter;
 
-  /**
-   * Default constructor for AWS Lambda runtime.
-   * Creates all dependencies with default implementations.
-   */
   public ManageMediaHandler() {
     this(new DynamoDbService(), new S3Service(), new ImageProcessingService(), new WebhookService(), new ObjectMapper());
   }
 
-  /**
-   * Constructor for testing - allows injection of mock/stub dependencies.
-   */
   ManageMediaHandler(DynamoDbService dynamoDbService, S3Service s3Service,
       ImageProcessingService imageProcessingService, WebhookService webhookService, ObjectMapper objectMapper) {
     this.dynamoDbService = dynamoDbService;
@@ -92,8 +88,6 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
 
     this.deleteSuccessCounter = counter(meter, "lambda.delete_media.success", "successful delete");
     this.deleteFailureCounter = counter(meter, "lambda.delete_media.failure", "failed delete");
-    this.resizeSuccessCounter = counter(meter, "lambda.resize_media.success", "successful resize");
-    this.resizeFailureCounter = counter(meter, "lambda.resize_media.failure", "failed resize");
     this.processSuccessCounter = counter(meter, "lambda.process_media.success", "successful process");
     this.processFailureCounter = counter(meter, "lambda.process_media.failure", "failed process");
   }
@@ -128,57 +122,36 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
         .startSpan();
     try (var scope = span.makeCurrent()) {
       var event = objectMapper.readValue(bodyNode.get("Message").asText(), MediaEvent.class);
-
       var payload = event.getPayload();
       if (payload == null || payload.getMediaId() == null || payload.getMediaId().isEmpty()) {
         logger.warn("Skipping message with null/empty payload or mediaId");
         return;
       }
 
-      var mediaId = payload.getMediaId();
-      var tenantId = payload.getTenantId() != null ? payload.getTenantId() : "default";
-      var width = payload.getWidth();
-      var mediaType = MediaType.fromString(payload.getMediaType());
+      String mediaId = payload.getMediaId();
+      String tenantId = payload.getTenantId() != null ? payload.getTenantId() : "default";
+      String jobId = payload.getJobId();
+      String assetId = payload.getAssetId();
+      String sourceAssetId = payload.getSourceAssetId();
+      MediaType mediaType = MediaType.fromString(payload.getMediaType());
       if (mediaType == null) {
         mediaType = MediaType.IMAGE;
       }
-      var outputFormat = mediaType == MediaType.IMAGE ? OutputFormat.fromString(payload.getOutputFormat()) : null;
 
       span.setAttribute("media.id", mediaId);
       span.setAttribute("tenant.id", tenantId);
       span.setAttribute("event.type", event.getType());
       span.setAttribute("media.type", mediaType.getValue());
-      if (outputFormat != null) {
-        span.setAttribute("output.format", outputFormat.getFormat());
-      }
-      if (width != null)
-        span.setAttribute("width", width);
-      logger.info("Processing event: type={}, mediaId={}, tenantId={}, mediaType={}, outputFormat={}",
-          event.getType(), mediaId, tenantId, mediaType.getValue(),
-          outputFormat != null ? outputFormat.getFormat() : "n/a");
+
       var eventType = EventType.fromString(event.getType());
       if (eventType == null) {
         logger.info("Skipping message with unsupported type: {}", event.getType());
         return;
       }
+
       switch (eventType) {
-        case DELETE_MEDIA -> handleDelete(mediaId, tenantId, mediaType, span);
-        case RESIZE_MEDIA -> {
-          if (mediaType != MediaType.IMAGE) {
-            logger.info("Skipping resize for non-image media: {}", mediaType.getValue());
-          } else if (width == null) {
-            logger.info("Skipping resize message with missing width");
-          } else {
-            handleMediaProcessing(mediaId, tenantId, width, outputFormat, true, span);
-          }
-        }
-        case PROCESS_MEDIA -> {
-          if (mediaType == MediaType.IMAGE) {
-            handleMediaProcessing(mediaId, tenantId, width, outputFormat, false, span);
-          } else {
-            handleDocumentProcessing(mediaId, tenantId, span);
-          }
-        }
+        case DELETE_MEDIA -> handleDelete(mediaId, tenantId, span);
+        case PROCESS_MEDIA -> handleProcessing(mediaId, tenantId, jobId, assetId, sourceAssetId, payload.getOutput(), span);
         default -> logger.info("Skipping message with unhandled event type: {}", event.getType());
       }
     } catch (Exception e) {
@@ -190,38 +163,17 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
     }
   }
 
-  /**
-   * Handle soft delete: S3 files are deleted, DynamoDB record is preserved.
-   * The API has already soft-deleted the record (status=DELETED, deletedAt set).
-   */
-  private void handleDelete(String mediaId, String tenantId, MediaType mediaType, Span span) {
+  private void handleDelete(String mediaId, String tenantId, Span span) {
     logger.info("Cleaning up S3 files for soft-deleted media: {}", mediaId);
     try {
-      var mediaOpt = dynamoDbService.getMedia(mediaId);
-      if (mediaOpt.isEmpty()) {
-        logger.info("Media {} not found, nothing to clean up", mediaId);
-        return;
+      var assets = dynamoDbService.listAssets(mediaId);
+      for (MediaAsset asset : assets) {
+        String extension = extensionFromFormat(asset.getOutputFormat());
+        if (extension.isBlank()) {
+          continue;
+        }
+        s3Service.deleteAsset(tenantId, mediaId, asset.getAssetId(), extension);
       }
-      var media = mediaOpt.get();
-      var outputFormat = mediaType == MediaType.IMAGE ? media.getOutputFormatOrDefault() : null;
-
-      // Delete original file from S3
-      s3Service.deleteOriginalFile(tenantId, mediaId, media.getName());
-
-      if (mediaType == MediaType.IMAGE) {
-        // Always try to delete processed file (S3 delete is idempotent - no error if
-        // file doesn't exist)
-        s3Service.deleteProcessedFile(tenantId, mediaId, outputFormat);
-
-        // Delete preview file from S3
-        s3Service.deletePreviewFile(tenantId, mediaId, outputFormat);
-      } else if (mediaType == MediaType.DOCUMENT) {
-        // Delete document preview and extracted text if present
-        s3Service.deletePreviewFile(tenantId, mediaId, OutputFormat.PNG);
-        s3Service.deleteTextFile(tenantId, mediaId);
-      }
-
-      logger.info("S3 cleanup completed for media: {} (DynamoDB record preserved for analytics)", mediaId);
       span.setStatus(StatusCode.OK);
       deleteSuccessCounter.add(1);
     } catch (Exception e) {
@@ -232,215 +184,143 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
     }
   }
 
-  private void handleMediaProcessing(String mediaId, String tenantId, Integer requestedWidth, OutputFormat outputFormat,
-      boolean isResize, Span span) {
-    var successCounter = isResize ? resizeSuccessCounter : processSuccessCounter;
-    var failureCounter = isResize ? resizeFailureCounter : processFailureCounter;
+  private void handleProcessing(String mediaId, String tenantId, String jobId, String assetId, String sourceAssetId,
+      com.mediaservice.common.model.OutputSpec output, Span span) {
+    if (output == null || output.getOperation() == null) {
+      logger.warn("Missing output spec for job {} media {}", jobId, mediaId);
+      return;
+    }
+    AssetOperation operation = output.getOperation();
+    String outputFormat = output.getOutputFormat();
+    Integer width = output.getWidth();
 
-    logger.info("Processing media: {} with outputFormat: {}", mediaId, outputFormat.getFormat());
     try {
-      // Try to set status to PROCESSING (from PENDING)
-      // If already PROCESSING (retry scenario), continue with the existing media data
-      Media media;
-      try {
-        var mediaOpt = dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.PROCESSING,
-            MediaStatus.PENDING);
-        if (mediaOpt.isEmpty()) {
-          logger.warn("Media {} not found or not in PENDING status", mediaId);
-          return;
-        }
-        media = mediaOpt.get();
-      } catch (ConditionalCheckFailedException e) {
-        // Check if this is a retry (status already PROCESSING)
-        var existingMedia = dynamoDbService.getMedia(mediaId);
-        if (existingMedia.isPresent() && existingMedia.get().getStatus() == MediaStatus.PROCESSING) {
-          logger.info("Media {} already PROCESSING, continuing as retry", mediaId);
-          media = existingMedia.get();
-        } else {
-          logger.warn("Media {} in unexpected status: {}", mediaId,
-              existingMedia.map(m -> m.getStatus().name()).orElse("NOT_FOUND"));
+      if (jobId != null) {
+        dynamoDbService.updateJobStatusConditionally(mediaId, jobId, ProcessingJobStatus.PROCESSING, ProcessingJobStatus.PENDING);
+      }
+
+      if (assetId == null || sourceAssetId == null) {
+        throw new IllegalArgumentException("Missing assetId or sourceAssetId");
+      }
+
+      boolean statusUpdated = dynamoDbService.updateAssetStatusConditionally(mediaId, assetId, AssetStatus.PROCESSING, AssetStatus.PENDING);
+      if (!statusUpdated) {
+        var existing = dynamoDbService.getAsset(mediaId, assetId);
+        if (existing.isPresent() && existing.get().getStatus() == AssetStatus.COMPLETE) {
+          logger.info("Asset {} already COMPLETE, skipping", assetId);
           return;
         }
       }
-      byte[] imageData = s3Service.getMediaFile(tenantId, mediaId, media.getName());
 
-      var targetWidth = requestedWidth != null ? requestedWidth : media.getWidth();
-      var targetFormat = outputFormat != null ? outputFormat : media.getOutputFormatOrDefault();
+      var sourceAsset = dynamoDbService.getAsset(mediaId, sourceAssetId)
+          .orElseThrow(() -> new IllegalStateException("Source asset not found"));
+      String sourceExt = extensionFromFormat(sourceAsset.getOutputFormat());
+      byte[] sourceData = s3Service.downloadAsset(tenantId, mediaId, sourceAssetId, sourceExt);
 
-      long start = System.currentTimeMillis();
-      byte[] processed = isResize
-          ? imageProcessingService.resizeImage(imageData, targetWidth, targetFormat)
-          : imageProcessingService.processImage(imageData, targetWidth, targetFormat);
-      long duration = System.currentTimeMillis() - start;
+      byte[] outputData;
+      String contentType;
+      Integer outputWidth = null;
+      Integer outputHeight = null;
 
-      span.addEvent("image.processing.done",
-          Attributes.of(AttributeKey.longKey("media.processing.duration"), duration));
-      logger.info("Processed media in {} ms with format: {}", duration, targetFormat.getFormat());
-
-      // Re-check status before uploading to guard against concurrent delete
-      var preUploadStatus = dynamoDbService.getMedia(mediaId).map(Media::getStatus).orElse(null);
-      if (preUploadStatus == MediaStatus.DELETED) {
-        logger.info("Media {} was deleted during processing, aborting upload", mediaId);
-        span.setStatus(StatusCode.OK);
-        return;
+      switch (operation) {
+        case IMAGE_PROCESS -> {
+          OutputFormat format = OutputFormat.fromString(outputFormat);
+          outputData = imageProcessingService.processImage(sourceData, width, format);
+          contentType = format.getContentType();
+        }
+        case IMAGE_PREVIEW -> {
+          OutputFormat format = OutputFormat.fromString(outputFormat);
+          outputData = imageProcessingService.generatePreview(sourceData, format);
+          contentType = format.getContentType();
+        }
+        case DOCUMENT_PREVIEW -> {
+          var result = documentProcessingService.process(mediaId, sourceData);
+          outputData = result.previewPng();
+          contentType = "image/png";
+          dynamoDbService.updateDocumentMetadata(mediaId, result.metadata());
+        }
+        case DOCUMENT_TEXT -> {
+          var result = documentProcessingService.process(mediaId, sourceData);
+          outputData = result.textJson();
+          contentType = "application/json";
+          dynamoDbService.updateDocumentMetadata(mediaId, result.metadata());
+        }
+        default -> throw new IllegalStateException("Unsupported operation: " + operation);
       }
 
-      // Generate and upload preview (only for new uploads, not resizes)
-      if (!isResize) {
-        byte[] preview = imageProcessingService.generatePreview(imageData, targetFormat);
-        s3Service.uploadPreview(tenantId, mediaId, preview, targetFormat);
-        logger.info("Preview generated and uploaded for media: {}", mediaId);
-      }
-
-      s3Service.uploadProcessedMedia(tenantId, mediaId, media.getName(), processed, targetFormat);
-      var completedMedia = dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.COMPLETE, MediaStatus.PROCESSING, targetWidth);
-
-      logger.info("Media operation complete for: {}", mediaId);
-
-      // Send webhook notification if configured
-      if (completedMedia.isPresent() && completedMedia.get().getWebhookUrl() != null) {
-        try {
-          webhookService.sendCompletionNotification(completedMedia.get(), completedMedia.get().getWebhookUrl());
-        } catch (Exception webhookErr) {
-          // Log but don't fail the processing - webhook is best-effort
-          logger.warn("Webhook notification failed for media {}: {}", mediaId, webhookErr.getMessage());
+      if (contentType.startsWith("image/")) {
+        try (var in = new ByteArrayInputStream(outputData)) {
+          var img = ImageIO.read(in);
+          if (img != null) {
+            outputWidth = img.getWidth();
+            outputHeight = img.getHeight();
+          }
         }
       }
+
+      String extension = extensionFromFormat(outputFormat);
+      boolean cachePublic = operation == AssetOperation.IMAGE_PREVIEW || operation == AssetOperation.DOCUMENT_PREVIEW;
+      s3Service.uploadAsset(tenantId, mediaId, assetId, extension, outputData, contentType, cachePublic);
+      dynamoDbService.updateAssetSuccess(mediaId, assetId, outputData.length, outputWidth, outputHeight, contentType);
+
+      if (jobId != null) {
+        dynamoDbService.updateJobStatusConditionally(mediaId, jobId, ProcessingJobStatus.COMPLETE, ProcessingJobStatus.PROCESSING);
+      }
+
+      updateMediaStatusFromAssets(mediaId);
+      sendWebhookIfComplete(mediaId);
 
       span.setStatus(StatusCode.OK);
-      successCounter.add(1);
-    } catch (ConditionalCheckFailedException e) {
-      // This catch handles PROCESSING→COMPLETE transition failures
-      // (the PENDING→PROCESSING transition is handled in the inner try-catch)
-      var actual = dynamoDbService.getMedia(mediaId).map(m -> m.getStatus().name()).orElse("NOT_FOUND");
-      if ("COMPLETE".equals(actual)) {
-        logger.info("Media {} already COMPLETE, skipping duplicate processing", mediaId);
-        span.setStatus(StatusCode.OK);
-        successCounter.add(1);
-        return; // Idempotent - already completed by another instance
-      }
-      if ("DELETED".equals(actual)) {
-        // Delete happened while processing was in-flight — clean up any files we uploaded
-        logger.info("Media {} was deleted during processing, cleaning up uploaded files", mediaId);
-        try {
-          s3Service.deleteProcessedFile(tenantId, mediaId, outputFormat);
-          if (!isResize) {
-            s3Service.deletePreviewFile(tenantId, mediaId, outputFormat);
-          }
-        } catch (Exception cleanupErr) {
-          logger.warn("Failed to clean up files for deleted media {}: {}", mediaId, cleanupErr.getMessage());
-        }
-        span.setStatus(StatusCode.OK);
-        return; // Not a failure — delete took precedence
-      }
-      logger.error("Failed to complete media {}: unexpected status={}", mediaId, actual);
-      span.setStatus(StatusCode.ERROR, "unexpected_status=" + actual);
-      failureCounter.add(1);
-      throw e;
+      processSuccessCounter.add(1);
     } catch (Exception e) {
       logger.error("Failed to process media {}: {}", mediaId, e.getMessage(), e);
       span.setStatus(StatusCode.ERROR, e.getMessage());
       try {
-        dynamoDbService.setMediaStatus(mediaId, MediaStatus.ERROR);
+        dynamoDbService.updateAssetError(mediaId, assetId, e.getMessage());
+        if (jobId != null) {
+          dynamoDbService.updateJobError(mediaId, jobId, e.getMessage());
+        }
+        dynamoDbService.updateMediaStatus(mediaId, MediaStatus.ERROR);
       } catch (Exception updateErr) {
         logger.error("Failed to update status to ERROR: {}", updateErr.getMessage());
       }
-      failureCounter.add(1);
+      processFailureCounter.add(1);
       throw new RuntimeException("Failed to process media", e);
     }
   }
 
-  private void handleDocumentProcessing(String mediaId, String tenantId, Span span) {
-    logger.info("Processing document: {}", mediaId);
-    try {
-      Media media;
-      try {
-        var mediaOpt = dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.PROCESSING, MediaStatus.PENDING);
-        if (mediaOpt.isEmpty()) {
-          logger.warn("Document {} not found or not in PENDING status", mediaId);
-          return;
-        }
-        media = mediaOpt.get();
-      } catch (ConditionalCheckFailedException e) {
-        var existingMedia = dynamoDbService.getMedia(mediaId);
-        if (existingMedia.isPresent() && existingMedia.get().getStatus() == MediaStatus.PROCESSING) {
-          logger.info("Document {} already PROCESSING, continuing as retry", mediaId);
-          media = existingMedia.get();
-        } else if (existingMedia.isPresent() && existingMedia.get().getStatus() == MediaStatus.COMPLETE) {
-          logger.info("Document {} already COMPLETE, skipping duplicate processing", mediaId);
-          span.setStatus(StatusCode.OK);
-          processSuccessCounter.add(1);
-          return;
-        } else {
-          logger.warn("Document {} in unexpected status: {}", mediaId,
-              existingMedia.map(m -> m.getStatus().name()).orElse("NOT_FOUND"));
-          return;
-        }
-      }
-
-      byte[] pdfData = s3Service.getMediaFile(tenantId, mediaId, media.getName());
-      var result = documentProcessingService.process(mediaId, pdfData);
-
-      var preUploadStatus = dynamoDbService.getMedia(mediaId).map(Media::getStatus).orElse(null);
-      if (preUploadStatus == MediaStatus.DELETED) {
-        logger.info("Document {} was deleted during processing, aborting upload", mediaId);
-        span.setStatus(StatusCode.OK);
-        return;
-      }
-
-      s3Service.uploadPreview(tenantId, mediaId, result.previewPng(), OutputFormat.PNG);
-      s3Service.uploadText(tenantId, mediaId, result.textJson());
-
-      dynamoDbService.updateDocumentMetadata(mediaId, result.metadata());
-      var completedMedia = dynamoDbService.setMediaStatusConditionally(mediaId, MediaStatus.COMPLETE,
-          MediaStatus.PROCESSING);
-
-      logger.info("Document processing complete for: {}", mediaId);
-
-      if (completedMedia.isPresent() && completedMedia.get().getWebhookUrl() != null) {
-        try {
-          webhookService.sendCompletionNotification(completedMedia.get(), completedMedia.get().getWebhookUrl());
-        } catch (Exception webhookErr) {
-          logger.warn("Webhook notification failed for document {}: {}", mediaId, webhookErr.getMessage());
-        }
-      }
-
-      span.setStatus(StatusCode.OK);
-      processSuccessCounter.add(1);
-    } catch (ConditionalCheckFailedException e) {
-      var actual = dynamoDbService.getMedia(mediaId).map(m -> m.getStatus().name()).orElse("NOT_FOUND");
-      if ("COMPLETE".equals(actual)) {
-        logger.info("Document {} already COMPLETE, skipping duplicate processing", mediaId);
-        span.setStatus(StatusCode.OK);
-        processSuccessCounter.add(1);
-        return;
-      }
-      if ("DELETED".equals(actual)) {
-        logger.info("Document {} was deleted during processing, cleaning up uploaded files", mediaId);
-        try {
-          s3Service.deletePreviewFile(tenantId, mediaId, OutputFormat.PNG);
-          s3Service.deleteTextFile(tenantId, mediaId);
-        } catch (Exception cleanupErr) {
-          logger.warn("Failed to clean up files for deleted document {}: {}", mediaId, cleanupErr.getMessage());
-        }
-        span.setStatus(StatusCode.OK);
-        return;
-      }
-      logger.error("Failed to complete document {}: unexpected status={}", mediaId, actual);
-      span.setStatus(StatusCode.ERROR, "unexpected_status=" + actual);
-      processFailureCounter.add(1);
-      throw e;
-    } catch (Exception e) {
-      logger.error("Failed to process document {}: {}", mediaId, e.getMessage(), e);
-      span.setStatus(StatusCode.ERROR, e.getMessage());
-      try {
-        dynamoDbService.setMediaStatus(mediaId, MediaStatus.ERROR);
-      } catch (Exception updateErr) {
-        logger.error("Failed to update status to ERROR: {}", updateErr.getMessage());
-      }
-      processFailureCounter.add(1);
-      throw new RuntimeException("Failed to process document", e);
+  private void updateMediaStatusFromAssets(String mediaId) {
+    var mediaOpt = dynamoDbService.getMedia(mediaId);
+    if (mediaOpt.isEmpty() || mediaOpt.get().getStatus() == MediaStatus.DELETED) {
+      return;
     }
+    var assets = dynamoDbService.listAssets(mediaId);
+    boolean anyProcessing = assets.stream().anyMatch(a -> a.getStatus() == AssetStatus.PENDING || a.getStatus() == AssetStatus.PROCESSING);
+    boolean anyError = assets.stream().anyMatch(a -> a.getStatus() == AssetStatus.ERROR);
+    MediaStatus newStatus = anyProcessing ? MediaStatus.PROCESSING : (anyError ? MediaStatus.ERROR : MediaStatus.COMPLETE);
+    dynamoDbService.updateMediaStatus(mediaId, newStatus);
+  }
+
+  private void sendWebhookIfComplete(String mediaId) {
+    var mediaOpt = dynamoDbService.getMedia(mediaId);
+    if (mediaOpt.isEmpty()) {
+      return;
+    }
+    Media media = mediaOpt.get();
+    if (media.getStatus() == MediaStatus.COMPLETE && media.getWebhookUrl() != null) {
+      try {
+        webhookService.sendCompletionNotification(media, media.getWebhookUrl());
+      } catch (Exception webhookErr) {
+        logger.warn("Webhook notification failed for media {}: {}", media.getMediaId(), webhookErr.getMessage());
+      }
+    }
+  }
+
+  private String extensionFromFormat(String format) {
+    if (format == null || format.isBlank()) {
+      return "";
+    }
+    return "." + format.toLowerCase();
   }
 
   private io.opentelemetry.context.Context extractTraceContext(JsonNode snsEnvelope) {

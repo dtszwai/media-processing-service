@@ -17,9 +17,8 @@ public class CreateShortUrlRequest {
   @NotBlank(message = "mediaId is required")
   private String mediaId;
 
-  @NotBlank(message = "variant is required")
-  @Pattern(regexp = "^(preview|download|original)$", message = "variant must be one of: preview, download, original")
-  private String variant;
+  @NotBlank(message = "assetId is required")
+  private String assetId;
 
   @Pattern(regexp = "^[a-z0-9][a-z0-9_-]*$", message = "alias may contain lowercase letters, numbers, '-' or '_'")
   @Schema(description = "Optional custom alias for the short URL (lowercase letters, numbers, '-' or '_')")

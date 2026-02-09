@@ -175,7 +175,6 @@ class MediaDynamoDbRepositoryIntegrationTest extends BaseIntegrationTest {
         .size(1024L)
         .mimetype("image/jpeg")
         .status(MediaStatus.PENDING)
-        .width(500)
         .build();
   }
 }

@@ -16,7 +16,7 @@ public class ShortUrlResponse {
   private String code;
   private String shortUrl;
   private String mediaId;
-  private String variant;
+  private String assetId;
   private boolean isPublic;
   private Instant createdAt;
   private String createdBy;

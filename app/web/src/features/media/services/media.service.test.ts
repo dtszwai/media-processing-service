@@ -1,13 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { retryProcessing } from "./media.service";
-import { ApiRequestError, RateLimitError } from "../../../shared/types";
+import { fetchAssetDownloadUrl } from "./media.service";
+import { RateLimitError } from "../../../shared/types";
 
-describe("retryProcessing", () => {
+describe("fetchAssetDownloadUrl", () => {
   const mockFetch = vi.fn();
 
   beforeEach(() => {
     vi.stubGlobal("fetch", mockFetch);
-    // Set up auth tokens so authenticatedFetch works
     localStorage.setItem("auth_access_token", "test-token");
     localStorage.setItem("auth_token_expiry", String(Date.now() + 3600 * 1000));
   });
@@ -17,21 +16,34 @@ describe("retryProcessing", () => {
     localStorage.clear();
   });
 
-  it("calls retry endpoint and returns mediaId on success", async () => {
-    const mockResponse = { mediaId: "test-media-id" };
+  it("returns url when available", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: () => Promise.resolve(mockResponse),
+      status: 200,
+      json: () => Promise.resolve({ url: "https://s3.example.com/file" }),
       headers: new Headers(),
     });
 
-    const result = await retryProcessing("test-media-id");
+    const result = await fetchAssetDownloadUrl("media-123", "asset-123");
 
     expect(mockFetch).toHaveBeenCalledWith(
-      "http://localhost:9000/v1/media/test-media-id/retry",
-      expect.objectContaining({ method: "POST" }),
+      "http://localhost:9000/v1/media/media-123/assets/asset-123/download-url",
+      expect.any(Object),
     );
-    expect(result).toEqual(mockResponse);
+    expect(result).toEqual("https://s3.example.com/file");
+  });
+
+  it("returns null when asset is still processing", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 202,
+      headers: new Headers(),
+      json: () => Promise.resolve({}),
+    });
+
+    const result = await fetchAssetDownloadUrl("media-123", "asset-123");
+
+    expect(result).toBeNull();
   });
 
   it("throws RateLimitError on 429 response", async () => {
@@ -41,38 +53,9 @@ describe("retryProcessing", () => {
       headers: new Headers({
         "X-Rate-Limit-Retry-After-Seconds": "30",
       }),
+      json: () => Promise.resolve({ message: "Rate limited", status: 429 }),
     });
 
-    await expect(retryProcessing("test-media-id")).rejects.toThrow(RateLimitError);
-  });
-
-  it("throws ApiRequestError on 409 conflict response", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 409,
-      json: () =>
-        Promise.resolve({
-          message: "Cannot retry: media is not in PROCESSING or ERROR status",
-          status: 409,
-        }),
-      headers: new Headers(),
-    });
-
-    await expect(retryProcessing("test-media-id")).rejects.toThrow(ApiRequestError);
-  });
-
-  it("throws ApiRequestError on 404 not found response", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 404,
-      json: () =>
-        Promise.resolve({
-          message: "Not found",
-          status: 404,
-        }),
-      headers: new Headers(),
-    });
-
-    await expect(retryProcessing("test-media-id")).rejects.toThrow(ApiRequestError);
+    await expect(fetchAssetDownloadUrl("media-123", "asset-123")).rejects.toThrow(RateLimitError);
   });
 });

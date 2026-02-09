@@ -3,7 +3,6 @@ package com.mediaservice.integration;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaStatus;
-import com.mediaservice.common.model.OutputFormat;
 import com.mediaservice.media.infrastructure.persistence.MediaDynamoDbRepository;
 import com.mediaservice.shared.cache.HotkeyDetectionService;
 import com.mediaservice.shared.cache.SingleFlightService;
@@ -12,6 +11,7 @@ import com.mediaservice.shared.cache.MultiLevelCacheOrchestrator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.CacheManager;
@@ -38,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <li>Cache invalidation across all levels</li>
  * </ul>
  */
+@Tag("integration")
 class MultiLevelCacheIntegrationTest extends BaseIntegrationTest {
 
   @Autowired
@@ -70,8 +71,6 @@ class MultiLevelCacheIntegrationTest extends BaseIntegrationTest {
         .mimetype("image/jpeg")
         .size(1024L)
         .status(MediaStatus.COMPLETE)
-        .width(500)
-        .outputFormat(OutputFormat.JPEG)
         .build();
 
     // Insert test media into DynamoDB
@@ -204,8 +203,6 @@ class MultiLevelCacheIntegrationTest extends BaseIntegrationTest {
           .mimetype("image/jpeg")
           .size(2048L)
           .status(MediaStatus.COMPLETE)
-          .width(500)
-          .outputFormat(OutputFormat.PNG)
           .build();
       dynamoDbService.createMedia(freshMedia);
 

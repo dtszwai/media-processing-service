@@ -1,6 +1,5 @@
 package com.mediaservice.shorturl.domain.model;
 
-import com.mediaservice.common.model.ShortUrlVariant;
 import java.time.Instant;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -15,7 +14,7 @@ public class ShortUrl {
   private String code;
   private String tenantId;
   private String mediaId;
-  private ShortUrlVariant variant;
+  private String assetId;
   private boolean isPublic;
   private Instant createdAt;
   private String createdBy;

@@ -1,7 +1,6 @@
 package com.mediaservice.media.infrastructure.storage;
 
 import com.mediaservice.common.constants.StorageConstants;
-import com.mediaservice.common.model.OutputFormat;
 import com.mediaservice.shared.config.properties.MediaProperties;
 import com.mediaservice.shared.storage.AbstractS3StorageRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -13,7 +12,6 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 import java.io.IOException;
 import java.time.Duration;
-import java.util.Optional;
 
 /**
  * S3 storage service for Media files.
@@ -23,10 +21,7 @@ import java.util.Optional;
  *
  * <p>S3 Key Structure (tenant-scoped):
  * <pre>
- * {tenantId}/{mediaId}/
- *   original.{ext}   - Original uploaded file
- *   processed.{ext}  - Processed/resized output
- *   preview.{ext}    - Watermarked preview for CDN
+ * {tenantId}/{mediaId}/assets/{assetId}.{ext}
  * </pre>
  *
  * @see StorageConstants
@@ -47,21 +42,8 @@ public class S3StorageService extends AbstractS3StorageRepository {
 
   // ==================== Key Building ====================
 
-  private String buildOriginalKey(String tenantId, String mediaId, String fileName) {
-    String extension = StorageConstants.getFileExtension(fileName);
-    return StorageConstants.buildS3Key(tenantId, mediaId, StorageConstants.S3_VARIANT_ORIGINAL, extension);
-  }
-
-  private String buildProcessedKey(String tenantId, String mediaId, OutputFormat format) {
-    return StorageConstants.buildS3Key(tenantId, mediaId, StorageConstants.S3_VARIANT_PROCESSED, format.getExtension());
-  }
-
-  private String buildPreviewKey(String tenantId, String mediaId, OutputFormat format) {
-    return StorageConstants.buildS3Key(tenantId, mediaId, StorageConstants.VARIANT_PREVIEW, format.getExtension());
-  }
-
-  private String buildTextKey(String tenantId, String mediaId) {
-    return StorageConstants.buildS3Key(tenantId, mediaId, StorageConstants.S3_VARIANT_TEXT, ".json");
+  private String buildAssetKey(String tenantId, String mediaId, String assetId, String extension) {
+    return StorageConstants.buildAssetKey(tenantId, mediaId, assetId, extension);
   }
 
   // ==================== Media-Specific Operations ====================
@@ -69,20 +51,21 @@ public class S3StorageService extends AbstractS3StorageRepository {
   /**
    * Upload a media file from a MultipartFile.
    */
-  public void uploadMedia(String tenantId, String mediaId, String mediaName, MultipartFile file) throws IOException {
-    String key = buildOriginalKey(tenantId, mediaId, mediaName);
+  public void uploadAsset(String tenantId, String mediaId, String assetId, String mediaName, MultipartFile file) throws IOException {
+    String extension = StorageConstants.getFileExtension(mediaName);
+    String key = buildAssetKey(tenantId, mediaId, assetId, extension);
     upload(key, file.getInputStream(), file.getContentType(), file.getSize());
     log.info("Uploaded media to S3: {}", key);
   }
 
   /**
-   * Get a presigned download URL for a processed media file.
+   * Get a presigned download URL for a media asset.
    */
-  public String getPresignedUrl(String tenantId, String mediaId, String mediaName, OutputFormat outputFormat) {
-    OutputFormat format = outputFormat != null ? outputFormat : OutputFormat.JPEG;
-    String key = buildProcessedKey(tenantId, mediaId, format);
+  public String getAssetPresignedUrl(String tenantId, String mediaId, String assetId, String extension,
+      String downloadName, String contentType) {
+    String key = buildAssetKey(tenantId, mediaId, assetId, extension);
     Duration expiration = Duration.ofSeconds(mediaProperties.getDownload().getPresignedUrlExpirationSeconds());
-    String url = generatePresignedDownloadUrl(key, expiration);
+    String url = generatePresignedDownloadUrl(key, expiration, downloadName, contentType);
     log.info("Generated presigned URL for: {}", key);
     return url;
   }
@@ -90,104 +73,31 @@ public class S3StorageService extends AbstractS3StorageRepository {
   /**
    * Generate a presigned URL for uploading a media file directly to S3.
    */
-  public String generatePresignedUploadUrl(String tenantId, String mediaId, String fileName, String contentType, Duration expiration) {
-    String key = buildOriginalKey(tenantId, mediaId, fileName);
+  public String generatePresignedUploadUrl(String tenantId, String mediaId, String assetId, String fileName,
+      String contentType, Duration expiration) {
+    String extension = StorageConstants.getFileExtension(fileName);
+    String key = buildAssetKey(tenantId, mediaId, assetId, extension);
     String url = generatePresignedUploadUrl(key, contentType, expiration);
     log.info("Generated presigned upload URL for: {}", key);
     return url;
   }
 
   /**
-   * Check if an uploaded (original) media file exists.
+   * Check if a media asset exists.
    */
-  public boolean objectExists(String tenantId, String mediaId, String fileName) {
-    String key = buildOriginalKey(tenantId, mediaId, fileName);
+  public boolean assetExists(String tenantId, String mediaId, String assetId, String fileName) {
+    String extension = StorageConstants.getFileExtension(fileName);
+    String key = buildAssetKey(tenantId, mediaId, assetId, extension);
     return exists(key);
   }
 
   /**
-   * Delete an uploaded (original) media file.
+   * Delete a media asset.
    */
-  public void deleteUpload(String tenantId, String mediaId, String fileName) {
-    String key = buildOriginalKey(tenantId, mediaId, fileName);
+  public void deleteAsset(String tenantId, String mediaId, String assetId, String fileName) {
+    String extension = StorageConstants.getFileExtension(fileName);
+    String key = buildAssetKey(tenantId, mediaId, assetId, extension);
     delete(key);
     log.info("Deleted upload from S3: {}", key);
-  }
-
-  /**
-   * Get a presigned download URL for the original media file.
-   */
-  public String getOriginalPresignedUrl(String tenantId, String mediaId, String fileName) {
-    String key = buildOriginalKey(tenantId, mediaId, fileName);
-    Duration expiration = Duration.ofSeconds(mediaProperties.getDownload().getPresignedUrlExpirationSeconds());
-    String url = generatePresignedDownloadUrl(key, expiration);
-    log.info("Generated presigned URL for original: {}", key);
-    return url;
-  }
-
-  /**
-   * Get a presigned download URL for a preview media file.
-   * Used as fallback when CloudFront is not configured.
-   */
-  public Optional<String> getPreviewPresignedUrl(String tenantId, String mediaId, OutputFormat outputFormat) {
-    try {
-      OutputFormat format = outputFormat != null ? outputFormat : OutputFormat.JPEG;
-      String key = buildPreviewKey(tenantId, mediaId, format);
-      Duration expiration = Duration.ofSeconds(mediaProperties.getDownload().getPresignedUrlExpirationSeconds());
-      String url = generatePresignedDownloadUrl(key, expiration);
-      log.info("Generated presigned preview URL for: {}", key);
-      return Optional.of(url);
-    } catch (Exception e) {
-      log.warn("Failed to generate preview presigned URL for mediaId={}: {}", mediaId, e.getMessage());
-      return Optional.empty();
-    }
-  }
-
-  /**
-   * Check if a preview object exists.
-   */
-  public boolean previewExists(String tenantId, String mediaId, OutputFormat outputFormat) {
-    OutputFormat format = outputFormat != null ? outputFormat : OutputFormat.JPEG;
-    String key = buildPreviewKey(tenantId, mediaId, format);
-    return exists(key);
-  }
-
-  /**
-   * Get a presigned download URL for extracted document text (JSON).
-   */
-  public Optional<String> getTextPresignedUrl(String tenantId, String mediaId) {
-    try {
-      String key = buildTextKey(tenantId, mediaId);
-      Duration expiration = Duration.ofSeconds(mediaProperties.getDownload().getPresignedUrlExpirationSeconds());
-      String url = generatePresignedDownloadUrl(key, expiration);
-      log.info("Generated presigned text URL for: {}", key);
-      return Optional.of(url);
-    } catch (Exception e) {
-      log.warn("Failed to generate text presigned URL for mediaId={}: {}", mediaId, e.getMessage());
-      return Optional.empty();
-    }
-  }
-
-  /**
-   * Check if extracted document text exists.
-   */
-  public boolean textExists(String tenantId, String mediaId) {
-    String key = buildTextKey(tenantId, mediaId);
-    return exists(key);
-  }
-
-  /**
-   * Download extracted document text JSON.
-   */
-  public Optional<byte[]> getTextContent(String tenantId, String mediaId) {
-    String key = buildTextKey(tenantId, mediaId);
-    try (var inputStream = download(key)) {
-      return Optional.of(inputStream.readAllBytes());
-    } catch (software.amazon.awssdk.services.s3.model.NoSuchKeyException e) {
-      return Optional.empty();
-    } catch (Exception e) {
-      log.warn("Failed to download text content for mediaId={}: {}", mediaId, e.getMessage());
-      return Optional.empty();
-    }
   }
 }

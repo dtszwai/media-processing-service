@@ -9,7 +9,7 @@ export const queryKeys = {
     list: (cursor?: string, limit?: number, mediaType?: string) =>
       ["media", "list", { cursor, limit, mediaType }] as const,
     detail: (id: string) => ["media", "detail", id] as const,
-    status: (id: string) => ["media", "status", id] as const,
+    assets: (id: string) => ["media", "assets", id] as const,
   },
   health: {
     all: ["health"] as const,
@@ -47,7 +47,7 @@ export function invalidateMediaList() {
 }
 
 export function invalidateMediaStatus(mediaId: string) {
-  return queryClient.invalidateQueries({ queryKey: queryKeys.media.status(mediaId) });
+  return queryClient.invalidateQueries({ queryKey: queryKeys.media.assets(mediaId) });
 }
 
 export function invalidateAnalytics() {

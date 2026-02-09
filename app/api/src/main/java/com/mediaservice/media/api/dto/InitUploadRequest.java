@@ -2,8 +2,6 @@ package com.mediaservice.media.api.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import com.mediaservice.common.model.MediaType;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
@@ -28,13 +26,6 @@ public class InitUploadRequest {
   private String contentType;
 
   private MediaType mediaType;
-
-  @Min(value = 100, message = "width must be at least 100")
-  @Max(value = 1024, message = "width must be at most 1024")
-  private Integer width;
-
-  @Pattern(regexp = "^(jpeg|png|webp)?$", message = "outputFormat must be one of: jpeg, png, webp")
-  private String outputFormat;
 
   @URL(message = "webhookUrl must be a valid URL")
   @Pattern(regexp = "^https://.*", message = "webhookUrl must use HTTPS")

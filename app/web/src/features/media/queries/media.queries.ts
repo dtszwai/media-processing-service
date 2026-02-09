@@ -2,30 +2,32 @@
  * Media queries and mutations using TanStack Query
  */
 import { createQuery, createMutation } from "@tanstack/svelte-query";
-import type { Query } from "@tanstack/svelte-query";
 import { queryClient, queryKeys } from "../../../shared/queries";
 import {
   getAllMedia,
   getMedia,
-  getMediaStatus,
+  listAssets,
+  createAssets,
+  retryAsset,
   uploadMedia,
   initPresignedUpload,
   uploadToPresignedUrl,
   completePresignedUpload,
-  resizeMedia,
   deleteMedia,
-  retryProcessing,
   generateIdempotencyKey,
 } from "../services";
-import { MediaSchema, PagedMediaResponseSchema, StatusResponseSchema } from "../../../shared/types";
+import {
+  MediaSchema,
+  MediaAssetSchema,
+  PagedMediaResponseSchema,
+} from "../../../shared/types";
 import type {
   Media,
-  OutputFormat,
+  MediaAsset,
   MediaType,
   InitUploadRequest,
-  ResizeRequest,
   PagedMediaResponse,
-  StatusResponse,
+  CreateAssetRequest,
 } from "../../../shared/types";
 import {
   PRESIGNED_UPLOAD_THRESHOLD,
@@ -65,23 +67,22 @@ export function createMediaQuery(mediaId: string, enabled = true) {
 }
 
 /**
- * Query for media status with auto-polling while processing
+ * Query for assets of a media item
  */
-export function createMediaStatusQuery(mediaId: string, enabled = true) {
+export function createMediaAssetsQuery(mediaId: string, enabled = true) {
   return createQuery(() => ({
-    queryKey: queryKeys.media.status(mediaId),
-    queryFn: async (): Promise<StatusResponse> => {
-      const data = await getMediaStatus(mediaId);
-      return StatusResponseSchema.parse(data);
+    queryKey: queryKeys.media.assets(mediaId),
+    queryFn: async (): Promise<MediaAsset[]> => {
+      const data = await listAssets(mediaId);
+      return MediaAssetSchema.array().parse(data);
     },
     enabled,
-    refetchInterval: (query: Query<StatusResponse>) => {
-      const status = query.state.data?.status;
-      // Keep polling while processing
-      if (status === "PENDING" || status === "PROCESSING") {
-        return 2000;
-      }
-      return false;
+    refetchInterval: (query) => {
+      const assets = query.state.data || [];
+      const isProcessing = assets.some(
+        (asset) => asset.status === "PENDING" || asset.status === "PROCESSING",
+      );
+      return isProcessing ? 2000 : false;
     },
   }));
 }
@@ -91,21 +92,9 @@ export function createMediaStatusQuery(mediaId: string, enabled = true) {
  */
 export function createUploadMutation() {
   return createMutation(() => ({
-    mutationFn: async ({
-      file,
-      width,
-      outputFormat,
-      mediaType,
-    }: {
-      file: File;
-      width?: number;
-      outputFormat?: OutputFormat;
-      mediaType?: MediaType;
-    }) => {
+    mutationFn: async ({ file, mediaType }: { file: File; mediaType?: MediaType }) => {
       const idempotencyKey = generateIdempotencyKey(file);
-      const resolvedFormat =
-        mediaType === "image" || !mediaType ? outputFormat || "jpeg" : undefined;
-      return uploadMedia(file, width, resolvedFormat, mediaType, idempotencyKey);
+      return uploadMedia(file, mediaType, idempotencyKey);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.media.all });
@@ -121,15 +110,11 @@ export function createPresignedUploadMutation() {
   return createMutation(() => ({
     mutationFn: async ({
       file,
-      width,
-      outputFormat,
       mediaType,
       webhookUrl,
       onProgress,
     }: {
       file: File;
-      width?: number;
-      outputFormat?: OutputFormat;
       mediaType?: MediaType;
       webhookUrl?: string;
       onProgress?: (progress: number) => void;
@@ -139,21 +124,12 @@ export function createPresignedUploadMutation() {
         fileSize: file.size,
         contentType: file.type,
         mediaType,
-        width,
-        outputFormat: mediaType === "image" || !mediaType ? outputFormat || "jpeg" : undefined,
         webhookUrl,
       };
 
-      // Generate idempotency key for retry safety
       const idempotencyKey = generateIdempotencyKey(file);
-
-      // Step 1: Initialize presigned upload with idempotency
       const initResponse = await initPresignedUpload(request, idempotencyKey);
-
-      // Step 2: Upload to presigned URL
       await uploadToPresignedUrl(initResponse.uploadUrl, file, initResponse.headers, onProgress);
-
-      // Step 3: Complete the upload
       return completePresignedUpload(initResponse.mediaId);
     },
     onSuccess: () => {
@@ -163,22 +139,35 @@ export function createPresignedUploadMutation() {
 }
 
 /**
- * Mutation for resizing media
+ * Mutation for creating assets
  */
-export function createResizeMutation() {
+export function createAssetsMutation() {
   return createMutation(() => ({
-    mutationFn: async ({ mediaId, request }: { mediaId: string; request: ResizeRequest }) => {
-      await resizeMedia(mediaId, request);
-      return { mediaId, ...request };
+    mutationFn: async ({ mediaId, request }: { mediaId: string; request: CreateAssetRequest }) => {
+      return createAssets(mediaId, request);
     },
-    onSuccess: (
-      _result: { mediaId: string; width: number; outputFormat?: OutputFormat },
-      variables: { mediaId: string; request: ResizeRequest },
-    ) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.media.status(variables.mediaId),
-      });
+    onSuccess: (_result, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.media.list() });
       queryClient.invalidateQueries({ queryKey: queryKeys.media.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.media.assets(variables.mediaId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.media.detail(variables.mediaId) });
+    },
+  }));
+}
+
+/**
+ * Mutation for retrying a failed asset
+ */
+export function createAssetRetryMutation() {
+  return createMutation(() => ({
+    mutationFn: async ({ mediaId, assetId }: { mediaId: string; assetId: string }) => {
+      return retryAsset(mediaId, assetId);
+    },
+    onSuccess: (_result, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.media.list() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.media.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.media.assets(variables.mediaId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.media.detail(variables.mediaId) });
     },
   }));
 }
@@ -195,24 +184,6 @@ export function createDeleteMutation() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.media.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all });
-    },
-  }));
-}
-
-/**
- * Mutation for retrying failed processing
- */
-export function createRetryMutation() {
-  return createMutation(() => ({
-    mutationFn: async (mediaId: string) => {
-      await retryProcessing(mediaId);
-      return mediaId;
-    },
-    onSuccess: (_result: string, mediaId: string) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.media.status(mediaId),
-      });
-      queryClient.invalidateQueries({ queryKey: queryKeys.media.all });
     },
   }));
 }

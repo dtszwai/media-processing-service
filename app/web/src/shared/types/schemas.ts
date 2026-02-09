@@ -12,6 +12,10 @@ export const MediaTypeSchema = z.enum(["image", "document", "video", "audio", "o
 
 export const OutputFormatSchema = z.enum(["jpeg", "png", "webp"]);
 
+export const AssetStatusSchema = z.enum(["PENDING_UPLOAD", "PENDING", "PROCESSING", "COMPLETE", "ERROR", "DELETED"]);
+export const AssetTypeSchema = z.enum(["ORIGINAL", "DERIVED", "PREVIEW", "TEXT"]);
+export const AssetOperationSchema = z.enum(["image.process", "image.preview", "document.preview", "document.text"]);
+
 export const MediaSchema = z.object({
   mediaId: z.string(),
   name: z.string(),
@@ -19,8 +23,7 @@ export const MediaSchema = z.object({
   mimetype: z.string(),
   mediaType: MediaTypeSchema.optional(),
   status: MediaStatusSchema,
-  width: z.number().optional(),
-  outputFormat: OutputFormatSchema.optional(),
+  originalAssetId: z.string().optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
   deletedAt: z.string().optional(),
@@ -41,30 +44,56 @@ export const InitUploadRequestSchema = z.object({
   fileSize: z.number(),
   contentType: z.string(),
   mediaType: MediaTypeSchema.optional(),
-  width: z.number().optional(),
-  outputFormat: OutputFormatSchema.optional(),
   webhookUrl: z.string().url().optional(),
 });
 
 export const InitUploadResponseSchema = z.object({
   mediaId: z.string(),
+  assetId: z.string().optional(),
   uploadUrl: z.string(),
   expiresIn: z.number(),
   method: z.string(),
   headers: z.record(z.string(), z.string()),
 });
 
-export const StatusResponseSchema = z.object({
-  status: MediaStatusSchema,
-});
-
 export const UploadResponseSchema = z.object({
   mediaId: z.string(),
 });
 
-export const ResizeRequestSchema = z.object({
-  width: z.number(),
-  outputFormat: OutputFormatSchema.optional(),
+export const MediaAssetSchema = z.object({
+  assetId: z.string(),
+  mediaId: z.string(),
+  sourceAssetId: z.string().optional().nullable(),
+  type: AssetTypeSchema,
+  tags: z.array(z.string()).optional(),
+  status: AssetStatusSchema,
+  outputFormat: z.string().optional(),
+  mimetype: z.string().optional(),
+  size: z.number().optional(),
+  width: z.number().optional(),
+  height: z.number().optional(),
+  downloadName: z.string().optional(),
+  operation: AssetOperationSchema.optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+  errorMessage: z.string().optional(),
+});
+
+export const CreateAssetOutputSchema = z.object({
+  operation: AssetOperationSchema,
+  outputFormat: z.string().optional(),
+  width: z.number().optional(),
+  downloadName: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+});
+
+export const CreateAssetRequestSchema = z.object({
+  sourceAssetId: z.string().optional(),
+  outputs: z.array(CreateAssetOutputSchema),
+});
+
+export const AssetDownloadUrlResponseSchema = z.object({
+  url: z.string(),
 });
 
 // ============= Document Text Schemas =============
@@ -84,11 +113,9 @@ export const DocumentTextSchema = z.object({
 
 // ============= Short URL Schemas =============
 
-export const ShortUrlVariantSchema = z.enum(["preview", "download", "original"]);
-
 export const CreateShortUrlRequestSchema = z.object({
   mediaId: z.string(),
-  variant: ShortUrlVariantSchema,
+  assetId: z.string(),
   alias: z.string().optional(),
   expiresAt: z.string().datetime().optional(),
   label: z.string().optional(),
@@ -99,7 +126,7 @@ export const ShortUrlResponseSchema = z
     code: z.string(),
     shortUrl: z.string().optional().nullable(),
     mediaId: z.string(),
-    variant: ShortUrlVariantSchema,
+    assetId: z.string(),
     isPublic: z.boolean().optional(),
     public: z.boolean().optional(),
     createdAt: z.string().optional(),
@@ -252,16 +279,20 @@ export const ApiKeyResponseSchema = z.object({
 export type MediaStatus = z.infer<typeof MediaStatusSchema>;
 export type MediaType = z.infer<typeof MediaTypeSchema>;
 export type OutputFormat = z.infer<typeof OutputFormatSchema>;
+export type AssetStatus = z.infer<typeof AssetStatusSchema>;
+export type AssetType = z.infer<typeof AssetTypeSchema>;
+export type AssetOperation = z.infer<typeof AssetOperationSchema>;
 export type Media = z.infer<typeof MediaSchema>;
 export type InitUploadRequest = z.infer<typeof InitUploadRequestSchema>;
 export type InitUploadResponse = z.infer<typeof InitUploadResponseSchema>;
-export type StatusResponse = z.infer<typeof StatusResponseSchema>;
 export type UploadResponse = z.infer<typeof UploadResponseSchema>;
-export type ResizeRequest = z.infer<typeof ResizeRequestSchema>;
+export type MediaAsset = z.infer<typeof MediaAssetSchema>;
+export type CreateAssetOutput = z.infer<typeof CreateAssetOutputSchema>;
+export type CreateAssetRequest = z.infer<typeof CreateAssetRequestSchema>;
+export type AssetDownloadUrlResponse = z.infer<typeof AssetDownloadUrlResponseSchema>;
 export type DocumentText = z.infer<typeof DocumentTextSchema>;
 export type PagedMediaResponse = z.infer<typeof PagedMediaResponseSchema>;
 export type ApiError = z.infer<typeof ApiErrorSchema>;
-export type ShortUrlVariant = z.infer<typeof ShortUrlVariantSchema>;
 export type CreateShortUrlRequest = z.infer<typeof CreateShortUrlRequestSchema>;
 export type ShortUrlResponse = z.infer<typeof ShortUrlResponseSchema>;
 

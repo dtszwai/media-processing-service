@@ -7,14 +7,7 @@ package com.mediaservice.common.constants;
  *
  * <p>S3 Key Structure:
  * <pre>
- * {mediaId}/
- *   original.{ext}     - Original uploaded file
- *   processed.{ext}    - Default processed output
- *   thumb_sm.{ext}     - Small thumbnail (future)
- *   thumb_md.{ext}     - Medium thumbnail (future)
- *   thumb_lg.{ext}     - Large thumbnail (future)
- *   resize_{size}.{ext} - Resized variants (future)
- *   text.json          - Extracted document text (future)
+ * {tenantId}/{mediaId}/assets/{assetId}.{ext}
  * </pre>
  *
  * @see <a href="docs/adr/0001-s3-storage-structure.md">ADR-0001: S3 Storage Structure</a>
@@ -25,11 +18,8 @@ public final class StorageConstants {
     // Prevent instantiation
   }
 
-  // S3 variant names (flat structure: {mediaId}/{variant}.{ext})
-  public static final String S3_VARIANT_ORIGINAL = "original";
-  public static final String S3_VARIANT_PROCESSED = "processed";
-  public static final String VARIANT_PREVIEW = "preview";
-  public static final String S3_VARIANT_TEXT = "text";
+  // S3 asset structure
+  public static final String S3_ASSET_PREFIX = "assets";
 
   // Preview generation settings
   public static final int PREVIEW_MAX_WIDTH = 800;
@@ -37,6 +27,9 @@ public final class StorageConstants {
 
   // DynamoDB key patterns
   public static final String DYNAMO_PK_PREFIX = "MEDIA#";
+  public static final String DYNAMO_SK_MEDIA = "MEDIA";
+  public static final String DYNAMO_SK_ASSET_PREFIX = "ASSET#";
+  public static final String DYNAMO_SK_JOB_PREFIX = "JOB#";
   public static final String DYNAMO_SK_METADATA = "METADATA";
   public static final String DYNAMO_GSI_SK_CREATED_AT = "SK-createdAt-index";
 
@@ -51,28 +44,16 @@ public final class StorageConstants {
   public static final String DYNAMO_GSI_TENANT_CREATED_AT = "tenantId-createdAt-index";
 
   /**
-   * Build an S3 key for a media variant (legacy, no tenant).
-   *
-   * @param mediaId The media ID (UUID)
-   * @param variant The variant name (e.g., "original", "processed")
-   * @param extension The file extension including dot (e.g., ".jpeg")
-   * @return The S3 key (e.g., "abc-123/original.jpeg")
-   */
-  public static String buildS3Key(String mediaId, String variant, String extension) {
-    return mediaId + "/" + variant + extension;
-  }
-
-  /**
-   * Build a tenant-scoped S3 key for a media variant.
+   * Build a tenant-scoped S3 key for a media asset.
    *
    * @param tenantId  The tenant ID
    * @param mediaId   The media ID (UUID)
-   * @param variant   The variant name (e.g., "original", "processed")
+   * @param assetId   The asset ID (UUID)
    * @param extension The file extension including dot (e.g., ".jpeg")
-   * @return The S3 key (e.g., "tenant-123/abc-123/original.jpeg")
+   * @return The S3 key (e.g., "tenant-123/abc-123/assets/asset-456.jpeg")
    */
-  public static String buildS3Key(String tenantId, String mediaId, String variant, String extension) {
-    return tenantId + "/" + mediaId + "/" + variant + extension;
+  public static String buildAssetKey(String tenantId, String mediaId, String assetId, String extension) {
+    return tenantId + "/" + mediaId + "/" + S3_ASSET_PREFIX + "/" + assetId + extension;
   }
 
   /**

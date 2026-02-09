@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { getDownloadUrl, getPreviewUrl, getMedia } from "../../media/services";
+  import { fetchAssetDownloadUrl, listAssets, getMedia } from "../../media/services";
   import { createMediaViewsQuery } from "../queries";
   import { currentMediaId } from "../../media/stores";
-  import type { EntityViewCount } from "../../../shared/types";
+  import type { EntityViewCount, MediaAsset } from "../../../shared/types";
 
   interface Props {
     media: EntityViewCount | null;
@@ -11,13 +11,55 @@
 
   let { media, onclose }: Props = $props();
   let previewError = $state(false);
+  let previewUrl = $state<string | null>(null);
+  let downloadUrl = $state<string | null>(null);
+  let assetsLoading = $state(false);
+  let assetsError = $state<string | null>(null);
 
   // Query for detailed view stats when modal opens (skip for deleted media)
   const viewsQuery = $derived(media && !media.deleted ? createMediaViewsQuery(media.entityId) : null);
 
   $effect(() => {
-    media;
+    let cancelled = false;
     previewError = false;
+    previewUrl = null;
+    downloadUrl = null;
+    assetsError = null;
+
+    if (!media || media.deleted) {
+      assetsLoading = false;
+      return;
+    }
+
+    assetsLoading = true;
+
+    (async () => {
+      try {
+        const assets = await listAssets(media.entityId);
+        if (cancelled) return;
+
+        const previewAsset = pickAssetByTag(assets, "preview");
+        if (previewAsset?.status === "COMPLETE") {
+          previewUrl = await fetchAssetDownloadUrl(media.entityId, previewAsset.assetId);
+        }
+
+        const downloadAsset = pickAssetByTag(assets, "download") ?? pickAssetByTag(assets, "original");
+        if (downloadAsset?.status === "COMPLETE") {
+          downloadUrl = await fetchAssetDownloadUrl(media.entityId, downloadAsset.assetId);
+        }
+      } catch (error) {
+        if (cancelled) return;
+        assetsError = error instanceof Error ? error.message : "Failed to load assets";
+      } finally {
+        if (!cancelled) {
+          assetsLoading = false;
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   });
 
   function handleBackdropClick(e: MouseEvent) {
@@ -57,13 +99,25 @@
   }
 
   function handleDownload() {
-    if (media && !media.deleted) {
-      window.open(getDownloadUrl(media.entityId), "_blank");
+    if (media && !media.deleted && downloadUrl) {
+      window.open(downloadUrl, "_blank");
     }
   }
 
   function handlePreviewError() {
     previewError = true;
+  }
+
+  function pickAssetByTag(assets: MediaAsset[], tag: string): MediaAsset | null {
+    const candidates = assets.filter((asset) => asset.tags?.includes(tag));
+    if (!candidates.length) return null;
+    const sorted = candidates.sort((a, b) => {
+      if (!a.createdAt && !b.createdAt) return 0;
+      if (!a.createdAt) return 1;
+      if (!b.createdAt) return -1;
+      return b.createdAt.localeCompare(a.createdAt);
+    });
+    return sorted[0];
   }
 
   function formatNumber(num: number): string {
@@ -167,7 +221,12 @@
           </div>
         {:else}
           <div class="bg-gray-100 rounded-lg overflow-hidden mb-6">
-            {#if previewError}
+            {#if assetsLoading}
+              <div class="flex flex-col items-center justify-center py-12 text-gray-400">
+                <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-400 mb-3"></div>
+                <p class="text-sm">Loading preview...</p>
+              </div>
+            {:else if assetsError}
               <div class="flex flex-col items-center justify-center py-12 text-gray-400">
                 <svg class="w-12 h-12 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
@@ -179,13 +238,37 @@
                 </svg>
                 <p class="text-sm">Preview unavailable</p>
               </div>
-            {:else}
+            {:else if previewError}
+              <div class="flex flex-col items-center justify-center py-12 text-gray-400">
+                <svg class="w-12 h-12 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.5"
+                    d="M3 7l9-4 9 4-9 4-9-4zm0 0v10l9 4 9-4V7"
+                  ></path>
+                </svg>
+                <p class="text-sm">Preview unavailable</p>
+              </div>
+            {:else if previewUrl}
               <img
-                src="{getPreviewUrl(media.entityId)}?t={Date.now()}"
+                src={previewUrl}
                 alt={media.name}
                 class="w-full h-auto max-h-80 object-contain"
                 onerror={handlePreviewError}
               />
+            {:else}
+              <div class="flex flex-col items-center justify-center py-12 text-gray-400">
+                <svg class="w-12 h-12 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.5"
+                    d="M3 7l9-4 9 4-9 4-9-4zm0 0v10l9 4 9-4V7"
+                  ></path>
+                </svg>
+                <p class="text-sm">Preview not ready</p>
+              </div>
             {/if}
           </div>
         {/if}
@@ -267,7 +350,8 @@
           </button>
           <button
             onclick={handleDownload}
-            class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+            disabled={!downloadUrl || assetsLoading}
+            class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path

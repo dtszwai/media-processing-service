@@ -7,23 +7,17 @@ import { handleResponse, authenticatedFetch, uploadToPresignedUrl } from "../../
 import { RateLimitError, ApiRequestError, AuthenticationError } from "../../../shared/types";
 import type {
   Media,
+  MediaAsset,
   InitUploadRequest,
   InitUploadResponse,
-  StatusResponse,
   UploadResponse,
-  ResizeRequest,
-  OutputFormat,
   MediaType,
   PagedResponse,
-  DocumentText,
+  CreateAssetRequest,
+  AssetDownloadUrlResponse,
 } from "../../../shared/types";
 
 export { uploadToPresignedUrl };
-
-export type DocumentTextResult =
-  | { status: "READY"; data: DocumentText }
-  | { status: "PROCESSING" }
-  | { status: "NOT_FOUND" };
 
 /**
  * Get all media with optional pagination
@@ -45,8 +39,6 @@ export async function getAllMedia(
 
 /**
  * Get media by ID
- * @throws Error with message "NOT_FOUND" if media doesn't exist
- * @throws Error with message "DELETED" if media was deleted
  */
 export async function getMedia(mediaId: string): Promise<Media> {
   const response = await authenticatedFetch(`${API_BASE}/${mediaId}`);
@@ -60,43 +52,56 @@ export async function getMedia(mediaId: string): Promise<Media> {
 }
 
 /**
- * Get media status by ID
- * @throws Error with message "NOT_FOUND" if media doesn't exist
- * @throws Error with message "DELETED" if media was deleted
+ * List assets for a media item
  */
-export async function getMediaStatus(mediaId: string): Promise<StatusResponse> {
-  const response = await authenticatedFetch(`${API_BASE}/${mediaId}/status`);
+export async function listAssets(mediaId: string): Promise<MediaAsset[]> {
+  const response = await authenticatedFetch(`${API_BASE}/${mediaId}/assets`);
+  return handleResponse<MediaAsset[]>(response);
+}
+
+/**
+ * Get asset by ID
+ */
+export async function getAsset(mediaId: string, assetId: string): Promise<MediaAsset> {
+  const response = await authenticatedFetch(`${API_BASE}/${mediaId}/assets/${assetId}`);
   if (response.status === 404) {
     throw new Error("NOT_FOUND");
   }
-  if (response.status === 410) {
-    throw new Error("DELETED");
-  }
-  return handleResponse<StatusResponse>(response);
+  return handleResponse<MediaAsset>(response);
+}
+
+/**
+ * Create derived assets
+ */
+export async function createAssets(mediaId: string, request: CreateAssetRequest): Promise<MediaAsset[]> {
+  const response = await authenticatedFetch(`${API_BASE}/${mediaId}/assets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  return handleResponse<MediaAsset[]>(response);
+}
+
+/**
+ * Retry processing for a failed asset
+ */
+export async function retryAsset(mediaId: string, assetId: string): Promise<MediaAsset> {
+  const response = await authenticatedFetch(`${API_BASE}/${mediaId}/assets/${assetId}/retry`, {
+    method: "POST",
+  });
+  return handleResponse<MediaAsset>(response);
 }
 
 /**
  * Upload media file directly (for files < 5MB)
- * @param file - File to upload
- * @param width - Target width
- * @param outputFormat - Output format
- * @param idempotencyKey - Optional idempotency key for retry safety
  */
 export async function uploadMedia(
   file: File,
-  width?: number,
-  outputFormat?: OutputFormat,
   mediaType?: MediaType,
   idempotencyKey?: string,
 ): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
-  if (width) {
-    formData.append("width", width.toString());
-  }
-  if (outputFormat) {
-    formData.append("outputFormat", outputFormat);
-  }
   if (mediaType) {
     formData.append("mediaType", mediaType);
   }
@@ -117,8 +122,6 @@ export async function uploadMedia(
 
 /**
  * Initialize presigned upload (for large files)
- * @param request - Upload initialization request
- * @param idempotencyKey - Optional idempotency key for retry safety
  */
 export async function initPresignedUpload(
   request: InitUploadRequest,
@@ -161,31 +164,6 @@ export async function completePresignedUpload(mediaId: string): Promise<UploadRe
 }
 
 /**
- * Resize existing media
- */
-export async function resizeMedia(mediaId: string, request: ResizeRequest): Promise<void> {
-  const response = await authenticatedFetch(`${API_BASE}/${mediaId}/resize`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
-  });
-
-  if (response.status === 401) {
-    throw new AuthenticationError();
-  }
-
-  if (response.status === 429) {
-    const retryAfter = parseInt(response.headers.get("X-Rate-Limit-Retry-After-Seconds") || "60", 10);
-    throw new RateLimitError(retryAfter);
-  }
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new ApiRequestError(error.message || "Resize failed", response.status, error.requestId);
-  }
-}
-
-/**
  * Delete media by ID
  */
 export async function deleteMedia(mediaId: string): Promise<void> {
@@ -208,69 +186,29 @@ export async function deleteMedia(mediaId: string): Promise<void> {
 }
 
 /**
- * Retry processing for failed media
+ * Get download URL for a media asset
  */
-export async function retryProcessing(mediaId: string): Promise<UploadResponse> {
-  const response = await authenticatedFetch(`${API_BASE}/${mediaId}/retry`, {
-    method: "POST",
-  });
-
-  return handleResponse<UploadResponse>(response);
+export function getAssetDownloadUrl(mediaId: string, assetId: string): string {
+  return `${API_BASE}/${mediaId}/assets/${assetId}/download`;
 }
 
 /**
- * Get download URL for processed media
+ * Fetch presigned download URL for a media asset
  */
-export function getDownloadUrl(mediaId: string): string {
-  return `${API_BASE}/${mediaId}/download`;
-}
-
-/**
- * Get original file URL (redirects to presigned S3 URL)
- */
-export function getOriginalUrl(mediaId: string): string {
-  return `${API_BASE}/${mediaId}/original`;
-}
-
-/**
- * Get preview URL for processed media (via CDN in production)
- */
-export function getPreviewUrl(mediaId: string): string {
-  return `${API_BASE}/${mediaId}/preview`;
-}
-
-/**
- * Get extracted document text (JSON).
- */
-export async function getDocumentText(mediaId: string): Promise<DocumentTextResult> {
-  const response = await authenticatedFetch(`${API_BASE}/${mediaId}/text?inline=true`, {
-    headers: { Accept: "application/json" },
-  });
-
-  if (response.status === 401) {
-    throw new AuthenticationError("Authentication required", 401);
-  }
-  if (response.status === 429) {
-    const retryAfter = parseInt(response.headers.get("X-Rate-Limit-Retry-After-Seconds") || "60", 10);
-    throw new RateLimitError(retryAfter);
-  }
+export async function fetchAssetDownloadUrl(mediaId: string, assetId: string): Promise<string | null> {
+  const response = await authenticatedFetch(`${API_BASE}/${mediaId}/assets/${assetId}/download-url`);
   if (response.status === 202) {
-    return { status: "PROCESSING" };
+    return null;
   }
   if (response.status === 404) {
-    return { status: "NOT_FOUND" };
+    throw new Error("NOT_FOUND");
   }
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: "Request failed" }));
-    throw new ApiRequestError(error.message || "Request failed", response.status);
-  }
-
-  return { status: "READY", data: (await response.json()) as DocumentText };
+  const payload = await handleResponse<AssetDownloadUrlResponse>(response);
+  return payload.url;
 }
 
 /**
  * Generate idempotency key for upload requests
- * Uses file name, size, and timestamp to create unique key
  */
 export function generateIdempotencyKey(file: File): string {
   const timestamp = Date.now();
@@ -280,23 +218,31 @@ export function generateIdempotencyKey(file: File): string {
   for (let i = 0; i < data.length; i++) {
     const char = data.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32-bit integer
+    hash = hash & hash;
   }
   return `idem-${Math.abs(hash).toString(36)}-${timestamp.toString(36)}`;
 }
 
 /**
- * Poll for media status until it reaches target status
+ * Poll for asset status until it reaches target statuses
  */
-export async function pollForStatus(
+export async function pollForAssetStatus(
   mediaId: string,
+  assetId: string,
   targetStatuses: string[],
   onStatusChange?: (status: string) => void,
   interval = 2000,
 ): Promise<string> {
+  let nextDelay = interval;
   while (true) {
     try {
-      const { status } = await getMediaStatus(mediaId);
+      const assets = await listAssets(mediaId);
+      const asset = assets.find((item) => item.assetId === assetId);
+      if (!asset) {
+        throw new Error("Asset not found");
+      }
+
+      const status = asset.status;
       onStatusChange?.(status);
 
       if (targetStatuses.includes(status)) {
@@ -306,13 +252,64 @@ export async function pollForStatus(
       if (status === "ERROR") {
         throw new Error("Processing failed");
       }
+
+      await wait(nextDelay);
+      nextDelay = Math.min(nextDelay + 500, 8000);
     } catch (error) {
-      if (error instanceof Error && (error.message === "NOT_FOUND" || error.message === "DELETED")) {
-        return "DELETED";
+      if (error instanceof RateLimitError) {
+        const retryAfterMs = Math.max(1000, error.retryAfterSeconds * 1000);
+        await wait(retryAfterMs);
+        nextDelay = Math.max(nextDelay, retryAfterMs);
+        continue;
       }
       throw error;
     }
-
-    await new Promise((resolve) => setTimeout(resolve, interval));
   }
+}
+
+/**
+ * Poll until all assets are COMPLETE or any ERROR.
+ * Uses a single list-assets call per cycle to avoid per-asset polling fanout.
+ */
+export async function pollForAssets(
+  mediaId: string,
+  assetIds: string[],
+  interval = 2000,
+): Promise<void> {
+  if (assetIds.length === 0) return;
+
+  let nextDelay = interval;
+  while (true) {
+    try {
+      const assets = await listAssets(mediaId);
+      const assetMap = new Map(assets.map((asset) => [asset.assetId, asset]));
+      const statuses = assetIds.map((id) => assetMap.get(id)?.status ?? "PENDING");
+
+      if (statuses.every((status) => status === "COMPLETE")) {
+        return;
+      }
+      if (statuses.some((status) => status === "ERROR")) {
+        throw new Error("Processing failed");
+      }
+
+      const inFlightCount = statuses.filter(
+        (status) => status === "PENDING" || status === "PENDING_UPLOAD" || status === "PROCESSING",
+      ).length;
+      const baseDelay = inFlightCount > 3 ? Math.max(interval, 3500) : interval;
+      await wait(nextDelay);
+      nextDelay = Math.min(Math.max(baseDelay, nextDelay + 500), 8000);
+    } catch (error) {
+      if (error instanceof RateLimitError) {
+        const retryAfterMs = Math.max(1000, error.retryAfterSeconds * 1000);
+        await wait(retryAfterMs);
+        nextDelay = Math.max(nextDelay, retryAfterMs);
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

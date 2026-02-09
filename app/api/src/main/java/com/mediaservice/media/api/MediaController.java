@@ -1,22 +1,17 @@
 package com.mediaservice.media.api;
 
-import com.mediaservice.shared.http.error.ErrorResponse;
-import com.mediaservice.shared.http.error.MediaConflictException;
-import com.mediaservice.shared.http.error.MediaGoneException;
-import com.mediaservice.shared.http.PagedResponse;
-import com.mediaservice.shared.idempotency.Idempotent;
+import com.mediaservice.media.api.dto.AssetDownloadUrlResponse;
+import com.mediaservice.media.api.dto.CreateAssetRequest;
 import com.mediaservice.media.api.dto.InitUploadRequest;
 import com.mediaservice.media.api.dto.InitUploadResponse;
+import com.mediaservice.media.api.dto.MediaAssetResponse;
 import com.mediaservice.media.api.dto.MediaResponse;
-import com.mediaservice.media.api.dto.ResizeRequest;
-import com.mediaservice.media.api.dto.StatusResponse;
-import com.mediaservice.media.application.DocumentTextResult;
-import com.mediaservice.media.application.DownloadResult;
-import com.mediaservice.media.application.MediaOperationResult;
-import com.mediaservice.media.application.PreviewResult;
-import com.mediaservice.media.application.mapper.MediaMapper;
 import com.mediaservice.media.application.MediaApplicationService;
+import com.mediaservice.media.application.mapper.MediaMapper;
 import com.mediaservice.common.model.MediaType;
+import com.mediaservice.shared.http.PagedResponse;
+import com.mediaservice.shared.http.error.ErrorResponse;
+import com.mediaservice.shared.idempotency.Idempotent;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -25,23 +20,23 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.net.URI;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.net.URI;
-
-/**
- * REST controller for media operations.
- *
- * <p>
- * Provides endpoints for uploading, downloading, resizing, and deleting media.
- */
 @Slf4j
 @RestController
 @RequestMapping("/v1/media")
@@ -78,32 +73,28 @@ public class MediaController {
         .build());
   }
 
-  @Operation(summary = "Upload media file", description = "Upload a media file for processing. Supports idempotency via Idempotency-Key header.")
+  @Operation(summary = "Upload media file", description = "Upload a media file. Supports idempotency via Idempotency-Key header.")
   @ApiResponses({
-      @ApiResponse(responseCode = "202", description = "Upload accepted for processing"),
-      @ApiResponse(responseCode = "400", description = "Invalid file"),
-      @ApiResponse(responseCode = "409", description = "Request with same idempotency key already in progress")
+      @ApiResponse(responseCode = "202", description = "Upload accepted"),
+      @ApiResponse(responseCode = "400", description = "Invalid file")
   })
   @Idempotent(scope = "upload")
   @PostMapping("/upload")
   public ResponseEntity<MediaResponse> uploadMedia(
       @RequestParam("file") MultipartFile file,
-      @RequestParam(required = false) Integer width,
-      @RequestParam(required = false) String outputFormat,
-      @RequestParam(required = false) String mediaType) throws IOException {
-    log.info("Upload request received: fileName={}, size={}, outputFormat={}, mediaType={}",
-        file.getOriginalFilename(), file.getSize(), outputFormat, mediaType);
+      @RequestParam(required = false) String mediaType) throws Exception {
+    log.info("Upload request received: fileName={}, size={}, mediaType={}",
+        file.getOriginalFilename(), file.getSize(), mediaType);
 
     mediaService.validateUploadFile(file.getSize(), file.isEmpty());
-    MediaResponse response = mediaService.uploadMedia(file, width, outputFormat, mediaType);
-    return ResponseEntity.accepted().body(response);
+    var media = mediaService.uploadMedia(file, mediaType);
+    return ResponseEntity.accepted().body(mediaMapper.toResponse(media));
   }
 
   @Operation(summary = "Initialize presigned upload", description = "Initialize a presigned upload. Supports idempotency via Idempotency-Key header.")
   @ApiResponses({
       @ApiResponse(responseCode = "201", description = "Presigned upload initialized"),
-      @ApiResponse(responseCode = "400", description = "Invalid request"),
-      @ApiResponse(responseCode = "409", description = "Request with same idempotency key already in progress")
+      @ApiResponse(responseCode = "400", description = "Invalid request")
   })
   @Idempotent(scope = "init-upload")
   @PostMapping("/upload/init")
@@ -112,7 +103,8 @@ public class MediaController {
     log.info("Init presigned upload request: fileName={}, size={}, contentType={}",
         request.getFileName(), request.getFileSize(), request.getContentType());
 
-    mediaService.validatePresignedUploadRequest(request.getFileSize(), request.getContentType(), request.getMediaType(), request.getFileName());
+    mediaService.validatePresignedUploadRequest(request.getFileSize(), request.getContentType(),
+        request.getMediaType(), request.getFileName());
     InitUploadResponse response = mediaService.initPresignedUpload(request);
     return ResponseEntity.status(HttpStatus.CREATED).body(response);
   }
@@ -147,8 +139,7 @@ public class MediaController {
   @Operation(summary = "Get media by ID")
   @ApiResponses({
       @ApiResponse(responseCode = "200", description = "Media found"),
-      @ApiResponse(responseCode = "404", description = "Media not found"),
-      @ApiResponse(responseCode = "410", description = "Media has been deleted")
+      @ApiResponse(responseCode = "404", description = "Media not found")
   })
   @GetMapping("/{mediaId}")
   public ResponseEntity<MediaResponse> getMedia(@PathVariable String mediaId) {
@@ -158,163 +149,112 @@ public class MediaController {
         .orElse(ResponseEntity.notFound().build());
   }
 
-  @Operation(summary = "Get media processing status")
+  @Operation(summary = "List assets for a media item")
+  @ApiResponses({ @ApiResponse(responseCode = "200", description = "List of assets") })
+  @GetMapping("/{mediaId}/assets")
+  public ResponseEntity<List<MediaAssetResponse>> listAssets(@PathVariable String mediaId) {
+    log.info("List assets request: mediaId={}", mediaId);
+    var assets = mediaService.listAssets(mediaId).stream().map(mediaMapper::toAssetResponse).toList();
+    return ResponseEntity.ok(assets);
+  }
+
+  @Operation(summary = "Get asset by ID")
   @ApiResponses({
-      @ApiResponse(responseCode = "200", description = "Status retrieved"),
-      @ApiResponse(responseCode = "404", description = "Media not found"),
-      @ApiResponse(responseCode = "410", description = "Media has been deleted")
+      @ApiResponse(responseCode = "200", description = "Asset found"),
+      @ApiResponse(responseCode = "404", description = "Asset not found")
   })
-  @GetMapping("/{mediaId}/status")
-  public ResponseEntity<StatusResponse> getMediaStatus(@PathVariable String mediaId) {
-    log.info("Status request: mediaId={}", mediaId);
-    return mediaService.getActiveMediaStatus(mediaId)
-        .map(status -> ResponseEntity.ok(mediaMapper.toStatusResponse(status)))
+  @GetMapping("/{mediaId}/assets/{assetId}")
+  public ResponseEntity<MediaAssetResponse> getAsset(@PathVariable String mediaId, @PathVariable String assetId) {
+    log.info("Get asset request: mediaId={}, assetId={}", mediaId, assetId);
+    return mediaService.getAsset(mediaId, assetId)
+        .map(asset -> ResponseEntity.ok(mediaMapper.toAssetResponse(asset)))
         .orElse(ResponseEntity.notFound().build());
   }
 
-  @Operation(summary = "Get original image", description = "Redirects to presigned S3 URL for original uploaded file")
+  @Operation(summary = "Get presigned download URL for an asset")
   @ApiResponses({
-      @ApiResponse(responseCode = "302", description = "Redirect to original file URL"),
-      @ApiResponse(responseCode = "404", description = "Media not found or not yet uploaded"),
-      @ApiResponse(responseCode = "410", description = "Media has been deleted")
+      @ApiResponse(responseCode = "200", description = "Download URL generated"),
+      @ApiResponse(responseCode = "202", description = "Asset still processing"),
+      @ApiResponse(responseCode = "404", description = "Asset not found")
   })
-  @GetMapping("/{mediaId}/original")
-  public ResponseEntity<Void> getOriginalUrl(@PathVariable String mediaId) {
-    log.info("Original URL request: mediaId={}", mediaId);
-
-    return mediaService.getOriginalUrl(mediaId)
-        .map(url -> ResponseEntity.status(HttpStatus.FOUND).location(URI.create(url)).<Void>build())
-        .orElse(ResponseEntity.notFound().build());
+  @GetMapping("/{mediaId}/assets/{assetId}/download-url")
+  public ResponseEntity<AssetDownloadUrlResponse> getAssetDownloadUrl(
+      @PathVariable String mediaId,
+      @PathVariable String assetId) {
+    log.info("Get asset download URL request: mediaId={}, assetId={}", mediaId, assetId);
+    var assetOpt = mediaService.getAsset(mediaId, assetId);
+    if (assetOpt.isEmpty()) {
+      return ResponseEntity.notFound().build();
+    }
+    var asset = assetOpt.get();
+    if (asset.getStatus() != com.mediaservice.common.model.AssetStatus.COMPLETE) {
+      return ResponseEntity.status(HttpStatus.ACCEPTED).build();
+    }
+    return mediaService.getAssetDownloadUrl(mediaId, assetId)
+        .map(url -> ResponseEntity.ok(AssetDownloadUrlResponse.builder().url(url).build()))
+        .orElse(ResponseEntity.status(HttpStatus.ACCEPTED).build());
   }
 
-  @Operation(summary = "Get preview image", description = "Redirects to CDN URL for watermarked preview image")
-  @ApiResponses({
-      @ApiResponse(responseCode = "302", description = "Redirect to preview URL"),
-      @ApiResponse(responseCode = "404", description = "Media not found"),
-      @ApiResponse(responseCode = "202", description = "Media still processing")
-  })
-  @GetMapping("/{mediaId}/preview")
-  public ResponseEntity<Void> getPreviewUrl(@PathVariable String mediaId) {
-    log.info("Preview URL request: mediaId={}", mediaId);
-
-    return switch (mediaService.preparePreview(mediaId)) {
-      case PreviewResult.Ready ready ->
-          ResponseEntity.status(HttpStatus.FOUND).location(URI.create(ready.url())).build();
-      case PreviewResult.Processing ignored ->
-          ResponseEntity.accepted().build();
-      case PreviewResult.NotFound ignored ->
-          ResponseEntity.notFound().build();
-    };
+  @Operation(summary = "Create derived assets from a source asset")
+  @ApiResponses({ @ApiResponse(responseCode = "202", description = "Assets queued for processing") })
+  @PostMapping("/{mediaId}/assets")
+  public ResponseEntity<List<MediaAssetResponse>> createAssets(
+      @PathVariable String mediaId,
+      @Valid @RequestBody CreateAssetRequest request) {
+    log.info("Create assets request: mediaId={}, outputs={}", mediaId, request.getOutputs().size());
+    var assets = mediaService.createAssets(mediaId, request).stream().map(mediaMapper::toAssetResponse).toList();
+    return ResponseEntity.accepted().body(assets);
   }
 
-  @Operation(summary = "Get extracted document text", description = "Redirects to presigned S3 URL for extracted text JSON")
-  @ApiResponses({
-      @ApiResponse(responseCode = "200", description = "Extracted text JSON"),
-      @ApiResponse(responseCode = "302", description = "Redirect to text URL"),
-      @ApiResponse(responseCode = "404", description = "Media not found"),
-      @ApiResponse(responseCode = "202", description = "Text still processing")
-  })
-  @GetMapping("/{mediaId}/text")
-  public ResponseEntity<?> getDocumentText(@PathVariable String mediaId,
-      @RequestParam(name = "inline", defaultValue = "false") boolean inline) {
-    log.info("Document text request: mediaId={}, inline={}", mediaId, inline);
-
-    return switch (mediaService.prepareDocumentText(mediaId, inline)) {
-      case DocumentTextResult.Ready ready ->
-          ResponseEntity.status(HttpStatus.FOUND).location(URI.create(ready.url())).build();
-      case DocumentTextResult.ReadyInline readyInline ->
-          ResponseEntity.ok().contentType(org.springframework.http.MediaType.APPLICATION_JSON).body(readyInline.content());
-      case DocumentTextResult.Processing ignored ->
-          ResponseEntity.accepted().build();
-      case DocumentTextResult.NotFound ignored ->
-          ResponseEntity.notFound().build();
-    };
-  }
-
-  @Operation(summary = "Download processed media", description = "Redirects to presigned S3 URL")
+  @Operation(summary = "Download asset", description = "Redirects to presigned S3 URL for asset")
   @ApiResponses({
       @ApiResponse(responseCode = "302", description = "Redirect to download URL"),
-      @ApiResponse(responseCode = "202", description = "Media still processing", content = @Content(schema = @Schema(implementation = MediaResponse.class))),
-      @ApiResponse(responseCode = "404", description = "Media not found"),
-      @ApiResponse(responseCode = "410", description = "Media has been deleted")
+      @ApiResponse(responseCode = "202", description = "Asset still processing"),
+      @ApiResponse(responseCode = "404", description = "Asset not found")
   })
-  @GetMapping("/{mediaId}/download")
-  public ResponseEntity<MediaResponse> downloadMedia(@PathVariable String mediaId, HttpServletRequest request) {
-    log.info("Download request: mediaId={}", mediaId);
-
-    return switch (mediaService.prepareDownload(mediaId)) {
-      case DownloadResult.Ready ready ->
-          ResponseEntity.status(HttpStatus.FOUND).location(URI.create(ready.url())).build();
-      case DownloadResult.Processing processing -> {
-        var headers = new HttpHeaders();
-        headers.add("Retry-After", "60");
-        headers.add("Location", "%s://%s:%d/v1/media/%s/status"
-            .formatted(request.getScheme(), request.getServerName(), request.getServerPort(), processing.mediaId()));
-        yield ResponseEntity.accepted()
-            .headers(headers)
-            .body(mediaMapper.toMessageResponse("Media processing in progress."));
-      }
-      case DownloadResult.NotFound ignored -> ResponseEntity.notFound().build();
-    };
+  @GetMapping("/{mediaId}/assets/{assetId}/download")
+  public ResponseEntity<?> downloadAsset(@PathVariable String mediaId, @PathVariable String assetId, HttpServletRequest request) {
+    log.info("Download asset request: mediaId={}, assetId={}", mediaId, assetId);
+    var assetOpt = mediaService.getAsset(mediaId, assetId);
+    if (assetOpt.isEmpty()) {
+      return ResponseEntity.notFound().build();
+    }
+    var asset = assetOpt.get();
+    if (asset.getStatus() != com.mediaservice.common.model.AssetStatus.COMPLETE) {
+      var headers = new HttpHeaders();
+      headers.add("Retry-After", "60");
+      headers.add("Location", "%s://%s:%d/v1/media/%s/assets/%s"
+          .formatted(request.getScheme(), request.getServerName(), request.getServerPort(), mediaId, assetId));
+      return ResponseEntity.accepted().headers(headers).build();
+    }
+    return mediaService.getAssetDownloadUrl(mediaId, assetId)
+        .map(url -> ResponseEntity.status(HttpStatus.FOUND).location(URI.create(url)).build())
+        .orElse(ResponseEntity.notFound().build());
   }
 
-  @Operation(summary = "Resize media")
+  @Operation(summary = "Retry processing for a failed asset")
   @ApiResponses({
-      @ApiResponse(responseCode = "202", description = "Resize request accepted", content = @Content(schema = @Schema(implementation = MediaResponse.class))),
-      @ApiResponse(responseCode = "404", description = "Media not found"),
-      @ApiResponse(responseCode = "409", description = "Media not in COMPLETE status", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-      @ApiResponse(responseCode = "410", description = "Media has been deleted")
+      @ApiResponse(responseCode = "202", description = "Retry queued"),
+      @ApiResponse(responseCode = "404", description = "Asset not found")
   })
-  @PutMapping("/{mediaId}/resize")
-  public ResponseEntity<MediaResponse> resizeMedia(@PathVariable String mediaId,
-      @Valid @RequestBody ResizeRequest resizeRequest) {
-    log.info("Resize request: mediaId={}", mediaId);
-
-    return switch (mediaService.resizeMedia(mediaId, resizeRequest.getWidth(), resizeRequest.getOutputFormat())) {
-      case MediaOperationResult.Success success ->
-          ResponseEntity.accepted().body(mediaMapper.toIdResponse(success.media()));
-      case MediaOperationResult.NotFound ignored ->
-          ResponseEntity.notFound().build();
-      case MediaOperationResult.Deleted deleted ->
-          throw new MediaGoneException("Media has been deleted", deleted.deletedAt());
-      case MediaOperationResult.NotAllowed notAllowed ->
-          throw new MediaConflictException(notAllowed.reason());
-    };
+  @PostMapping("/{mediaId}/assets/{assetId}/retry")
+  public ResponseEntity<MediaAssetResponse> retryAsset(@PathVariable String mediaId, @PathVariable String assetId) {
+    log.info("Retry asset request: mediaId={}, assetId={}", mediaId, assetId);
+    return mediaService.retryAsset(mediaId, assetId)
+        .map(asset -> ResponseEntity.accepted().body(mediaMapper.toAssetResponse(asset)))
+        .orElse(ResponseEntity.notFound().build());
   }
 
-  @Operation(summary = "Delete media")
+  @Operation(summary = "Delete media by ID")
   @ApiResponses({
-      @ApiResponse(responseCode = "202", description = "Delete request accepted"),
+      @ApiResponse(responseCode = "200", description = "Media deleted"),
       @ApiResponse(responseCode = "404", description = "Media not found")
   })
   @DeleteMapping("/{mediaId}")
   public ResponseEntity<MediaResponse> deleteMedia(@PathVariable String mediaId) {
-    log.info("Delete request: mediaId={}", mediaId);
+    log.info("Delete media request: mediaId={}", mediaId);
     return mediaService.deleteMedia(mediaId)
-        .<ResponseEntity<MediaResponse>>map(media -> ResponseEntity.accepted().body(mediaMapper.toIdResponse(media)))
+        .map(media -> ResponseEntity.ok(mediaMapper.toResponse(media)))
         .orElse(ResponseEntity.notFound().build());
-  }
-
-  @Operation(summary = "Retry processing", description = "Retry processing for media stuck in PROCESSING or ERROR status")
-  @ApiResponses({
-      @ApiResponse(responseCode = "202", description = "Retry initiated"),
-      @ApiResponse(responseCode = "404", description = "Media not found"),
-      @ApiResponse(responseCode = "409", description = "Media not in retryable status (PROCESSING or ERROR)", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-      @ApiResponse(responseCode = "410", description = "Media has been deleted")
-  })
-  @PostMapping("/{mediaId}/retry")
-  public ResponseEntity<MediaResponse> retryProcessing(@PathVariable String mediaId) {
-    log.info("Retry request: mediaId={}", mediaId);
-
-    return switch (mediaService.retryProcessing(mediaId)) {
-      case MediaOperationResult.Success success ->
-          ResponseEntity.accepted().body(mediaMapper.toIdResponse(success.media()));
-      case MediaOperationResult.NotFound ignored ->
-          ResponseEntity.notFound().build();
-      case MediaOperationResult.Deleted deleted ->
-          throw new MediaGoneException("Media has been deleted", deleted.deletedAt());
-      case MediaOperationResult.NotAllowed notAllowed ->
-          throw new MediaConflictException(notAllowed.reason());
-    };
   }
 }

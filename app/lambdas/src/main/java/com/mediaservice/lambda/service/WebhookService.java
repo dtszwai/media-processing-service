@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.mediaservice.common.model.Media;
-import com.mediaservice.common.model.MediaStatus;
 import com.mediaservice.lambda.config.LambdaConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -88,16 +87,15 @@ public class WebhookService {
     }
 
     private WebhookPayload buildPayload(Media media) {
-        return new WebhookPayload(
-                "media.processing.complete",
-                media.getMediaId(),
-                media.getStatus().name(),
-                media.getName(),
-                media.getMimetype(),
-                media.getWidth(),
-                media.getOutputFormat() != null ? media.getOutputFormat().getFormat() : null,
-                Instant.now()
-        );
+            return new WebhookPayload(
+                    "media.processing.complete",
+                    media.getMediaId(),
+                    media.getStatus() != null ? media.getStatus().name() : null,
+                    media.getName(),
+                    media.getMimetype(),
+                    media.getOriginalAssetId(),
+                    Instant.now()
+            );
     }
 
     private String generateSignature(String payload) {
@@ -179,8 +177,7 @@ public class WebhookService {
             String status,
             String fileName,
             String mimeType,
-            Integer width,
-            String outputFormat,
+            String originalAssetId,
             Instant timestamp
     ) {}
 }

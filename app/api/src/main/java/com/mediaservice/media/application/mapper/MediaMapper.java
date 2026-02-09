@@ -1,9 +1,9 @@
 package com.mediaservice.media.application.mapper;
 
+import com.mediaservice.media.api.dto.MediaAssetResponse;
 import com.mediaservice.media.api.dto.MediaResponse;
-import com.mediaservice.media.api.dto.StatusResponse;
 import com.mediaservice.common.model.Media;
-import com.mediaservice.common.model.MediaStatus;
+import com.mediaservice.common.model.MediaAsset;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -16,10 +16,10 @@ public class MediaMapper {
         .mimetype(media.getMimetype())
         .mediaType(media.getMediaType())
         .status(media.getStatus())
-        .width(media.getWidth())
-        .outputFormat(media.getOutputFormat())
+        .originalAssetId(media.getOriginalAssetId())
         .createdAt(media.getCreatedAt())
         .updatedAt(media.getUpdatedAt())
+        .deletedAt(media.getDeletedAt())
         .documentPageCount(media.getDocumentPageCount())
         .documentTitle(media.getDocumentTitle())
         .documentAuthor(media.getDocumentAuthor())
@@ -41,7 +41,24 @@ public class MediaMapper {
     return MediaResponse.builder().message(message).build();
   }
 
-  public StatusResponse toStatusResponse(MediaStatus status) {
-    return StatusResponse.builder().status(status).build();
+  public MediaAssetResponse toAssetResponse(MediaAsset asset) {
+    return MediaAssetResponse.builder()
+        .assetId(asset.getAssetId())
+        .mediaId(asset.getMediaId())
+        .sourceAssetId(asset.getSourceAssetId())
+        .type(asset.getType())
+        .tags(asset.getTags())
+        .status(asset.getStatus())
+        .outputFormat(asset.getOutputFormat())
+        .mimetype(asset.getMimetype())
+        .size(asset.getSize())
+        .width(asset.getWidth())
+        .height(asset.getHeight())
+        .downloadName(asset.getDownloadName())
+        .operation(asset.getOperation())
+        .createdAt(asset.getCreatedAt())
+        .updatedAt(asset.getUpdatedAt())
+        .errorMessage(asset.getErrorMessage())
+        .build();
   }
 }

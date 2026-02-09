@@ -118,6 +118,35 @@ public abstract class AbstractS3StorageRepository implements S3StorageRepository
     return presignedRequest.url().toString();
   }
 
+  /**
+   * Generate a presigned download URL with optional content disposition/type overrides.
+   *
+   * @param key          The S3 object key
+   * @param expiration   Signature duration
+   * @param downloadName Optional filename for Content-Disposition
+   * @param contentType  Optional response Content-Type override
+   * @return Presigned URL
+   */
+  public String generatePresignedDownloadUrl(String key, Duration expiration, String downloadName, String contentType) {
+    var requestBuilder = GetObjectRequest.builder()
+        .bucket(bucketName)
+        .key(key);
+    if (downloadName != null && !downloadName.isBlank()) {
+      String safeName = downloadName.replace("\"", "");
+      requestBuilder.responseContentDisposition("attachment; filename=\"" + safeName + "\"");
+    }
+    if (contentType != null && !contentType.isBlank()) {
+      requestBuilder.responseContentType(contentType);
+    }
+    var presignRequest = GetObjectPresignRequest.builder()
+        .signatureDuration(expiration)
+        .getObjectRequest(requestBuilder.build())
+        .build();
+    var presignedRequest = s3Presigner.presignGetObject(presignRequest);
+    log.debug("Generated presigned download URL with disposition for: bucket={}, key={}", bucketName, key);
+    return presignedRequest.url().toString();
+  }
+
   @Override
   public String generatePresignedUploadUrl(String key, String contentType, Duration expiration) {
     var putObjectRequest = PutObjectRequest.builder()

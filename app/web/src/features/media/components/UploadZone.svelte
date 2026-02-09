@@ -5,6 +5,7 @@
   import {
     createUploadMutation,
     createPresignedUploadMutation,
+    createAssetsMutation as buildAssetsMutation,
     PRESIGNED_UPLOAD_THRESHOLD,
     MAX_DIRECT_UPLOAD_SIZE,
     MAX_PRESIGNED_UPLOAD_SIZE,
@@ -12,9 +13,8 @@
   import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf.mjs";
   import workerSrc from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
   import { invalidateMediaList } from "../../../shared/queries";
-  import { pollForStatus } from "../services";
   import { isProcessing, currentMediaId } from "../stores";
-  import type { OutputFormat, MediaType } from "../../../shared/types";
+  import type { OutputFormat, MediaType, CreateAssetRequest } from "../../../shared/types";
 
   interface Props {
     mediaType?: MediaType;
@@ -26,7 +26,7 @@
   let previewUrl: string | null = $state(null);
   let dragover = $state(false);
   let width = $state(500);
-  let outputFormat = $state<OutputFormat>("jpeg");
+  let selectedFormats = $state<OutputFormat[]>(["jpeg"]);
   let selectedMediaType = $state<MediaType | null>(null);
   let webhookUrl = $state("");
   let showAdvanced = $state(false);
@@ -43,6 +43,7 @@
 
   const uploadMutation = createUploadMutation();
   const presignedUploadMutation = createPresignedUploadMutation();
+  const assetsMutation = buildAssetsMutation();
 
   const formatOptions: { value: OutputFormat; label: string }[] = [
     { value: "jpeg", label: "JPEG" },
@@ -209,8 +210,6 @@
         // Use presigned URL upload for large files or when webhook URL is provided
         const result = await presignedUploadMutation.mutateAsync({
           file: selectedFile,
-          width: selectedMediaType === "image" ? width : undefined,
-          outputFormat,
           mediaType: selectedMediaType || undefined,
           webhookUrl: webhookUrl.trim() || undefined,
           onProgress: (progress: number) => {
@@ -222,18 +221,32 @@
         // Use direct upload for smaller files
         const result = await uploadMutation.mutateAsync({
           file: selectedFile,
-          width: selectedMediaType === "image" ? width : undefined,
-          outputFormat,
           mediaType: selectedMediaType || undefined,
         });
         mediaId = result.mediaId;
       }
 
-      // Poll for completion and invalidate cache
-      await pollForStatus(mediaId, ["COMPLETE", "ERROR"], () => {
-        // Invalidate media list on each status change to keep UI in sync
-        invalidateMediaList();
-      });
+      // Create derived assets after upload
+      const outputs: CreateAssetRequest["outputs"] = [];
+      if (selectedMediaType === "image") {
+        for (const format of selectedFormats) {
+          outputs.push({
+            operation: "image.process",
+            outputFormat: format,
+            width,
+          });
+        }
+      } else if (selectedMediaType === "document") {
+        outputs.push({ operation: "document.preview" });
+        outputs.push({ operation: "document.text" });
+      }
+
+      if (outputs.length > 0) {
+        const request: CreateAssetRequest = { outputs };
+        await assetsMutation.mutateAsync({ mediaId, request });
+      }
+
+      invalidateMediaList();
 
       currentMediaId.set(mediaId);
       clearFile();
@@ -350,19 +363,32 @@
           <span class="text-xs font-mono text-gray-600 bg-gray-100 px-2 py-1 rounded">{width}px</span>
         </div>
       </div>
-      <div class="min-w-32">
-        <label for="formatSelect" class="block text-xs font-medium text-gray-600 mb-2">Output Format</label>
-        <select
-          id="formatSelect"
-          bind:value={outputFormat}
-          disabled={$isProcessing}
-          class="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
-        >
+      <fieldset class="min-w-32">
+        <legend class="block text-xs font-medium text-gray-600 mb-2">Output Formats</legend>
+        <div class="flex flex-col gap-2">
           {#each formatOptions as option}
-            <option value={option.value}>{option.label}</option>
+            <label class="inline-flex items-center gap-2 text-xs text-gray-700">
+              <input
+                type="checkbox"
+                value={option.value}
+                checked={selectedFormats.includes(option.value)}
+                disabled={$isProcessing}
+                onchange={(e) => {
+                  const target = e.currentTarget as HTMLInputElement;
+                  const value = target.value as OutputFormat;
+                  if (target.checked) {
+                    selectedFormats = Array.from(new Set([...selectedFormats, value]));
+                  } else {
+                    selectedFormats = selectedFormats.filter((f) => f !== value);
+                  }
+                }}
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {option.label}
+            </label>
           {/each}
-        </select>
-      </div>
+        </div>
+      </fieldset>
     {/if}
     <button
       onclick={handleUpload}

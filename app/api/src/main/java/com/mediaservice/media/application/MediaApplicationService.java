@@ -1,27 +1,35 @@
 package com.mediaservice.media.application;
 
-import com.mediaservice.shared.config.properties.MediaProperties;
-import com.mediaservice.media.api.dto.InitUploadRequest;
-import com.mediaservice.media.api.dto.InitUploadResponse;
-import com.mediaservice.media.api.dto.MediaResponse;
+import com.mediaservice.analytics.application.AnalyticsService;
 import com.mediaservice.common.constants.StorageConstants;
+import com.mediaservice.common.model.AssetOperation;
+import com.mediaservice.common.model.AssetStatus;
+import com.mediaservice.common.model.AssetType;
 import com.mediaservice.common.model.Media;
+import com.mediaservice.common.model.MediaAsset;
 import com.mediaservice.common.model.MediaStatus;
 import com.mediaservice.common.model.MediaType;
 import com.mediaservice.common.model.OutputFormat;
-import com.mediaservice.media.domain.service.ImageValidationService;
+import com.mediaservice.common.model.ProcessingJob;
+import com.mediaservice.common.model.ProcessingJobStatus;
+import com.mediaservice.media.api.dto.CreateAssetOutput;
+import com.mediaservice.media.api.dto.CreateAssetRequest;
+import com.mediaservice.media.api.dto.InitUploadRequest;
+import com.mediaservice.media.api.dto.InitUploadResponse;
 import com.mediaservice.media.domain.service.DocumentValidationService;
+import com.mediaservice.media.domain.service.ImageValidationService;
 import com.mediaservice.media.domain.service.MediaTypeResolver;
 import com.mediaservice.media.infrastructure.messaging.MediaEventPublisher;
+import com.mediaservice.media.infrastructure.persistence.MediaAssetDynamoDbRepository;
 import com.mediaservice.media.infrastructure.persistence.MediaDynamoDbRepository;
+import com.mediaservice.media.infrastructure.persistence.ProcessingJobDynamoDbRepository;
 import com.mediaservice.media.infrastructure.storage.S3StorageService;
-import com.mediaservice.shared.cache.CacheInvalidationService;
-import com.mediaservice.shared.cache.MultiLevelCacheOrchestrator;
-import com.mediaservice.shared.config.properties.MediaProperties.Upload;
 import com.mediaservice.shared.auth.AuthorizationService;
 import com.mediaservice.shared.auth.TenantContext;
+import com.mediaservice.shared.cache.CacheInvalidationService;
+import com.mediaservice.shared.cache.MultiLevelCacheOrchestrator;
+import com.mediaservice.shared.config.properties.MediaProperties;
 import com.mediaservice.shared.http.error.MediaGoneException;
-import com.mediaservice.analytics.application.AnalyticsService;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.trace.Span;
@@ -29,28 +37,23 @@ import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Scope;
+import java.io.IOException;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.time.Duration;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
-
-/**
- * Application service for media operations.
- *
- * <p>
- * This service orchestrates the media upload, processing, and retrieval flows.
- * It acts as the entry point for all media-related use cases.
- */
 @Slf4j
 @Service
 public class MediaApplicationService {
   private final MediaDynamoDbRepository mediaRepository;
+  private final MediaAssetDynamoDbRepository assetRepository;
+  private final ProcessingJobDynamoDbRepository jobRepository;
   private final S3StorageService s3Service;
   private final MediaEventPublisher eventPublisher;
   private final MediaProperties mediaProperties;
@@ -65,20 +68,24 @@ public class MediaApplicationService {
   private final LongCounter uploadSuccessCounter;
   private final LongCounter uploadFailureCounter;
 
-  @org.springframework.beans.factory.annotation.Value("${aws.cloudfront.domain:}")
-  private String cloudfrontDomain;
-
-  @org.springframework.beans.factory.annotation.Value("${aws.cloudfront.enabled:false}")
-  private boolean cloudfrontEnabled;
-
-  public MediaApplicationService(MediaDynamoDbRepository mediaRepository, S3StorageService s3Service,
-      MediaEventPublisher eventPublisher, MediaProperties mediaProperties,
-      ImageValidationService imageValidationService, DocumentValidationService documentValidationService,
-      MediaTypeResolver mediaTypeResolver, CacheInvalidationService cacheInvalidationService,
-      MultiLevelCacheOrchestrator cacheOrchestrator, AnalyticsService analyticsService,
+  public MediaApplicationService(MediaDynamoDbRepository mediaRepository,
+      MediaAssetDynamoDbRepository assetRepository,
+      ProcessingJobDynamoDbRepository jobRepository,
+      S3StorageService s3Service,
+      MediaEventPublisher eventPublisher,
+      MediaProperties mediaProperties,
+      ImageValidationService imageValidationService,
+      DocumentValidationService documentValidationService,
+      MediaTypeResolver mediaTypeResolver,
+      CacheInvalidationService cacheInvalidationService,
+      MultiLevelCacheOrchestrator cacheOrchestrator,
+      AnalyticsService analyticsService,
       AuthorizationService authorizationService,
-      Tracer tracer, Meter meter) {
+      Tracer tracer,
+      Meter meter) {
     this.mediaRepository = mediaRepository;
+    this.assetRepository = assetRepository;
+    this.jobRepository = jobRepository;
     this.s3Service = s3Service;
     this.eventPublisher = eventPublisher;
     this.mediaProperties = mediaProperties;
@@ -98,15 +105,15 @@ public class MediaApplicationService {
         .build();
   }
 
-  public MediaResponse uploadMedia(MultipartFile file, Integer width, String outputFormat, String mediaType) throws IOException {
+  public Media uploadMedia(MultipartFile file, String mediaType) throws IOException {
     String contentType = file.getContentType();
-    MediaType resolvedType = mediaTypeResolver.resolve(MediaType.fromString(mediaType), contentType, file.getOriginalFilename());
+    MediaType resolvedType = mediaTypeResolver.resolve(MediaType.fromString(mediaType), contentType,
+        file.getOriginalFilename());
     if (resolvedType == null) {
       throw new IllegalArgumentException("Invalid file type. Only images and PDFs are supported.");
     }
 
     if (resolvedType == MediaType.IMAGE) {
-      // Validate actual image content (magic bytes + parsing)
       imageValidationService.validateImage(file);
     } else if (resolvedType == MediaType.DOCUMENT) {
       documentValidationService.validatePdf(file);
@@ -117,62 +124,61 @@ public class MediaApplicationService {
         .startSpan();
     try (Scope scope = span.makeCurrent()) {
       String mediaId = UUID.randomUUID().toString();
+      String assetId = UUID.randomUUID().toString();
       span.setAttribute("media.id", mediaId);
 
-      Integer targetWidth = null;
-      OutputFormat targetFormat = null;
-      if (resolvedType == MediaType.IMAGE) {
-        targetWidth = mediaProperties.resolveWidth(width);
-        targetFormat = OutputFormat.fromString(outputFormat);
-      }
-
       String originalName = file.getOriginalFilename();
-      String fileName = (originalName == null || originalName.isEmpty()) ? "image.jpg" : originalName;
+      String fileName = (originalName == null || originalName.isEmpty()) ? "upload" : originalName;
       span.setAttribute("file.name", fileName);
-      if (targetFormat != null) {
-        span.setAttribute("output.format", targetFormat.getFormat());
-      }
       span.setAttribute("media.type", resolvedType.getValue());
       String tenantId = TenantContext.getTenantId();
       String userId = TenantContext.getUserId();
 
-      // Step 1: Upload original to S3
-      s3Service.uploadMedia(tenantId, mediaId, fileName, file);
-      // Step 2: Store metadata in DynamoDB with PENDING status
+      s3Service.uploadAsset(tenantId, mediaId, assetId, fileName, file);
+
+      Media media = Media.builder()
+          .mediaId(mediaId)
+          .tenantId(tenantId)
+          .userId(userId)
+          .size(file.getSize())
+          .name(fileName)
+          .mimetype(contentType)
+          .mediaType(resolvedType)
+          .status(MediaStatus.COMPLETE)
+          .originalAssetId(assetId)
+          .createdAt(Instant.now())
+          .build();
+
       try {
-        mediaRepository.createMedia(Media.builder()
+        mediaRepository.createMedia(media);
+        assetRepository.createAsset(MediaAsset.builder()
+            .assetId(assetId)
             .mediaId(mediaId)
             .tenantId(tenantId)
-            .userId(userId)
-            .size(file.getSize())
-            .name(fileName)
+            .sourceAssetId(null)
+            .type(AssetType.ORIGINAL)
+            .tags(List.of("original"))
+            .status(AssetStatus.COMPLETE)
+            .outputFormat(formatFromFileName(fileName))
             .mimetype(contentType)
-            .mediaType(resolvedType)
-            .status(MediaStatus.PENDING)
-            .width(targetWidth)
-            .outputFormat(targetFormat)
+            .size(file.getSize())
+            .downloadName(fileName)
+            .createdAt(Instant.now())
             .build());
       } catch (Exception e) {
-        // Compensate: delete S3 object
-        compensateS3Upload(tenantId, mediaId, fileName);
+        try {
+          s3Service.deleteAsset(tenantId, mediaId, assetId, fileName);
+        } catch (Exception cleanupErr) {
+          log.warn("Failed to clean up S3 asset after DB failure: {}", cleanupErr.getMessage());
+        }
+        mediaRepository.deleteMedia(mediaId);
         throw e;
       }
-      // Step 3: Publish event to SNS for async processing by Lambda
-      try {
-        eventPublisher.publishProcessMediaEvent(mediaId, tenantId, resolvedType.getValue(), targetWidth,
-            targetFormat != null ? targetFormat.getFormat() : null);
-      } catch (Exception e) {
-        // Compensate: delete DynamoDB record and S3 object
-        compensateDynamoDb(mediaId);
-        compensateS3Upload(tenantId, mediaId, fileName);
-        throw e;
-      }
-      span.setStatus(StatusCode.OK);
+      cacheInvalidationService.invalidatePaginationCache();
+
       uploadSuccessCounter.add(1);
-      log.info("Media uploaded successfully: mediaId={}, fileName={}, mediaType={}, outputFormat={}",
-          mediaId, fileName, resolvedType.getValue(),
-          targetFormat != null ? targetFormat.getFormat() : "n/a");
-      return MediaResponse.builder().mediaId(mediaId).build();
+      log.info("Media uploaded successfully: mediaId={}, assetId={}, fileName={}", mediaId, assetId, fileName);
+      return media;
     } catch (Exception e) {
       uploadFailureCounter.add(1);
       span.setStatus(StatusCode.ERROR, e.getMessage());
@@ -183,46 +189,10 @@ public class MediaApplicationService {
     }
   }
 
-  private void compensateS3Upload(String tenantId, String mediaId, String fileName) {
-    try {
-      s3Service.deleteUpload(tenantId, mediaId, fileName);
-    } catch (Exception e) {
-      log.error("Failed to compensate S3 upload for mediaId={}: {}", mediaId, e.getMessage());
-    }
-  }
-
-  private void compensateDynamoDb(String mediaId) {
-    try {
-      mediaRepository.deleteMedia(mediaId);
-    } catch (Exception e) {
-      log.error("Failed to compensate DynamoDB record for mediaId={}: {}", mediaId, e.getMessage());
-    }
-  }
-
-  /**
-   * Get media status.
-   * Note: Status is NOT cached because it changes frequently during processing
-   * and caching would cause stale status to be returned during polling.
-   */
-  public Optional<MediaStatus> getMediaStatus(String mediaId) {
-    return mediaRepository.getMedia(mediaId).map(Media::getStatus);
-  }
-
-  /**
-   * Get media details with multi-level caching.
-   */
   public Optional<Media> getMedia(String mediaId) {
     return cacheOrchestrator.getMedia(mediaId);
   }
 
-  /**
-   * Get media, throwing MediaGoneException if deleted.
-   * Use this for API endpoints that should return 410 for deleted media.
-   *
-   * @param mediaId the media ID
-   * @return the media if found and not deleted, empty if not found
-   * @throws MediaGoneException if media is deleted
-   */
   public Optional<Media> getActiveMedia(String mediaId) {
     return getMedia(mediaId).map(media -> {
       if (media.getStatus() == MediaStatus.DELETED) {
@@ -233,385 +203,180 @@ public class MediaApplicationService {
     });
   }
 
-  /**
-   * Get media status, throwing MediaGoneException if deleted.
-   *
-   * @param mediaId the media ID
-   * @return the status if found and not deleted, empty if not found
-   * @throws MediaGoneException if media is deleted
-   */
-  public Optional<MediaStatus> getActiveMediaStatus(String mediaId) {
-    return mediaRepository.getMedia(mediaId).map(media -> {
-      if (media.getStatus() == MediaStatus.DELETED) {
-        throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
-      }
-      authorizationService.requireMediaAccess(media);
-      return media.getStatus();
-    });
+  public MediaDynamoDbRepository.MediaPagedResult getMediaPaginated(String cursor, Integer limit, MediaType mediaType) {
+    return mediaRepository.getMediaPaginated(cursor, limit, mediaType);
   }
 
-  /**
-   * Prepare download for media.
-   * Handles all business logic: not found, deleted, processing, and ready states.
-   * Records analytics (view + download) when download is ready.
-   *
-   * @param mediaId the media ID
-   * @return DownloadResult indicating the state and data
-   * @throws MediaGoneException if media is deleted
-   */
-  public DownloadResult prepareDownload(String mediaId) {
-    var mediaOpt = mediaRepository.getMedia(mediaId);
-    if (mediaOpt.isEmpty()) {
-      return new DownloadResult.NotFound();
-    }
+  public List<MediaAsset> listAssets(String mediaId) {
+    getActiveMedia(mediaId);
+    return assetRepository.listAssets(mediaId);
+  }
 
-    var media = mediaOpt.get();
-    if (media.getStatus() == MediaStatus.DELETED) {
-      throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
-    }
-    authorizationService.requireMediaAccess(media);
+  public List<MediaAsset> listAssetsPublic(String mediaId) {
+    return assetRepository.listAssets(mediaId);
+  }
 
-    MediaType resolvedType = resolveMediaType(media);
-    if (resolvedType == MediaType.DOCUMENT) {
-      if (media.getStatus() == MediaStatus.PENDING_UPLOAD) {
-        return new DownloadResult.Processing(mediaId);
-      }
-    } else if (media.getStatus() != MediaStatus.COMPLETE) {
-      return new DownloadResult.Processing(mediaId);
-    }
+  public Optional<MediaAsset> getAsset(String mediaId, String assetId) {
+    return assetRepository.getAsset(mediaId, assetId);
+  }
 
-    return getDownloadUrl(media)
-        .map(url -> {
-          // Record analytics in application layer
-          String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
-          analyticsService.recordView(tenantId, mediaId);
-          if (resolvedType == MediaType.IMAGE) {
-            analyticsService.recordDownload(tenantId, mediaId, media.getOutputFormatOrDefault(), media.getWidth());
+  public Optional<String> getAssetDownloadUrl(String mediaId, String assetId) {
+    return assetRepository.getAsset(mediaId, assetId)
+        .flatMap(asset -> mediaRepository.getMedia(mediaId).map(media -> new AssetContext(media, asset)))
+        .flatMap(ctx -> {
+          if (ctx.media.getStatus() == MediaStatus.DELETED) {
+            throw new MediaGoneException("Media has been deleted", ctx.media.getDeletedAt());
           }
-          return (DownloadResult) new DownloadResult.Ready(url, media);
-        })
-        .orElse(new DownloadResult.NotFound());
-  }
-
-  /**
-   * Prepare download for public access (no tenant authorization enforced).
-   */
-  public DownloadResult prepareDownloadPublic(String mediaId) {
-    var mediaOpt = mediaRepository.getMedia(mediaId);
-    if (mediaOpt.isEmpty()) {
-      return new DownloadResult.NotFound();
-    }
-
-    var media = mediaOpt.get();
-    if (media.getStatus() == MediaStatus.DELETED) {
-      throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
-    }
-
-    MediaType resolvedType = resolveMediaType(media);
-    if (resolvedType == MediaType.DOCUMENT) {
-      if (media.getStatus() == MediaStatus.PENDING_UPLOAD) {
-        return new DownloadResult.Processing(mediaId);
-      }
-    } else if (media.getStatus() != MediaStatus.COMPLETE) {
-      return new DownloadResult.Processing(mediaId);
-    }
-
-    return getDownloadUrl(media)
-        .map(url -> {
-          String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
-          analyticsService.recordView(tenantId, mediaId);
-          if (resolvedType == MediaType.IMAGE) {
-            analyticsService.recordDownload(tenantId, mediaId, media.getOutputFormatOrDefault(), media.getWidth());
+          authorizationService.requireMediaAccess(ctx.media);
+          if (ctx.asset.getStatus() != AssetStatus.COMPLETE) {
+            return Optional.empty();
           }
-          return (DownloadResult) new DownloadResult.Ready(url, media);
-        })
-        .orElse(new DownloadResult.NotFound());
-  }
-
-  /**
-   * Prepare preview for media.
-   * Handles all business logic: not found, processing, and ready states.
-   * Records view analytics when preview is ready.
-   *
-   * @param mediaId the media ID
-   * @return PreviewResult indicating the state and data
-   */
-  public PreviewResult preparePreview(String mediaId) {
-    var mediaOpt = mediaRepository.getMedia(mediaId);
-    if (mediaOpt.isEmpty()) {
-      return new PreviewResult.NotFound();
-    }
-
-    var media = mediaOpt.get();
-    if (media.getStatus() == MediaStatus.DELETED) {
-      return new PreviewResult.NotFound();
-    }
-
-    authorizationService.requireMediaAccess(media);
-
-    MediaType resolvedType = resolveMediaType(media);
-    if (resolvedType == MediaType.DOCUMENT) {
-      if (media.getStatus() == MediaStatus.PENDING_UPLOAD) {
-        return new PreviewResult.NotFound();
-      }
-      if (!documentPreviewExists(media)) {
-        return new PreviewResult.Processing(mediaId);
-      }
-    } else if (resolvedType != MediaType.IMAGE) {
-      return new PreviewResult.NotFound();
-    } else if (media.getStatus() != MediaStatus.COMPLETE) {
-      return new PreviewResult.Processing(mediaId);
-    }
-
-    return getPreviewUrl(media)
-        .map(url -> {
-          // Record view analytics in application layer
-          String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
-          analyticsService.recordView(tenantId, mediaId);
-          return (PreviewResult) new PreviewResult.Ready(url);
-        })
-        .orElse(new PreviewResult.NotFound());
-  }
-
-  /**
-   * Prepare preview for public access (no tenant authorization enforced).
-   */
-  public PreviewResult preparePreviewPublic(String mediaId) {
-    var mediaOpt = mediaRepository.getMedia(mediaId);
-    if (mediaOpt.isEmpty()) {
-      return new PreviewResult.NotFound();
-    }
-
-    var media = mediaOpt.get();
-    if (media.getStatus() == MediaStatus.DELETED) {
-      throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
-    }
-
-    MediaType resolvedType = resolveMediaType(media);
-    if (resolvedType == MediaType.DOCUMENT) {
-      if (media.getStatus() == MediaStatus.PENDING_UPLOAD) {
-        return new PreviewResult.NotFound();
-      }
-      if (!documentPreviewExists(media)) {
-        return new PreviewResult.Processing(mediaId);
-      }
-    } else if (resolvedType != MediaType.IMAGE) {
-      return new PreviewResult.NotFound();
-    } else if (media.getStatus() != MediaStatus.COMPLETE) {
-      return new PreviewResult.Processing(mediaId);
-    }
-
-    return getPreviewUrl(media)
-        .map(url -> {
-          String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
-          analyticsService.recordView(tenantId, mediaId);
-          return (PreviewResult) new PreviewResult.Ready(url);
-        })
-        .orElse(new PreviewResult.NotFound());
-  }
-
-  /**
-   * Prepare extracted document text for access.
-   */
-  public DocumentTextResult prepareDocumentText(String mediaId) {
-    return prepareDocumentText(mediaId, false);
-  }
-
-  /**
-   * Prepare extracted document text for access.
-   *
-   * @param inline if true, returns inline JSON content instead of a presigned URL
-   */
-  public DocumentTextResult prepareDocumentText(String mediaId, boolean inline) {
-    var mediaOpt = mediaRepository.getMedia(mediaId);
-    if (mediaOpt.isEmpty()) {
-      return new DocumentTextResult.NotFound();
-    }
-
-    var media = mediaOpt.get();
-    if (media.getStatus() == MediaStatus.DELETED) {
-      return new DocumentTextResult.NotFound();
-    }
-
-    authorizationService.requireMediaAccess(media);
-    if (resolveMediaType(media) != MediaType.DOCUMENT) {
-      return new DocumentTextResult.NotFound();
-    }
-    if (media.getStatus() == MediaStatus.PENDING_UPLOAD) {
-      return new DocumentTextResult.NotFound();
-    }
-
-    String tenantId = media.getTenantId() != null ? media.getTenantId() : "default";
-    if (!s3Service.textExists(tenantId, mediaId)) {
-      return new DocumentTextResult.Processing(mediaId);
-    }
-
-    if (inline) {
-      return s3Service.getTextContent(tenantId, mediaId)
-          .map(content -> (DocumentTextResult) new DocumentTextResult.ReadyInline(content))
-          .orElse(new DocumentTextResult.NotFound());
-    }
-
-    return s3Service.getTextPresignedUrl(tenantId, mediaId)
-        .map(url -> (DocumentTextResult) new DocumentTextResult.Ready(url))
-        .orElse(new DocumentTextResult.NotFound());
-  }
-
-  /**
-   * Get presigned URL for the original uploaded file.
-   *
-   * @param mediaId the media ID
-   * @return presigned URL if media exists and has been uploaded, empty otherwise
-   * @throws MediaGoneException if media is deleted
-   */
-  public Optional<String> getOriginalUrl(String mediaId) {
-    return mediaRepository.getMedia(mediaId)
-        .map(media -> {
-          if (media.getStatus() == MediaStatus.DELETED) {
-            throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
-          }
-          authorizationService.requireMediaAccess(media);
-          if (media.getStatus() == MediaStatus.PENDING_UPLOAD) {
-            return null;
-          }
-          String tenantId = media.getTenantId() != null ? media.getTenantId() : "default";
-          return s3Service.getOriginalPresignedUrl(tenantId, mediaId, media.getName());
+          boolean recordAnalytics = shouldRecordAnalytics(ctx.asset);
+          return Optional.ofNullable(buildAssetDownloadUrl(ctx.media, ctx.asset, recordAnalytics));
         });
   }
 
-  /**
-   * Get presigned URL for the original uploaded file (public access).
-   */
-  public Optional<String> getOriginalUrlPublic(String mediaId) {
-    return mediaRepository.getMedia(mediaId)
-        .map(media -> {
-          if (media.getStatus() == MediaStatus.DELETED) {
-            throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
+  public Optional<String> getAssetDownloadUrlPublic(String mediaId, String assetId) {
+    return assetRepository.getAsset(mediaId, assetId)
+        .flatMap(asset -> mediaRepository.getMedia(mediaId).map(media -> new AssetContext(media, asset)))
+        .flatMap(ctx -> {
+          if (ctx.media.getStatus() == MediaStatus.DELETED) {
+            throw new MediaGoneException("Media has been deleted", ctx.media.getDeletedAt());
           }
-          if (media.getStatus() == MediaStatus.PENDING_UPLOAD) {
-            return null;
+          if (ctx.asset.getStatus() != AssetStatus.COMPLETE) {
+            return Optional.empty();
           }
-          String tenantId = media.getTenantId() != null ? media.getTenantId() : "default";
-          return s3Service.getOriginalPresignedUrl(tenantId, mediaId, media.getName());
+          return Optional.ofNullable(buildAssetDownloadUrl(ctx.media, ctx.asset, false));
         });
   }
 
-  /**
-   * Get presigned download URL with multi-level caching.
-   */
-  public Optional<String> getDownloadUrl(String mediaId) {
-    return mediaRepository.getMedia(mediaId)
-        .filter(media -> media.getStatus() == MediaStatus.COMPLETE)
-        .flatMap(this::getDownloadUrl);
-  }
-
-  /**
-   * Get preview URL for CDN-served watermarked preview image.
-   * Returns CloudFront URL if enabled, otherwise falls back to S3 presigned URL.
-   */
-  public Optional<String> getPreviewUrl(String mediaId) {
-    return mediaRepository.getMedia(mediaId)
-        .filter(media -> media.getStatus() == MediaStatus.COMPLETE)
-        .flatMap(this::getPreviewUrl);
-  }
-
-  private Optional<String> getDownloadUrl(Media media) {
-    String tenantId = media.getTenantId() != null ? media.getTenantId() : "default";
-    if (resolveMediaType(media) == MediaType.DOCUMENT) {
-      return Optional.ofNullable(s3Service.getOriginalPresignedUrl(tenantId, media.getMediaId(), media.getName()));
-    }
-    var format = media.getOutputFormatOrDefault();
-    return cacheOrchestrator.getPresignedUrl(
-        media.getMediaId(),
-        format.getFormat(),
-        () -> s3Service.getPresignedUrl(tenantId, media.getMediaId(), media.getName(), format));
-  }
-
-  private Optional<String> getPreviewUrl(Media media) {
-    MediaType resolvedType = resolveMediaType(media);
-    if (resolvedType == MediaType.IMAGE) {
-      return Optional.ofNullable(buildPreviewUrl(media, media.getOutputFormatOrDefault()));
-    }
-    if (resolvedType == MediaType.DOCUMENT) {
-      return Optional.ofNullable(buildPreviewUrl(media, OutputFormat.PNG));
-    }
-    return Optional.empty();
-  }
-
-  private String buildPreviewUrl(Media media, OutputFormat format) {
-    String tenantId = media.getTenantId() != null ? media.getTenantId() : "default";
-    String key = StorageConstants.buildS3Key(tenantId, media.getMediaId(), StorageConstants.VARIANT_PREVIEW,
-        format.getExtension());
-
-    if (cloudfrontEnabled && cloudfrontDomain != null && !cloudfrontDomain.isEmpty()) {
-      return "https://" + cloudfrontDomain + "/" + key;
-    }
-    // Fallback to S3 presigned URL if CloudFront not configured
-    return s3Service.getPreviewPresignedUrl(tenantId, media.getMediaId(), format).orElse(null);
-  }
-
-  private boolean documentPreviewExists(Media media) {
-    String tenantId = media.getTenantId() != null ? media.getTenantId() : "default";
-    return s3Service.previewExists(tenantId, media.getMediaId(), OutputFormat.PNG);
-  }
-
-  public boolean isMediaProcessing(String mediaId) {
-    return mediaRepository.getMedia(mediaId)
-        .map(media -> media.getStatus() != MediaStatus.COMPLETE)
-        .orElse(false);
-  }
-
-  /**
-   * Resize media to a new width/format.
-   *
-   * @param mediaId      the media ID
-   * @param width        target width
-   * @param outputFormat target format (optional)
-   * @return MediaOperationResult indicating success or failure reason
-   */
-  public MediaOperationResult resizeMedia(String mediaId, Integer width, String outputFormat) {
-    var mediaOpt = mediaRepository.getMedia(mediaId);
-    if (mediaOpt.isEmpty()) {
-      return new MediaOperationResult.NotFound(mediaId);
-    }
-
-    var media = mediaOpt.get();
+  public List<MediaAsset> createAssets(String mediaId, CreateAssetRequest request) {
+    var media = mediaRepository.getMedia(mediaId)
+        .orElseThrow(() -> new IllegalArgumentException("Media not found"));
     if (media.getStatus() == MediaStatus.DELETED) {
-      return new MediaOperationResult.Deleted(mediaId, media.getDeletedAt());
+      throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
     }
     authorizationService.requireMediaAccess(media);
-    if (resolveMediaType(media) != MediaType.IMAGE) {
-      return new MediaOperationResult.NotAllowed(mediaId, "Resize is only supported for images.");
+
+    String sourceAssetId = request.getSourceAssetId() != null ? request.getSourceAssetId() : media.getOriginalAssetId();
+    var sourceAsset = assetRepository.getAsset(mediaId, sourceAssetId)
+        .orElseThrow(() -> new IllegalArgumentException("Source asset not found"));
+    if (sourceAsset.getStatus() != AssetStatus.COMPLETE) {
+      throw new IllegalArgumentException("Source asset is not ready");
     }
 
-    var updated = mediaRepository.updateStatusConditionally(mediaId, MediaStatus.PENDING, MediaStatus.COMPLETE);
+    var existingAssets = new ArrayList<>(assetRepository.listAssets(mediaId));
+    List<MediaAsset> created = new ArrayList<>();
+    boolean createdNew = false;
+    for (CreateAssetOutput output : request.getOutputs()) {
+      AssetOperation operation = output.getOperation();
+      validateOperation(media.getMediaType(), operation);
+
+      String assetId = UUID.randomUUID().toString();
+      String outputFormat = resolveOutputFormat(operation, output.getOutputFormat());
+      Integer width = resolveWidth(operation, output.getWidth());
+      AssetType type = resolveAssetType(operation);
+      List<String> tags = resolveTags(operation, output.getTags());
+      String downloadName = resolveDownloadName(media.getName(), operation, outputFormat, output.getDownloadName());
+
+      MediaAsset existing = findMatchingAsset(existingAssets, sourceAssetId, operation, outputFormat, width, tags);
+      if (existing != null && existing.getStatus() != AssetStatus.DELETED) {
+        created.add(existing);
+        continue;
+      }
+
+      MediaAsset asset = MediaAsset.builder()
+          .assetId(assetId)
+          .mediaId(mediaId)
+          .tenantId(media.getTenantId())
+          .sourceAssetId(sourceAssetId)
+          .type(type)
+          .tags(tags)
+          .status(AssetStatus.PENDING)
+          .outputFormat(outputFormat)
+          .mimetype(resolveMimeType(operation, outputFormat))
+          .width(width)
+          .downloadName(downloadName)
+          .operation(operation)
+          .createdAt(Instant.now())
+          .build();
+
+      assetRepository.createAsset(asset);
+      existingAssets.add(asset);
+      createdNew = true;
+
+      ProcessingJob job = ProcessingJob.builder()
+          .jobId(UUID.randomUUID().toString())
+          .mediaId(mediaId)
+          .tenantId(media.getTenantId())
+          .assetId(assetId)
+          .sourceAssetId(sourceAssetId)
+          .operation(operation)
+          .outputFormat(outputFormat)
+          .width(width)
+          .downloadName(downloadName)
+          .tags(tags)
+          .status(ProcessingJobStatus.PENDING)
+          .attempts(0)
+          .createdAt(Instant.now())
+          .build();
+      jobRepository.createJob(job);
+      eventPublisher.publishProcessingJob(job, media.getMediaType().getValue());
+      created.add(asset);
+    }
+
+    if (createdNew) {
+      mediaRepository.updateStatus(mediaId, MediaStatus.PROCESSING);
+      cacheInvalidationService.invalidateMedia(mediaId);
+    }
+    return created;
+  }
+
+  public Optional<MediaAsset> retryAsset(String mediaId, String assetId) {
+    var media = mediaRepository.getMedia(mediaId).orElse(null);
+    if (media == null) {
+      return Optional.empty();
+    }
+    if (media.getStatus() == MediaStatus.DELETED) {
+      throw new MediaGoneException("Media has been deleted", media.getDeletedAt());
+    }
+    authorizationService.requireMediaAccess(media);
+    var assetOpt = assetRepository.getAsset(mediaId, assetId);
+    if (assetOpt.isEmpty()) {
+      return Optional.empty();
+    }
+    var asset = assetOpt.get();
+    if (asset.getStatus() != AssetStatus.ERROR) {
+      throw new IllegalArgumentException("Asset must be in ERROR status to retry.");
+    }
+
+    boolean updated = assetRepository.updateStatusConditionally(mediaId, assetId, AssetStatus.PENDING, AssetStatus.ERROR);
     if (!updated) {
-      log.warn("Cannot resize mediaId: {}, not in COMPLETE status (current: {})", mediaId, media.getStatus());
-      return new MediaOperationResult.NotAllowed(mediaId,
-          "Media must be in COMPLETE status to resize. Current status: " + media.getStatus());
+      return Optional.empty();
     }
 
-    OutputFormat targetFormat = outputFormat != null
-        ? OutputFormat.fromString(outputFormat)
-        : media.getOutputFormatOrDefault();
-    String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
-    try {
-      eventPublisher.publishResizeMediaEvent(mediaId, tenantId, MediaType.IMAGE.getValue(), width, targetFormat.getFormat());
-    } catch (Exception e) {
-      log.error("Failed to publish resize event for mediaId={}, reverting status to COMPLETE", mediaId, e);
-      mediaRepository.updateStatusConditionally(mediaId, MediaStatus.COMPLETE, MediaStatus.PENDING);
-      throw e;
-    }
+    ProcessingJob job = ProcessingJob.builder()
+        .jobId(UUID.randomUUID().toString())
+        .mediaId(mediaId)
+        .tenantId(media.getTenantId())
+        .assetId(assetId)
+        .sourceAssetId(asset.getSourceAssetId())
+        .operation(asset.getOperation())
+        .outputFormat(asset.getOutputFormat())
+        .width(asset.getWidth())
+        .downloadName(asset.getDownloadName())
+        .tags(asset.getTags())
+        .status(ProcessingJobStatus.PENDING)
+        .attempts(0)
+        .createdAt(Instant.now())
+        .build();
+    jobRepository.createJob(job);
+    eventPublisher.publishProcessingJob(job, media.getMediaType().getValue());
+    mediaRepository.updateStatus(mediaId, MediaStatus.PROCESSING);
     cacheInvalidationService.invalidateMedia(mediaId);
-    log.info("Resize request submitted for mediaId: {} with outputFormat: {}", mediaId, targetFormat.getFormat());
-
-    return new MediaOperationResult.Success(media);
+    return Optional.of(asset);
   }
 
-  /**
-   * Soft delete media: marks as DELETED, publishes event for S3 cleanup.
-   * The DynamoDB record is retained for analytics/audit purposes.
-   */
   public Optional<Media> deleteMedia(String mediaId) {
     return mediaRepository.getMedia(mediaId)
         .filter(media -> media.getStatus() != MediaStatus.DELETED)
@@ -619,287 +384,313 @@ public class MediaApplicationService {
           authorizationService.requireMediaAccess(media);
           mediaRepository.softDelete(mediaId, Duration.ofDays(mediaProperties.getSoftDeleteRetentionDays()));
           String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
-          try {
-            eventPublisher.publishDeleteMediaEvent(mediaId, tenantId, resolveMediaType(media).getValue());
-          } catch (Exception e) {
-            log.error("Failed to publish delete event for mediaId={}, reverting soft delete", mediaId, e);
-            mediaRepository.revertSoftDelete(mediaId, media.getStatus());
-            throw e;
-          }
+          eventPublisher.publishDeleteMediaEvent(mediaId, tenantId, resolveMediaType(media).getValue());
           cacheInvalidationService.invalidateMedia(mediaId);
-          log.info("Soft delete completed for mediaId: {}", mediaId);
-          return media;
+          return mediaRepository.getMedia(mediaId).orElse(media);
         });
   }
 
-  public boolean mediaExists(String mediaId) {
-    return mediaRepository.getMedia(mediaId).isPresent();
-  }
-
-  /**
-   * Retry processing for media stuck in PROCESSING or ERROR status.
-   * Resets status to PENDING and re-publishes the process event.
-   *
-   * @param mediaId the media ID to retry
-   * @return MediaOperationResult indicating success or failure reason
-   */
-  public MediaOperationResult retryProcessing(String mediaId) {
-    var mediaOpt = mediaRepository.getMedia(mediaId);
-    if (mediaOpt.isEmpty()) {
-      return new MediaOperationResult.NotFound(mediaId);
-    }
-
-    var media = mediaOpt.get();
-    if (media.getStatus() == MediaStatus.DELETED) {
-      return new MediaOperationResult.Deleted(mediaId, media.getDeletedAt());
-    }
-
-    authorizationService.requireMediaAccess(media);
-    MediaType resolvedType = resolveMediaType(media);
-    if (resolvedType != MediaType.IMAGE && resolvedType != MediaType.DOCUMENT) {
-      return new MediaOperationResult.NotAllowed(mediaId, "Retry is only supported for images or documents.");
-    }
-
-    if (media.getStatus() != MediaStatus.PROCESSING && media.getStatus() != MediaStatus.ERROR) {
-      return new MediaOperationResult.NotAllowed(mediaId,
-          "Retry only allowed for PROCESSING or ERROR status. Current status: " + media.getStatus());
-    }
-
-    boolean updated = mediaRepository.updateStatusConditionally(mediaId, MediaStatus.PENDING, media.getStatus());
-    if (!updated) {
-      log.warn("Failed to reset status for retry: mediaId={}", mediaId);
-      return new MediaOperationResult.NotAllowed(mediaId, "Failed to update status (concurrent modification)");
-    }
-
-    String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
-    try {
-      Integer width = resolvedType == MediaType.IMAGE ? media.getWidth() : null;
-      String format = resolvedType == MediaType.IMAGE ? media.getOutputFormatOrDefault().getFormat() : null;
-      eventPublisher.publishProcessMediaEvent(mediaId, tenantId, resolvedType.getValue(), width, format);
-    } catch (Exception e) {
-      log.error("Failed to publish retry event for mediaId={}, reverting status to {}", mediaId, media.getStatus(), e);
-      mediaRepository.updateStatusConditionally(mediaId, media.getStatus(), MediaStatus.PENDING);
-      throw e;
-    }
-    cacheInvalidationService.invalidateMedia(mediaId);
-    log.info("Retry initiated for mediaId={}, previousStatus={}", mediaId, media.getStatus());
-
-    return new MediaOperationResult.Success(media);
-  }
-
-  public MediaDynamoDbRepository.MediaPagedResult getMediaPaginated(String cursor, Integer limit, MediaType mediaType) {
-    if (TenantContext.isAuthenticated()) {
-      return mediaRepository.getMediaPaginatedByTenant(TenantContext.getTenantId(), cursor, limit, mediaType);
-    }
-    return mediaRepository.getMediaPaginated(cursor, limit, mediaType);
-  }
-
   public InitUploadResponse initPresignedUpload(InitUploadRequest request) {
-    Span span = tracer.spanBuilder("init-presigned-upload")
-        .setSpanKind(SpanKind.INTERNAL)
-        .startSpan();
-    try (Scope scope = span.makeCurrent()) {
-      String mediaId = UUID.randomUUID().toString();
-      span.setAttribute("media.id", mediaId);
-
-      String tenantId = TenantContext.getTenantId();
-      String userId = TenantContext.getUserId();
-
-      MediaType resolvedType = mediaTypeResolver.resolve(request.getMediaType(),
-          request.getContentType(), request.getFileName());
-      if (resolvedType == null) {
-        throw new IllegalArgumentException("Invalid file type. Only images and PDFs are supported.");
-      }
-
-      Integer targetWidth = null;
-      OutputFormat targetFormat = null;
-      if (resolvedType == MediaType.IMAGE) {
-        targetWidth = mediaProperties.resolveWidth(request.getWidth());
-        targetFormat = OutputFormat.fromString(request.getOutputFormat());
-      }
-      int expirationSeconds = mediaProperties.getUpload().getPresignedUrlExpirationSeconds();
-
-      span.setAttribute("media.type", resolvedType.getValue());
-      if (targetFormat != null) {
-        span.setAttribute("output.format", targetFormat.getFormat());
-      }
-
-      String uploadUrl = s3Service.generatePresignedUploadUrl(
-          tenantId,
-          mediaId,
-          request.getFileName(),
-          request.getContentType(),
-          Duration.ofSeconds(expirationSeconds));
-
-      Duration ttl = Duration.ofHours(mediaProperties.getUpload().getPendingUploadTtlHours());
-      mediaRepository.createMedia(Media.builder()
-          .mediaId(mediaId)
-          .tenantId(tenantId)
-          .userId(userId)
-          .size(request.getFileSize())
-          .name(request.getFileName())
-          .mimetype(request.getContentType())
-          .mediaType(resolvedType)
-          .status(MediaStatus.PENDING_UPLOAD)
-          .width(targetWidth)
-          .outputFormat(targetFormat)
-          .webhookUrl(request.getWebhookUrl())
-          .build(), ttl);
-
-      var headers = new LinkedHashMap<String, String>();
-      headers.put("Content-Type", request.getContentType());
-
-      span.setStatus(StatusCode.OK);
-      log.info("Presigned upload initialized: mediaId={}, fileName={}, outputFormat={}", mediaId, request.getFileName(),
-          targetFormat != null ? targetFormat.getFormat() : "n/a");
-
-      return InitUploadResponse.builder()
-          .mediaId(mediaId)
-          .uploadUrl(uploadUrl)
-          .expiresIn(expirationSeconds)
-          .method("PUT")
-          .headers(headers)
-          .build();
-    } catch (Exception e) {
-      span.setStatus(StatusCode.ERROR, e.getMessage());
-      span.recordException(e);
-      throw e;
-    } finally {
-      span.end();
+    MediaType resolvedType = mediaTypeResolver.resolve(request.getMediaType(), request.getContentType(),
+        request.getFileName());
+    if (resolvedType == null) {
+      throw new IllegalArgumentException("Invalid file type. Only images and PDFs are supported.");
     }
+
+    String mediaId = UUID.randomUUID().toString();
+    String assetId = UUID.randomUUID().toString();
+    String tenantId = TenantContext.getTenantId();
+    String userId = TenantContext.getUserId();
+
+    Media media = Media.builder()
+        .mediaId(mediaId)
+        .tenantId(tenantId)
+        .userId(userId)
+        .size(request.getFileSize())
+        .name(request.getFileName())
+        .mimetype(request.getContentType())
+        .mediaType(resolvedType)
+        .status(MediaStatus.PENDING_UPLOAD)
+        .originalAssetId(assetId)
+        .webhookUrl(request.getWebhookUrl())
+        .createdAt(Instant.now())
+        .build();
+
+    mediaRepository.createMedia(media, Duration.ofHours(mediaProperties.getUpload().getPendingUploadTtlHours()));
+    assetRepository.createAsset(MediaAsset.builder()
+        .assetId(assetId)
+        .mediaId(mediaId)
+        .tenantId(tenantId)
+        .type(AssetType.ORIGINAL)
+        .tags(List.of("original"))
+        .status(AssetStatus.PENDING_UPLOAD)
+        .outputFormat(formatFromFileName(request.getFileName()))
+        .mimetype(request.getContentType())
+        .size(request.getFileSize())
+        .downloadName(request.getFileName())
+        .createdAt(Instant.now())
+        .build());
+    cacheInvalidationService.invalidatePaginationCache();
+
+    String uploadUrl = s3Service.generatePresignedUploadUrl(
+        tenantId,
+        mediaId,
+        assetId,
+        request.getFileName(),
+        request.getContentType(),
+        Duration.ofSeconds(mediaProperties.getUpload().getPresignedUrlExpirationSeconds()));
+
+    return InitUploadResponse.builder()
+        .mediaId(mediaId)
+        .assetId(assetId)
+        .uploadUrl(uploadUrl)
+        .expiresIn(mediaProperties.getUpload().getPresignedUrlExpirationSeconds())
+        .method("PUT")
+        .headers(java.util.Collections.emptyMap())
+        .build();
   }
 
   public Optional<InitUploadResponse> refreshPresignedUploadUrl(String mediaId) {
-    Span span = tracer.spanBuilder("refresh-presigned-upload-url")
-        .setSpanKind(SpanKind.INTERNAL)
-        .startSpan();
-    try (Scope scope = span.makeCurrent()) {
-      span.setAttribute("media.id", mediaId);
-
-      return mediaRepository.getMedia(mediaId)
-          .filter(media -> media.getStatus() == MediaStatus.PENDING_UPLOAD)
-          .map(media -> {
-            int expirationSeconds = mediaProperties.getUpload().getPresignedUrlExpirationSeconds();
-            String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
-
-            String uploadUrl = s3Service.generatePresignedUploadUrl(
-                tenantId,
-                mediaId,
-                media.getName(),
-                media.getMimetype(),
-                Duration.ofSeconds(expirationSeconds));
-
-            var headers = new LinkedHashMap<String, String>();
-            headers.put("Content-Type", media.getMimetype());
-
-            span.setStatus(StatusCode.OK);
-            log.info("Presigned upload URL refreshed: mediaId={}", mediaId);
-
-            return InitUploadResponse.builder()
-                .mediaId(mediaId)
-                .uploadUrl(uploadUrl)
-                .expiresIn(expirationSeconds)
-                .method("PUT")
-                .headers(headers)
-                .build();
-          });
-    } catch (Exception e) {
-      span.setStatus(StatusCode.ERROR, e.getMessage());
-      span.recordException(e);
-      throw e;
-    } finally {
-      span.end();
-    }
+    return mediaRepository.getMedia(mediaId)
+        .filter(media -> media.getStatus() == MediaStatus.PENDING_UPLOAD)
+        .map(media -> {
+          String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
+          String assetId = media.getOriginalAssetId();
+          String uploadUrl = s3Service.generatePresignedUploadUrl(
+              tenantId,
+              media.getMediaId(),
+              assetId,
+              media.getName(),
+              media.getMimetype(),
+              Duration.ofSeconds(mediaProperties.getUpload().getPresignedUrlExpirationSeconds()));
+          return InitUploadResponse.builder()
+              .mediaId(mediaId)
+              .assetId(assetId)
+              .uploadUrl(uploadUrl)
+              .expiresIn(mediaProperties.getUpload().getPresignedUrlExpirationSeconds())
+              .method("PUT")
+              .headers(java.util.Collections.emptyMap())
+              .build();
+        });
   }
 
   public Optional<Media> completePresignedUpload(String mediaId) {
-    Span span = tracer.spanBuilder("complete-presigned-upload")
-        .setSpanKind(SpanKind.INTERNAL)
-        .startSpan();
-    try (Scope scope = span.makeCurrent()) {
-      span.setAttribute("media.id", mediaId);
-
-      return mediaRepository.getMedia(mediaId)
-          .filter(media -> media.getStatus() == MediaStatus.PENDING_UPLOAD)
-          .flatMap(media -> {
-            String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
-            MediaType resolvedType = resolveMediaType(media);
-            if (!s3Service.objectExists(tenantId, mediaId, media.getName())) {
-              log.warn("File not found in S3 for mediaId: {}", mediaId);
-              return Optional.empty();
-            }
-
-            MediaStatus nextStatus = MediaStatus.PENDING;
-            boolean updated = mediaRepository.updateStatusConditionally(
-                mediaId, nextStatus, MediaStatus.PENDING_UPLOAD, true);
-            if (!updated) {
-              log.warn("Failed to update status for mediaId: {}", mediaId);
-              return Optional.empty();
-            }
-
-            try {
-              Integer width = resolvedType == MediaType.IMAGE ? media.getWidth() : null;
-              String format = resolvedType == MediaType.IMAGE ? media.getOutputFormatOrDefault().getFormat() : null;
-              eventPublisher.publishProcessMediaEvent(mediaId, tenantId, resolvedType.getValue(), width, format);
-            } catch (Exception e) {
-              log.error("Failed to publish process event for mediaId={}, reverting status to PENDING_UPLOAD", mediaId, e);
-              mediaRepository.updateStatusConditionally(mediaId, MediaStatus.PENDING_UPLOAD, MediaStatus.PENDING);
-              throw e;
-            }
-            uploadSuccessCounter.add(1);
-            span.setStatus(StatusCode.OK);
-            log.info("Presigned upload completed: mediaId={}", mediaId);
-            return Optional.of(media);
-          });
-    } catch (Exception e) {
-      uploadFailureCounter.add(1);
-      span.setStatus(StatusCode.ERROR, e.getMessage());
-      span.recordException(e);
-      throw e;
-    } finally {
-      span.end();
-    }
+    return mediaRepository.getMedia(mediaId)
+        .filter(media -> media.getStatus() == MediaStatus.PENDING_UPLOAD)
+        .map(media -> {
+          String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
+          String assetId = media.getOriginalAssetId();
+          boolean exists = s3Service.assetExists(tenantId, media.getMediaId(), assetId, media.getName());
+          if (!exists) {
+            throw new IllegalArgumentException("Upload not found in S3.");
+          }
+          mediaRepository.updateStatus(mediaId, MediaStatus.COMPLETE);
+          assetRepository.updateStatus(mediaId, assetId, AssetStatus.COMPLETE);
+          cacheInvalidationService.invalidateMedia(mediaId);
+          return mediaRepository.getMedia(mediaId).orElse(media);
+        });
   }
 
-  /**
-   * Validate an upload file for size and content.
-   *
-   * @param fileSize the file size in bytes
-   * @param isEmpty whether the file is empty
-   * @throws IllegalArgumentException if validation fails
-   */
   public void validateUploadFile(long fileSize, boolean isEmpty) {
-    long maxFileSize = mediaProperties.getMaxFileSize();
-    if (fileSize > maxFileSize) {
-      throw new IllegalArgumentException(
-          "Failed to upload media. Check the file size. Max size is " + (maxFileSize / (1024 * 1024)) + " MB.");
+    if (isEmpty || fileSize <= 0) {
+      throw new IllegalArgumentException("File is empty");
     }
-    if (isEmpty) {
-      throw new IllegalArgumentException("Malformed multipart form data.");
+    if (fileSize > mediaProperties.getMaxFileSize()) {
+      throw new IllegalArgumentException("File size exceeds maximum allowed");
     }
   }
 
-  /**
-   * Validate a presigned upload request.
-   *
-   * @param fileSize the file size in bytes
-   * @param contentType the content type
-   * @throws IllegalArgumentException if validation fails
-   */
   public void validatePresignedUploadRequest(long fileSize, String contentType, MediaType mediaType, String fileName) {
-    Upload uploadConfig = mediaProperties.getUpload();
-    long maxUploadSize = uploadConfig.getMaxPresignedUploadSize();
-    if (fileSize > maxUploadSize) {
-      throw new IllegalArgumentException(
-          "File size exceeds maximum allowed size of " + (maxUploadSize / (1024 * 1024 * 1024)) + " GB.");
+    if (fileSize <= 0 || fileSize > mediaProperties.getUpload().getMaxPresignedUploadSize()) {
+      throw new IllegalArgumentException("Invalid file size for presigned upload");
     }
     MediaType resolvedType = mediaTypeResolver.resolve(mediaType, contentType, fileName);
     if (resolvedType == null) {
-      throw new IllegalArgumentException("Invalid content type. Only images and PDFs are supported.");
+      throw new IllegalArgumentException("Invalid file type. Only images and PDFs are supported.");
     }
   }
 
   private MediaType resolveMediaType(Media media) {
-    return media.getMediaType() != null ? media.getMediaType() : MediaType.IMAGE;
+    if (media.getMediaType() != null) {
+      return media.getMediaType();
+    }
+    // Default to IMAGE for legacy records without mediaType
+    return MediaType.IMAGE;
+  }
+
+  private void validateOperation(MediaType mediaType, AssetOperation operation) {
+    if (operation == null) {
+      throw new IllegalArgumentException("operation is required");
+    }
+    if (mediaType == MediaType.IMAGE && (operation == AssetOperation.DOCUMENT_PREVIEW || operation == AssetOperation.DOCUMENT_TEXT)) {
+      throw new IllegalArgumentException("Document operations are not allowed for image media.");
+    }
+    if (mediaType == MediaType.DOCUMENT && (operation == AssetOperation.IMAGE_PROCESS || operation == AssetOperation.IMAGE_PREVIEW)) {
+      throw new IllegalArgumentException("Image operations are not allowed for document media.");
+    }
+  }
+
+  private String resolveOutputFormat(AssetOperation operation, String requested) {
+    return switch (operation) {
+      case IMAGE_PROCESS, IMAGE_PREVIEW -> (requested != null && !requested.isBlank()) ? requested : "jpeg";
+      case DOCUMENT_PREVIEW -> "png";
+      case DOCUMENT_TEXT -> "json";
+    };
+  }
+
+  private Integer resolveWidth(AssetOperation operation, Integer requested) {
+    if (operation == AssetOperation.IMAGE_PROCESS || operation == AssetOperation.IMAGE_PREVIEW) {
+      return mediaProperties.resolveWidth(requested);
+    }
+    return null;
+  }
+
+  private AssetType resolveAssetType(AssetOperation operation) {
+    return switch (operation) {
+      case IMAGE_PREVIEW, DOCUMENT_PREVIEW -> AssetType.PREVIEW;
+      case DOCUMENT_TEXT -> AssetType.TEXT;
+      case IMAGE_PROCESS -> AssetType.DERIVED;
+    };
+  }
+
+  private List<String> resolveTags(AssetOperation operation, List<String> requested) {
+    if (requested != null && !requested.isEmpty()) {
+      return requested;
+    }
+    return switch (operation) {
+      case IMAGE_PREVIEW, DOCUMENT_PREVIEW -> List.of("preview");
+      case DOCUMENT_TEXT -> List.of("text");
+      case IMAGE_PROCESS -> List.of("download");
+    };
+  }
+
+  private String resolveDownloadName(String originalName, AssetOperation operation, String outputFormat, String requested) {
+    if (requested != null && !requested.isBlank()) {
+      return requested;
+    }
+    String base = (originalName != null && !originalName.isBlank())
+        ? originalName.replaceAll("\\.[^.]+$", "")
+        : "media";
+    String suffix = switch (operation) {
+      case IMAGE_PREVIEW, DOCUMENT_PREVIEW -> "preview";
+      case DOCUMENT_TEXT -> "text";
+      case IMAGE_PROCESS -> "processed";
+    };
+    return base + "-" + suffix + "." + outputFormat;
+  }
+
+  private String resolveMimeType(AssetOperation operation, String outputFormat) {
+    if (operation == AssetOperation.DOCUMENT_TEXT) {
+      return "application/json";
+    }
+    if ("png".equalsIgnoreCase(outputFormat)) {
+      return "image/png";
+    }
+    if ("webp".equalsIgnoreCase(outputFormat)) {
+      return "image/webp";
+    }
+    if ("jpeg".equalsIgnoreCase(outputFormat) || "jpg".equalsIgnoreCase(outputFormat)) {
+      return "image/jpeg";
+    }
+    return "application/octet-stream";
+  }
+
+  private MediaAsset findMatchingAsset(List<MediaAsset> assets, String sourceAssetId, AssetOperation operation,
+      String outputFormat, Integer width, List<String> tags) {
+    for (MediaAsset asset : assets) {
+      if (asset == null || asset.getStatus() == AssetStatus.DELETED) {
+        continue;
+      }
+      if (asset.getOperation() != operation) {
+        continue;
+      }
+      if (sourceAssetId != null && !sourceAssetId.equals(asset.getSourceAssetId())) {
+        continue;
+      }
+      if (outputFormat != null && asset.getOutputFormat() != null) {
+        if (!outputFormat.equalsIgnoreCase(asset.getOutputFormat())) {
+          continue;
+        }
+      } else if (outputFormat != null || asset.getOutputFormat() != null) {
+        continue;
+      }
+      if (width != null && !width.equals(asset.getWidth())) {
+        continue;
+      }
+      if (!tagsMatch(asset.getTags(), tags)) {
+        continue;
+      }
+      return asset;
+    }
+    return null;
+  }
+
+  private boolean tagsMatch(List<String> existing, List<String> requested) {
+    if (requested == null || requested.isEmpty()) {
+      return true;
+    }
+    if (existing == null || existing.isEmpty()) {
+      return false;
+    }
+    var normalizedExisting = existing.stream().map(String::toLowerCase).sorted().toList();
+    var normalizedRequested = requested.stream().map(String::toLowerCase).sorted().toList();
+    return normalizedExisting.equals(normalizedRequested);
+  }
+
+  private String formatFromFileName(String fileName) {
+    String extension = StorageConstants.getFileExtension(fileName);
+    if (extension.isEmpty()) {
+      return null;
+    }
+    return extension.substring(1).toLowerCase();
+  }
+
+  private String extensionFromFormat(String format) {
+    if (format == null || format.isBlank()) {
+      return "";
+    }
+    return "." + format.toLowerCase();
+  }
+
+  private OutputFormat parseImageFormat(String value) {
+    if (value == null) {
+      return null;
+    }
+    for (OutputFormat format : OutputFormat.values()) {
+      if (format.getFormat().equalsIgnoreCase(value)) {
+        return format;
+      }
+    }
+    return null;
+  }
+
+  private String buildAssetDownloadUrl(Media media, MediaAsset asset, boolean recordAnalytics) {
+    String tenantId = media.getTenantId() != null ? media.getTenantId() : TenantContext.getTenantId();
+    String extension = extensionFromFormat(asset.getOutputFormat());
+    String url = s3Service.getAssetPresignedUrl(
+        tenantId,
+        media.getMediaId(),
+        asset.getAssetId(),
+        extension,
+        asset.getDownloadName(),
+        asset.getMimetype());
+    if (recordAnalytics) {
+      analyticsService.recordView(tenantId, media.getMediaId());
+      OutputFormat format = parseImageFormat(asset.getOutputFormat());
+      if (format != null && media.getMediaType() == MediaType.IMAGE) {
+        analyticsService.recordDownload(tenantId, media.getMediaId(), format, asset.getWidth());
+      }
+    }
+    return url;
+  }
+
+  private boolean shouldRecordAnalytics(MediaAsset asset) {
+    if (asset == null || asset.getType() == null) {
+      return false;
+    }
+    return asset.getType() == AssetType.ORIGINAL || asset.getType() == AssetType.DERIVED;
+  }
+
+  private record AssetContext(Media media, MediaAsset asset) {
   }
 }

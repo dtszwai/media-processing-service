@@ -1,9 +1,7 @@
 package com.mediaservice.shorturl.application;
 
-import com.mediaservice.common.model.ShortUrlVariant;
-import com.mediaservice.media.application.DownloadResult;
+import com.mediaservice.common.model.AssetStatus;
 import com.mediaservice.media.application.MediaApplicationService;
-import com.mediaservice.media.application.PreviewResult;
 import com.mediaservice.shorturl.api.dto.CreateShortUrlRequest;
 import com.mediaservice.shorturl.domain.model.ShortUrl;
 import com.mediaservice.shorturl.infrastructure.persistence.ShortUrlDynamoDbRepository;
@@ -34,17 +32,20 @@ public class ShortUrlApplicationService {
 
   public ShortUrl createShortUrl(CreateShortUrlRequest request, String tenantId, String userId) {
     authorizationService.requireAuthenticated();
-    ShortUrlVariant variant = ShortUrlVariant.fromString(request.getVariant());
-    if (variant == null) {
-      throw new IllegalArgumentException("variant must be one of: preview, download, original");
-    }
     if (request.getMediaId() == null || request.getMediaId().isBlank()) {
       throw new IllegalArgumentException("mediaId is required");
+    }
+    if (request.getAssetId() == null || request.getAssetId().isBlank()) {
+      throw new IllegalArgumentException("assetId is required");
     }
 
     var media = mediaService.getActiveMedia(request.getMediaId());
     if (media.isEmpty()) {
       throw new IllegalArgumentException("Media not found");
+    }
+    var asset = mediaService.getAsset(request.getMediaId(), request.getAssetId());
+    if (asset.isEmpty() || asset.get().getStatus() == AssetStatus.DELETED) {
+      throw new IllegalArgumentException("Asset not found");
     }
 
     Instant expiresAt = request.getExpiresAt();
@@ -61,7 +62,7 @@ public class ShortUrlApplicationService {
         .code(alias)
         .tenantId(tenantId)
         .mediaId(request.getMediaId())
-        .variant(variant)
+        .assetId(request.getAssetId())
         .isPublic(true)
         .createdAt(Instant.now())
         .createdBy(userId)
@@ -107,16 +108,8 @@ public class ShortUrlApplicationService {
       return new ShortUrlResolveResult.Gone("expired");
     }
 
-    if (shortUrl.getVariant() == null) {
-      return new ShortUrlResolveResult.NotFound();
-    }
-
     try {
-      return switch (shortUrl.getVariant()) {
-        case PREVIEW -> resolvePreview(shortUrl);
-        case DOWNLOAD -> resolveDownload(shortUrl);
-        case ORIGINAL -> resolveOriginal(shortUrl);
-      };
+      return resolveByAsset(shortUrl);
     } catch (MediaGoneException e) {
       return new ShortUrlResolveResult.Gone("deleted");
     }
@@ -155,24 +148,23 @@ public class ShortUrlApplicationService {
         .toList();
   }
 
-  private ShortUrlResolveResult resolvePreview(ShortUrl shortUrl) {
-    return switch (mediaService.preparePreviewPublic(shortUrl.getMediaId())) {
-      case PreviewResult.Ready ready -> new ShortUrlResolveResult.Ready(ready.url());
-      case PreviewResult.Processing processing -> new ShortUrlResolveResult.Processing(processing.mediaId());
-      case PreviewResult.NotFound ignored -> new ShortUrlResolveResult.NotFound();
-    };
-  }
+  private ShortUrlResolveResult resolveByAsset(ShortUrl shortUrl) {
+    String assetId = shortUrl.getAssetId();
+    if (assetId == null || assetId.isBlank()) {
+      return new ShortUrlResolveResult.NotFound();
+    }
 
-  private ShortUrlResolveResult resolveDownload(ShortUrl shortUrl) {
-    return switch (mediaService.prepareDownloadPublic(shortUrl.getMediaId())) {
-      case DownloadResult.Ready ready -> new ShortUrlResolveResult.Ready(ready.url());
-      case DownloadResult.Processing processing -> new ShortUrlResolveResult.Processing(processing.mediaId());
-      case DownloadResult.NotFound ignored -> new ShortUrlResolveResult.NotFound();
-    };
-  }
+    var assetOpt = mediaService.getAsset(shortUrl.getMediaId(), assetId);
+    if (assetOpt.isEmpty() || assetOpt.get().getStatus() == AssetStatus.DELETED) {
+      return new ShortUrlResolveResult.NotFound();
+    }
 
-  private ShortUrlResolveResult resolveOriginal(ShortUrl shortUrl) {
-    var urlOpt = mediaService.getOriginalUrlPublic(shortUrl.getMediaId());
+    var asset = assetOpt.get();
+    if (asset.getStatus() != AssetStatus.COMPLETE) {
+      return new ShortUrlResolveResult.Processing(shortUrl.getMediaId());
+    }
+
+    var urlOpt = mediaService.getAssetDownloadUrlPublic(shortUrl.getMediaId(), assetId);
     return urlOpt
         .map(url -> (ShortUrlResolveResult) new ShortUrlResolveResult.Ready(url))
         .orElseGet(ShortUrlResolveResult.NotFound::new);

@@ -88,7 +88,7 @@ public class ShortUrlController {
         .code(shortUrl.getCode())
         .shortUrl(shortUrlValue)
         .mediaId(shortUrl.getMediaId())
-        .variant(shortUrl.getVariant() != null ? shortUrl.getVariant().getValue() : null)
+        .assetId(shortUrl.getAssetId())
         .isPublic(shortUrl.isPublic())
         .createdAt(shortUrl.getCreatedAt())
         .createdBy(shortUrl.getCreatedBy())

@@ -4,7 +4,6 @@ import com.mediaservice.common.constants.StorageConstants;
 import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaStatus;
 import com.mediaservice.common.model.MediaType;
-import com.mediaservice.common.model.OutputFormat;
 import com.mediaservice.shared.persistence.AbstractDynamoDbRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,7 +30,7 @@ import java.util.Optional;
  * Key schema:
  * <ul>
  * <li>PK: MEDIA#{mediaId}</li>
- * <li>SK: METADATA</li>
+ * <li>SK: MEDIA</li>
  * </ul>
  */
 @Slf4j
@@ -61,10 +60,10 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
         .mimetype(getString(item, "mimetype"))
         .mediaType(MediaType.fromString(getString(item, "mediaType")))
         .status(MediaStatus.valueOf(getString(item, "status")))
-        .width(getInt(item, "width"))
         .createdAt(getInstant(item, "createdAt"))
         .updatedAt(getInstant(item, "updatedAt"))
         .deletedAt(getInstant(item, "deletedAt"))
+        .originalAssetId(getString(item, "originalAssetId"))
         .documentPageCount(getInt(item, "documentPageCount"))
         .documentTitle(getString(item, "documentTitle"))
         .documentAuthor(getString(item, "documentAuthor"))
@@ -75,10 +74,6 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
         .documentModifiedDate(getInstant(item, "documentModifiedDate"))
         .documentTextLength(getLong(item, "documentTextLength"))
         .documentTextTruncated(getBoolean(item, "documentTextTruncated"));
-    var outputFormat = getString(item, "outputFormat");
-    if (outputFormat != null) {
-      builder.outputFormat(OutputFormat.fromString(outputFormat));
-    }
     var webhookUrl = getString(item, "webhookUrl");
     if (webhookUrl != null) {
       builder.webhookUrl(webhookUrl);
@@ -91,7 +86,7 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
     var now = Instant.now();
     var item = new HashMap<String, AttributeValue>();
     item.put("PK", s(StorageConstants.DYNAMO_PK_PREFIX + media.getMediaId()));
-    item.put("SK", s(StorageConstants.DYNAMO_SK_METADATA));
+    item.put("SK", s(StorageConstants.DYNAMO_SK_MEDIA));
     item.put("size", n(String.valueOf(media.getSize())));
     item.put("name", s(media.getName()));
     item.put("mimetype", s(media.getMimetype()));
@@ -99,12 +94,8 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
     if (media.getMediaType() != null) {
       item.put("mediaType", s(media.getMediaType().getValue()));
     }
-    if (media.getWidth() != null) {
-      item.put("width", n(String.valueOf(media.getWidth())));
-    }
-    if (media.getMediaType() == null || media.getMediaType() == MediaType.IMAGE) {
-      item.put("outputFormat",
-          s(media.getOutputFormat() != null ? media.getOutputFormat().getFormat() : OutputFormat.JPEG.getFormat()));
+    if (media.getOriginalAssetId() != null) {
+      item.put("originalAssetId", s(media.getOriginalAssetId()));
     }
     item.put("createdAt", s(media.getCreatedAt() != null ? media.getCreatedAt().toString() : now.toString()));
     item.put("updatedAt", s(now.toString()));
@@ -183,7 +174,7 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
    * Get a media record by ID.
    */
   public Optional<Media> getMedia(String mediaId) {
-    return findByKey(StorageConstants.DYNAMO_PK_PREFIX + mediaId, StorageConstants.DYNAMO_SK_METADATA);
+    return findByKey(StorageConstants.DYNAMO_PK_PREFIX + mediaId, StorageConstants.DYNAMO_SK_MEDIA);
   }
 
   /**
@@ -224,7 +215,7 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
     int pageSize = (limit != null && limit > 0 && limit <= 100) ? limit : DEFAULT_PAGE_SIZE;
     var filter = buildMediaFilter(mediaType);
     var values = new HashMap<>(filter.values());
-    values.put(":sk", s(StorageConstants.DYNAMO_SK_METADATA));
+    values.put(":sk", s(StorageConstants.DYNAMO_SK_MEDIA));
     values.put(":pkPrefix", s(StorageConstants.DYNAMO_PK_PREFIX));
     String filterExpression = "begins_with(PK, :pkPrefix) AND " + filter.expression();
     var result = queryMediaPaginated(
@@ -252,7 +243,7 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
     var values = new HashMap<>(filter.values());
     values.put(":tenantId", s(tenantId));
     values.put(":pkPrefix", s(StorageConstants.DYNAMO_PK_PREFIX));
-    values.put(":sk", s(StorageConstants.DYNAMO_SK_METADATA));
+    values.put(":sk", s(StorageConstants.DYNAMO_SK_MEDIA));
     String filterExpression = "begins_with(PK, :pkPrefix) AND SK = :sk AND " + filter.expression();
     var result = queryMediaPaginated(
         StorageConstants.DYNAMO_GSI_TENANT_CREATED_AT,
@@ -348,7 +339,7 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
       key.put("createdAt", s(media.getCreatedAt().toString()));
     }
     key.put("PK", s(StorageConstants.DYNAMO_PK_PREFIX + media.getMediaId()));
-    key.put("SK", s(StorageConstants.DYNAMO_SK_METADATA));
+    key.put("SK", s(StorageConstants.DYNAMO_SK_MEDIA));
     return encodeCursor(key, cursorAttributes);
   }
 
@@ -358,7 +349,7 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
   public void updateStatus(String mediaId, MediaStatus status) {
     updateAttributes(
         StorageConstants.DYNAMO_PK_PREFIX + mediaId,
-        StorageConstants.DYNAMO_SK_METADATA,
+        StorageConstants.DYNAMO_SK_MEDIA,
         "SET #status = :status, updatedAt = :updatedAt",
         Map.of("#status", "status"),
         Map.of(
@@ -389,7 +380,7 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
         : "SET #status = :newStatus, updatedAt = :updatedAt";
     boolean success = updateConditionally(
         StorageConstants.DYNAMO_PK_PREFIX + mediaId,
-        StorageConstants.DYNAMO_SK_METADATA,
+        StorageConstants.DYNAMO_SK_MEDIA,
         updateExpression,
         "#status = :expectedStatus",
         Map.of("#status", "status"),
@@ -419,7 +410,7 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
     long expiresAtEpoch = now.plus(retentionDays).getEpochSecond();
     updateAttributes(
         StorageConstants.DYNAMO_PK_PREFIX + mediaId,
-        StorageConstants.DYNAMO_SK_METADATA,
+        StorageConstants.DYNAMO_SK_MEDIA,
         "SET #status = :status, deletedAt = :deletedAt, updatedAt = :updatedAt, expiresAt = :expiresAt",
         Map.of("#status", "status"),
         Map.of(
@@ -437,7 +428,7 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
   public void revertSoftDelete(String mediaId, MediaStatus originalStatus) {
     updateAttributes(
         StorageConstants.DYNAMO_PK_PREFIX + mediaId,
-        StorageConstants.DYNAMO_SK_METADATA,
+        StorageConstants.DYNAMO_SK_MEDIA,
         "SET #status = :status, updatedAt = :updatedAt REMOVE deletedAt, expiresAt",
         Map.of("#status", "status"),
         Map.of(
@@ -450,7 +441,7 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
    * Hard delete a media record (for compensation/cleanup only).
    */
   public void deleteMedia(String mediaId) {
-    delete(StorageConstants.DYNAMO_PK_PREFIX + mediaId, StorageConstants.DYNAMO_SK_METADATA);
+    delete(StorageConstants.DYNAMO_PK_PREFIX + mediaId, StorageConstants.DYNAMO_SK_MEDIA);
     log.info("Hard deleted media record for mediaId: {}", mediaId);
   }
 }

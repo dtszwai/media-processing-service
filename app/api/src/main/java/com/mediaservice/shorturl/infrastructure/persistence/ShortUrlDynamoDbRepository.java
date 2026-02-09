@@ -1,7 +1,6 @@
 package com.mediaservice.shorturl.infrastructure.persistence;
 
 import com.mediaservice.common.constants.StorageConstants;
-import com.mediaservice.common.model.ShortUrlVariant;
 import com.mediaservice.shorturl.domain.model.ShortUrl;
 import com.mediaservice.shared.persistence.AbstractDynamoDbRepository;
 import java.time.Instant;
@@ -38,7 +37,6 @@ public class ShortUrlDynamoDbRepository extends AbstractDynamoDbRepository<Short
     } else if (sk != null && sk.startsWith(StorageConstants.DYNAMO_SK_SHORT_URL_PREFIX)) {
       code = sk.replace(StorageConstants.DYNAMO_SK_SHORT_URL_PREFIX, "");
     }
-    String variantValue = getString(item, "variant");
     var expiresAtEpoch = getLong(item, "expiresAt");
     Instant expiresAt = expiresAtEpoch != null ? Instant.ofEpochSecond(expiresAtEpoch) : null;
     Boolean isPublic = getBoolean(item, "public");
@@ -47,7 +45,7 @@ public class ShortUrlDynamoDbRepository extends AbstractDynamoDbRepository<Short
         .code(code)
         .tenantId(getString(item, "tenantId"))
         .mediaId(getString(item, "mediaId"))
-        .variant(ShortUrlVariant.fromString(variantValue))
+        .assetId(getString(item, "assetId"))
         .isPublic(isPublic != null && isPublic)
         .createdAt(getInstant(item, "createdAt"))
         .createdBy(getString(item, "createdBy"))
@@ -65,8 +63,8 @@ public class ShortUrlDynamoDbRepository extends AbstractDynamoDbRepository<Short
     item.put("SK", s(StorageConstants.DYNAMO_SK_METADATA));
     item.put("tenantId", s(shortUrl.getTenantId()));
     item.put("mediaId", s(shortUrl.getMediaId()));
-    if (shortUrl.getVariant() != null) {
-      item.put("variant", s(shortUrl.getVariant().getValue()));
+    if (shortUrl.getAssetId() != null) {
+      item.put("assetId", s(shortUrl.getAssetId()));
     }
     item.put("public", bool(shortUrl.isPublic()));
     item.put("createdAt", s(shortUrl.getCreatedAt() != null ? shortUrl.getCreatedAt().toString() : now.toString()));
@@ -149,8 +147,8 @@ public class ShortUrlDynamoDbRepository extends AbstractDynamoDbRepository<Short
     item.put("SK", s(StorageConstants.DYNAMO_SK_SHORT_URL_PREFIX + shortUrl.getCode()));
     item.put("tenantId", s(shortUrl.getTenantId()));
     item.put("mediaId", s(shortUrl.getMediaId()));
-    if (shortUrl.getVariant() != null) {
-      item.put("variant", s(shortUrl.getVariant().getValue()));
+    if (shortUrl.getAssetId() != null) {
+      item.put("assetId", s(shortUrl.getAssetId()));
     }
     item.put("public", bool(shortUrl.isPublic()));
     if (shortUrl.getCreatedAt() != null) {

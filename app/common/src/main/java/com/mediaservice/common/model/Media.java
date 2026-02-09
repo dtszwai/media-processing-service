@@ -8,12 +8,11 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * Media entity representing an uploaded and processed media file.
+ * Media entity representing a logical media item.
  *
- * <p>The {@code name} field stores the original filename for display/download purposes,
- * while S3 keys are constructed using {@code mediaId} and variant names.
- *
- * @see com.mediaservice.common.constants.StorageConstants
+ * <p>Processing outputs are stored as {@link MediaAsset} records. The media
+ * entity tracks shared metadata (tenant, owner, original filename, document
+ * metadata) and the original asset ID.
  */
 @Data
 @Builder
@@ -24,13 +23,14 @@ public class Media {
   private String tenantId;
   private String userId;
   private Long size;
-  /** Original filename as uploaded by user (for Content-Disposition header) */
+  /** Original filename as uploaded by user (for display and default download names) */
   private String name;
   private String mimetype;
   private MediaType mediaType;
+  /** Summary status for overall media processing lifecycle. */
   private MediaStatus status;
-  private Integer width;
-  private OutputFormat outputFormat;
+  /** Original asset ID in the asset table */
+  private String originalAssetId;
   private Instant createdAt;
   private Instant updatedAt;
   /** Timestamp when media was soft deleted, null if active */
@@ -49,14 +49,8 @@ public class Media {
   private Long documentTextLength;
   private Boolean documentTextTruncated;
 
-  /**
-   * Returns the output format, defaulting to JPEG if not set.
-   * Intended for image media types.
-   *
-   * @return the output format or JPEG as default
-   */
   @JsonIgnore
-  public OutputFormat getOutputFormatOrDefault() {
-    return outputFormat != null ? outputFormat : OutputFormat.JPEG;
+  public boolean isDeleted() {
+    return deletedAt != null;
   }
 }
