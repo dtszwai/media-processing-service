@@ -47,6 +47,9 @@ yarn-error.log*
 .terraform.tfstate.lock.info
 localstack_providers_override.tf
 
+# Worktrees
+.worktrees/
+
 # Project Specific
 volume/
 tmp/
