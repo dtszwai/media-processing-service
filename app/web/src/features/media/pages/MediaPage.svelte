@@ -53,18 +53,58 @@
   $effect(() => {
     updateUrlFromMediaId($currentMediaId);
   });
+
+  function closeWorkstation() {
+    currentMediaId.set(null);
+  }
 </script>
 
-<div class="grid lg:grid-cols-3 gap-8">
-  <div class="lg:col-span-2 space-y-6">
-    <UploadZone {mediaType} />
-    {#if $currentMediaId}
-      <ResultSection {mediaType} />
-    {/if}
-  </div>
+{#if mediaType === "image"}
+  <!-- Lumina-style split-screen image library -->
+  <div class="flex gap-6 h-full relative">
+    <!-- Library Area -->
+    <div class="flex-1 flex flex-col gap-5 transition-all duration-300 ease-in-out min-w-0 {$currentMediaId ? 'mr-[440px]' : ''}">
+      <MediaList {mediaType} layout="grid" />
+    </div>
 
-  <!-- History Sidebar -->
-  <div class="lg:col-span-1">
-    <MediaList {mediaType} />
+    <!-- Workstation Slide-over Panel -->
+    <div
+      class="fixed right-0 top-16 bottom-0 w-[440px] bg-white border-l border-gray-200 shadow-2xl transform transition-transform duration-300 z-20 flex flex-col {$currentMediaId ? 'translate-x-0' : 'translate-x-full'}"
+    >
+      {#if $currentMediaId}
+        <!-- Workstation Header -->
+        <div class="h-14 border-b border-gray-100 flex items-center justify-between px-5 bg-gray-50/50 flex-shrink-0">
+          <h3 class="text-sm font-bold text-gray-800">Workstation</h3>
+          <button
+            onclick={closeWorkstation}
+            class="text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-200 transition-colors"
+          >
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Workstation Content -->
+        <div class="flex-1 overflow-y-auto">
+          <ResultSection {mediaType} layout="panel" />
+        </div>
+      {/if}
+    </div>
   </div>
-</div>
+{:else}
+  <!-- Standard document layout -->
+  <div class="grid lg:grid-cols-3 gap-8">
+    <div class="lg:col-span-2 space-y-6">
+      <UploadZone {mediaType} />
+      {#if $currentMediaId}
+        <ResultSection {mediaType} />
+      {/if}
+    </div>
+
+    <!-- History Sidebar -->
+    <div class="lg:col-span-1">
+      <MediaList {mediaType} />
+    </div>
+  </div>
+{/if}

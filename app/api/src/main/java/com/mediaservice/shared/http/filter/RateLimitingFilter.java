@@ -62,6 +62,11 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     }
 
     String clientIp = getClientIp(request);
+
+    if (isAllowlisted(clientIp)) {
+      filterChain.doFilter(request, response);
+      return;
+    }
     String path = request.getRequestURI();
     RateLimitResult result = checkRateLimit(clientIp, path, request.getMethod());
 
@@ -87,6 +92,13 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         BUCKET_TYPE_API,
         rateLimitingConfig.getApi().getRequestsPerMinute(),
         rateLimitingConfig.getWindow());
+  }
+
+  private boolean isAllowlisted(String clientIp) {
+    return rateLimitingConfig.getAllowlist().stream()
+        .anyMatch(entry -> entry.endsWith("*")
+            ? clientIp.startsWith(entry.substring(0, entry.length() - 1))
+            : entry.equals(clientIp));
   }
 
   private boolean isUploadEndpoint(String path, String method) {

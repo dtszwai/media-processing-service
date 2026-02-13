@@ -23,8 +23,11 @@
     CreateAssetRequest,
   } from "../../../shared/types";
 
+  type Tab = "TRANSFORM" | "SHARE" | "INFO";
+
   interface Props {
     mediaType?: MediaType;
+    layout?: "default" | "panel";
   }
 
   interface AssetCollections {
@@ -62,7 +65,7 @@
   const shareExpiryInputId = "share-expiry-input";
   const shareLabelInputId = "share-label-input";
 
-  let { mediaType }: Props = $props();
+  let { mediaType, layout = "default" }: Props = $props();
 
   let width = $state(500);
   let selectedFormats = $state<OutputFormat[]>(["jpeg"]);
@@ -93,6 +96,9 @@
   let assetUrls = $state<Record<string, string>>({});
   let assetUrlErrors = $state<Record<string, string>>({});
   let assetUrlLoading = $state<Set<string>>(new Set());
+
+  let activeTab = $state<Tab>("TRANSFORM");
+  let viewedAsset = $state<MediaAsset | null>(null);
 
   const mediaListQuery = createMediaListQuery(undefined, undefined, mediaType);
   let mediaList = $derived(mediaListQuery.data?.items ?? []);
@@ -198,9 +204,25 @@
 
     for (const asset of previewCandidates) {
       if (assetUrls[asset.assetId]) continue;
+      if (assetUrlErrors[asset.assetId]) continue;
       if (assetUrlLoading.has(asset.assetId)) continue;
       void ensureAssetUrl(asset);
     }
+  });
+
+  $effect(() => {
+    if (!currentMedia) {
+      viewedAsset = null;
+      return;
+    }
+
+    const currentStillExists =
+      viewedAsset && visibleAssets.some((a) => a.assetId === viewedAsset?.assetId);
+    if (currentStillExists) return;
+
+    const readyGenerated = assetCollections.generated.find((a) => a.status === "COMPLETE");
+    const readySource = assetCollections.source.find((a) => a.status === "COMPLETE");
+    viewedAsset = readyGenerated || readySource || visibleAssets[0] || null;
   });
 
   let activeShortUrls = $derived(shortUrls.filter((url) => !isInvalid(url)));
@@ -727,7 +749,413 @@
   }
 </script>
 
-{#if currentMedia}
+{#if layout === "panel" && currentMedia}
+  <div class="flex flex-col h-full">
+    <!-- Preview Area -->
+    <div class="w-full bg-gray-100 border-b border-gray-200 relative group h-[300px] flex items-center justify-center p-4 flex-shrink-0">
+      <div class="absolute inset-0 dot-grid-bg"></div>
+
+      {#if viewedAsset?.status === "COMPLETE" && isImageAsset(viewedAsset) && assetUrls[viewedAsset.assetId]}
+        <img
+          src={assetUrls[viewedAsset.assetId]}
+          class="max-w-full max-h-full object-contain shadow-lg rounded-sm relative z-[1]"
+          alt="Preview"
+        />
+        <div
+          class="absolute top-4 right-4 z-[2] flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+        >
+          <button
+            onclick={() => viewedAsset && handleOpenAsset(viewedAsset)}
+            class="bg-white/90 backdrop-blur text-gray-700 hover:text-blue-600 p-2 rounded-lg shadow-sm border border-gray-200 transition-colors"
+            title="Download"
+          >
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+              />
+            </svg>
+          </button>
+        </div>
+      {:else if viewedAsset && (viewedAsset.status === "PROCESSING" || viewedAsset.status === "PENDING")}
+        <div class="flex flex-col items-center justify-center relative z-[1]">
+          <svg class="w-10 h-10 text-blue-500 animate-spin mb-3" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path
+              class="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+            ></path>
+          </svg>
+          <p class="text-sm font-medium text-gray-600">Generating Asset...</p>
+        </div>
+      {:else if viewedAsset?.status === "ERROR"}
+        <div class="flex flex-col items-center justify-center text-center px-6 relative z-[1]">
+          <div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-3">
+            <svg class="w-6 h-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
+            </svg>
+          </div>
+          <p class="text-sm font-bold text-gray-800">Generation Failed</p>
+          {#if viewedAsset.errorMessage}
+            <p class="text-xs text-red-500 mt-1 bg-red-50 p-2 rounded border border-red-100">
+              {viewedAsset.errorMessage}
+            </p>
+          {/if}
+        </div>
+      {:else}
+        <div class="flex flex-col items-center justify-center relative z-[1]">
+          <svg class="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+            <polyline points="21 15 16 10 5 21"></polyline>
+          </svg>
+          <p class="text-xs text-gray-400 mt-2">No preview available</p>
+        </div>
+      {/if}
+
+      {#if viewedAsset?.status === "COMPLETE"}
+        <div
+          class="absolute bottom-4 left-4 bg-gray-900/80 backdrop-blur text-white px-3 py-1.5 rounded-full text-xs font-medium border border-white/10 shadow-lg z-[2]"
+        >
+          {#if viewedAsset.width && viewedAsset.height}{viewedAsset.width} &times; {viewedAsset.height} &middot;
+          {/if} {assetOutputFormat(viewedAsset) || "FILE"}
+        </div>
+      {/if}
+    </div>
+
+    <!-- Versions Strip -->
+    {#if visibleAssets.length > 0}
+      <div class="px-5 py-4 border-b border-gray-100 flex-shrink-0">
+        <div class="flex gap-3 overflow-x-auto pb-2">
+          {#each visibleAssets as asset (asset.assetId)}
+            <button
+              onclick={() => {
+                viewedAsset = asset;
+              }}
+              class="relative flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden border-2 transition-all {viewedAsset?.assetId ===
+              asset.assetId
+                ? 'border-blue-600 ring-1 ring-blue-600'
+                : 'border-gray-200 hover:border-gray-300'}"
+            >
+              {#if asset.status === "COMPLETE" && isImageAsset(asset) && assetUrls[asset.assetId]}
+                <img src={assetUrls[asset.assetId]} class="w-full h-full object-cover" alt="" />
+              {:else}
+                <div class="w-full h-full bg-gray-100 flex items-center justify-center">
+                  <span class="text-[10px] font-bold text-gray-400">
+                    {assetKind(asset).substring(0, 2).toUpperCase()}
+                  </span>
+                </div>
+              {/if}
+              <div
+                class="absolute top-1 right-1 w-2 h-2 rounded-full border border-white {asset.status === 'COMPLETE'
+                  ? 'bg-green-500'
+                  : asset.status === 'PROCESSING' || asset.status === 'PENDING'
+                    ? 'bg-blue-500 animate-pulse'
+                    : 'bg-red-500'}"
+              ></div>
+            </button>
+          {/each}
+        </div>
+      </div>
+    {/if}
+
+    <!-- Tabs -->
+    <div class="flex border-b border-gray-200 px-5 flex-shrink-0">
+      {#each ["TRANSFORM", "SHARE", "INFO"] as tab (tab)}
+        <button
+          onclick={() => {
+            activeTab = tab as Tab;
+          }}
+          class="flex-1 py-3 text-xs font-bold tracking-wide border-b-2 transition-colors {activeTab === tab
+            ? 'border-blue-600 text-blue-600'
+            : 'border-transparent text-gray-500 hover:text-gray-800'}"
+        >
+          {tab}
+        </button>
+      {/each}
+    </div>
+
+    <!-- Tab Content -->
+    <div class="p-5 flex-1 overflow-y-auto">
+      {#if activeTab === "TRANSFORM"}
+        {#if currentMedia.status === "PENDING_UPLOAD"}
+          <div class="p-4 bg-amber-50 border border-amber-200 rounded-lg mb-5">
+            <input
+              type="file"
+              accept={currentMedia.mimetype}
+              class="hidden"
+              bind:this={resumeFileInput}
+              onchange={handleResumeUpload}
+            />
+            <p class="text-sm font-medium text-amber-800">Upload incomplete</p>
+            <p class="text-xs text-amber-600 mt-1">Resume to continue processing.</p>
+            <button
+              onclick={triggerResumeFileSelect}
+              disabled={isResuming}
+              class="mt-3 w-full bg-amber-600 text-white py-2 rounded-lg text-xs font-medium hover:bg-amber-700 transition-colors disabled:opacity-50"
+            >
+              {isResuming ? `Uploading... ${resumeProgress.toFixed(0)}%` : "Resume Upload"}
+            </button>
+          </div>
+        {/if}
+
+        <div class="space-y-5">
+          <div>
+            <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-2">Source</label>
+            <select
+              bind:value={selectedSourceAssetId}
+              class="w-full text-xs bg-white border border-gray-300 rounded-md px-3 py-2 text-gray-700"
+            >
+              {#each visibleAssets as asset}
+                <option value={asset.assetId}>{assetLabel(asset)}</option>
+              {/each}
+            </select>
+          </div>
+
+          <div>
+            <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-2">Format</label>
+            <div class="grid grid-cols-3 gap-2">
+              {#each formatOptions as option}
+                <button
+                  onclick={() => {
+                    if (selectedFormats.includes(option.value)) {
+                      selectedFormats = selectedFormats.filter((f) => f !== option.value);
+                    } else {
+                      selectedFormats = [...selectedFormats, option.value];
+                    }
+                  }}
+                  class="py-2 px-3 rounded-md text-sm border font-medium transition-all cursor-pointer {selectedFormats.includes(
+                    option.value,
+                  )
+                    ? 'bg-blue-50 border-blue-200 text-blue-700'
+                    : 'border-gray-200 text-gray-600 hover:border-gray-300'}"
+                >
+                  {option.label}
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <div>
+            <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-2">Width (px)</label>
+            <div class="flex gap-2">
+              {#each [500, 800, 1000, 1920] as w}
+                <button
+                  onclick={() => {
+                    width = w;
+                  }}
+                  class="px-3 py-1.5 text-xs rounded border transition-all cursor-pointer {width === w
+                    ? 'bg-gray-800 text-white border-gray-800'
+                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'}"
+                >
+                  {w}
+                </button>
+              {/each}
+            </div>
+            <input
+              type="number"
+              bind:value={width}
+              min="100"
+              max="4096"
+              class="mt-2 w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+          </div>
+
+          <button
+            onclick={handleCreateAssets}
+            disabled={isCreatingAssets || $isProcessing || selectedFormats.length === 0}
+            class="w-full bg-gray-900 text-white py-3 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors shadow-sm disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+          >
+            {isCreatingAssets ? "Processing..." : "Convert & Resize"}
+          </button>
+        </div>
+      {:else if activeTab === "SHARE"}
+        <div class="space-y-5">
+          <div>
+            <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-2">Asset to share</label>
+            <select
+              bind:value={selectedShareAssetId}
+              class="w-full text-xs bg-white border border-gray-300 rounded-md px-3 py-2 text-gray-700"
+            >
+              {#if shareableAssets.length === 0}
+                <option value="">No complete assets</option>
+              {:else}
+                {#each shareableAssets as asset}
+                  <option value={asset.assetId}>{assetTitle(asset)}</option>
+                {/each}
+              {/if}
+            </select>
+          </div>
+
+          <div class="bg-gray-50 rounded-lg p-4 border border-gray-200 space-y-3">
+            <h4 class="text-sm font-bold text-gray-900">New Link</h4>
+            <input
+              type="text"
+              placeholder="Alias (optional, e.g. campaign-01)"
+              bind:value={shortUrlAlias}
+              oninput={(e) => (shortUrlAlias = (e.currentTarget as HTMLInputElement).value.toLowerCase())}
+              class="w-full border border-gray-300 rounded px-3 py-2 text-xs"
+            />
+            <input
+              type="text"
+              placeholder="Label (internal use)"
+              bind:value={shortUrlLabel}
+              class="w-full border border-gray-300 rounded px-3 py-2 text-xs"
+            />
+            <input
+              type="datetime-local"
+              bind:value={shortUrlExpiresAt}
+              class="w-full border border-gray-300 rounded px-3 py-2 text-xs text-gray-500"
+            />
+            <button
+              onclick={handleCreateShortUrl}
+              disabled={isCreatingShortUrl || !selectedShareAssetId}
+              class="w-full bg-blue-600 text-white py-2 rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors disabled:opacity-50"
+            >
+              {isCreatingShortUrl ? "Creating..." : "Create Link"}
+            </button>
+          </div>
+
+          {#if shortUrlsError}
+            <p class="text-xs text-red-500">{shortUrlsError}</p>
+          {/if}
+
+          {#if shortUrlsLoading}
+            <p class="text-xs text-gray-500">Loading links...</p>
+          {:else if activeShortUrlGroups.length === 0}
+            <p class="text-xs text-gray-400 text-center italic py-2">No active links yet.</p>
+          {:else}
+            <div class="space-y-4">
+              {#each activeShortUrlGroups as group (group.assetId)}
+                <div class="space-y-1.5">
+                  <div class="text-[11px] uppercase tracking-widest text-gray-400 font-semibold">
+                    {group.asset ? assetTitle(group.asset) : group.assetId}
+                  </div>
+                  {#each group.urls as shortUrl (shortUrl.code)}
+                    <div class="p-3 rounded-lg border bg-white border-gray-200">
+                      <div class="min-w-0">
+                        <a
+                          href={resolveShortUrlValue(shortUrl)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="text-sm font-mono text-blue-600 hover:underline truncate block"
+                        >
+                          {resolveShortUrlValue(shortUrl)}
+                        </a>
+                        <p class="text-[11px] text-gray-400 mt-0.5">
+                          {#if shortUrl.createdAt}Created {formatDateTime(shortUrl.createdAt)}{/if}
+                          {#if shortUrl.expiresAt} · Expires {formatDateTime(shortUrl.expiresAt)}{/if}
+                          {#if shortUrl.label} · {shortUrl.label}{/if}
+                        </p>
+                      </div>
+                      <div class="flex justify-end gap-2 border-t border-gray-100 pt-2 mt-2">
+                        <button
+                          onclick={() => handleCopyShortUrl(shortUrl)}
+                          class="text-xs text-gray-500 hover:text-gray-900"
+                        >
+                          {copiedCode === shortUrl.code ? "Copied!" : "Copy"}
+                        </button>
+                        <button
+                          onclick={() => handleRevokeShortUrl(shortUrl.code)}
+                          disabled={revokeInProgress === shortUrl.code}
+                          class="text-xs text-red-500 hover:text-red-700"
+                        >
+                          {revokeInProgress === shortUrl.code ? "Revoking..." : "Revoke"}
+                        </button>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {:else if activeTab === "INFO"}
+        <div class="space-y-4">
+          <div class="flex items-center justify-between">
+            <h4 class="text-sm font-semibold text-gray-900 truncate pr-2">{currentMedia.name}</h4>
+            <span class="status-badge status-{workflowSummary.badgeClass} flex-shrink-0"
+              >{workflowSummary.badgeLabel}</span
+            >
+          </div>
+
+          <div class="grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
+            <div>
+              <span class="text-gray-400 block">Status</span>
+              <p class="text-gray-700 font-medium">{currentMedia.status}</p>
+            </div>
+            <div>
+              <span class="text-gray-400 block">MIME Type</span>
+              <p class="text-gray-700 font-medium">{currentMedia.mimetype}</p>
+            </div>
+            <div>
+              <span class="text-gray-400 block">Original Size</span>
+              <p class="text-gray-700 font-medium">{formatFileSize(currentMedia.size)}</p>
+            </div>
+            <div>
+              <span class="text-gray-400 block">Assets</span>
+              <p class="text-gray-700 font-medium">{visibleAssets.length} total</p>
+            </div>
+            <div>
+              <span class="text-gray-400 block">Created</span>
+              <p class="text-gray-700 font-medium">{formatDateTime(currentMedia.createdAt)}</p>
+            </div>
+            <div>
+              <span class="text-gray-400 block">Updated</span>
+              <p class="text-gray-700 font-medium">{formatDateTime(currentMedia.updatedAt)}</p>
+            </div>
+          </div>
+
+          {#if workflowSummary.highlights.length > 0}
+            <div class="flex flex-wrap gap-2 pt-2">
+              {#each workflowSummary.highlights as item}
+                <span class="text-[11px] px-2.5 py-1 rounded-full bg-gray-100 border border-gray-200 text-gray-600">
+                  {item}
+                </span>
+              {/each}
+            </div>
+          {/if}
+
+          {#if viewedAsset}
+            <div class="pt-3 border-t border-gray-200">
+              <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Selected Asset</h4>
+              <div class="grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
+                <div>
+                  <span class="text-gray-400 block">Name</span>
+                  <p class="text-gray-700 font-medium truncate">{assetTitle(viewedAsset)}</p>
+                </div>
+                <div>
+                  <span class="text-gray-400 block">Type</span>
+                  <p class="text-gray-700 font-medium">{assetKind(viewedAsset)}</p>
+                </div>
+                {#if viewedAsset.width}
+                  <div>
+                    <span class="text-gray-400 block">Dimensions</span>
+                    <p class="text-gray-700 font-medium">{assetDimensions(viewedAsset) || "—"}</p>
+                  </div>
+                {/if}
+                {#if viewedAsset.size}
+                  <div>
+                    <span class="text-gray-400 block">File Size</span>
+                    <p class="text-gray-700 font-medium">{formatFileSize(viewedAsset.size)}</p>
+                  </div>
+                {/if}
+              </div>
+            </div>
+          {/if}
+        </div>
+      {/if}
+    </div>
+  </div>
+{:else if currentMedia}
   <div class="card rounded-lg p-6 space-y-4">
     <div class="flex items-center justify-between">
       <div>

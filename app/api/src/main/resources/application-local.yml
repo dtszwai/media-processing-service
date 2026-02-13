@@ -19,6 +19,16 @@ otel:
     otlp:
       endpoint: http://localhost:4318
 
+rate-limiting:
+  enabled: false
+  allowlist:
+    - "127.0.0.1"
+    - "0:0:0:0:0:0:0:1"
+    - "::1"
+    - "192.168.*"
+    - "172.*"
+    - "10.*"
+
 logging:
   level:
     com.mediaservice: DEBUG

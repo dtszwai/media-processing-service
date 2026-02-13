@@ -61,35 +61,53 @@
 
   let authState = $derived($authStore);
   let isPublicPage = $derived(PUBLIC_ROUTES.includes(currentPath));
+  let isMediaImagesRoute = $derived(
+    currentPath === "/" || currentPath === "/media" || currentPath.startsWith("/media/images"),
+  );
 </script>
 
 <QueryClientProvider client={queryClient}>
-  <div class="min-h-screen bg-gray-50">
+  <div class="flex flex-col h-screen bg-gray-50 text-gray-900 overflow-hidden">
     {#if authState.isLoading}
       <!-- Loading state while restoring auth -->
     {:else if isPublicPage}
-      <main class="max-w-5xl mx-auto px-6 py-8">
-        {#if currentPath === "/register"}
-          <RegisterPage {navigate} />
-        {:else}
-          <LoginPage {navigate} />
-        {/if}
+      <main class="flex-1 overflow-auto">
+        <div class="max-w-5xl mx-auto px-6 py-8">
+          {#if currentPath === "/register"}
+            <RegisterPage {navigate} />
+          {:else}
+            <LoginPage {navigate} />
+          {/if}
+        </div>
       </main>
     {:else}
       <Header {currentPath} {navigate} user={authState.user} />
-      <main class="max-w-5xl mx-auto px-6 py-8">
-        {#if currentPath === "/analytics"}
-          <AnalyticsPage />
-        {:else if currentPath === "/admin/dlq"}
-          <DlqPage />
-        {:else if currentPath === "/settings/api-keys"}
-          <ApiKeysPage />
-        {:else if currentPath === "/media/documents"}
-          <MediaPage mediaType="document" />
-        {:else}
-          <MediaPage mediaType="image" />
-        {/if}
-      </main>
+
+      {#if isMediaImagesRoute}
+        <!-- Full-width layout for image library -->
+        <main class="flex-1 overflow-auto bg-gray-50 p-4">
+          <div class="max-w-[1600px] mx-auto h-full flex flex-col">
+            <MediaPage mediaType="image" />
+          </div>
+        </main>
+      {:else}
+        <!-- Contained layout for other pages -->
+        <main class="flex-1 overflow-auto">
+          <div class="max-w-5xl mx-auto px-6 py-8">
+            {#if currentPath === "/analytics"}
+              <AnalyticsPage />
+            {:else if currentPath === "/admin/dlq"}
+              <DlqPage />
+            {:else if currentPath === "/settings/api-keys"}
+              <ApiKeysPage />
+            {:else if currentPath === "/media/documents"}
+              <MediaPage mediaType="document" />
+            {:else}
+              <MediaPage mediaType="image" />
+            {/if}
+          </div>
+        </main>
+      {/if}
     {/if}
   </div>
 </QueryClientProvider>

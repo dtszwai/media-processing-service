@@ -6,6 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
 import java.time.Duration;
+import java.util.List;
 
 /**
  * Configuration for distributed rate limiting.
@@ -42,6 +43,11 @@ public class RateLimitingConfig {
    * Time window for rate limiting.
    */
   private Duration window = Duration.ofMinutes(1);
+
+  /**
+   * IP addresses that bypass rate limiting (e.g. local dev clients).
+   */
+  private List<String> allowlist = List.of();
 
   @Getter
   @Setter
