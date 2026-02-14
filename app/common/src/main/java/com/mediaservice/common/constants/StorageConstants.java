@@ -21,9 +21,9 @@ public final class StorageConstants {
   // S3 asset structure
   public static final String S3_ASSET_PREFIX = "assets";
 
-  // Preview generation settings
-  public static final int PREVIEW_MAX_WIDTH = 800;
-  public static final float PREVIEW_QUALITY = 0.6f;
+  // Document preview generation settings
+  public static final int DOCUMENT_PREVIEW_MAX_WIDTH = 800;
+  public static final float DOCUMENT_PREVIEW_QUALITY = 0.6f;
 
   // DynamoDB key patterns
   public static final String DYNAMO_PK_PREFIX = "MEDIA#";

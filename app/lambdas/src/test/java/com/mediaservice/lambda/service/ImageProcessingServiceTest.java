@@ -111,21 +111,30 @@ class ImageProcessingServiceTest {
     }
 
     @Nested
-    @DisplayName("generatePreview")
-    class GeneratePreview {
+    @DisplayName("generateThumbnail")
+    class GenerateThumbnail {
         @Test
-        @DisplayName("should create watermarked low quality image")
-        void generatePreview_createsWatermarkedLowQualityImage() throws IOException {
-            byte[] testImage = createTestImage(1200, 900);
+        @DisplayName("should resize to thumbnail max width")
+        void generateThumbnail_resizesToMaxWidth() throws IOException {
+            byte[] testImage = createTestImage(1920, 1080);
 
-            byte[] preview = service.generatePreview(testImage, OutputFormat.JPEG);
+            byte[] result = service.generateThumbnail(testImage, OutputFormat.JPEG);
 
-            assertThat(preview).isNotNull();
-            assertThat(preview.length).isLessThan(testImage.length); // Lower quality = smaller
+            assertThat(result).isNotEmpty();
+            BufferedImage img = ImageIO.read(new ByteArrayInputStream(result));
+            assertThat(img.getWidth()).isEqualTo(200);
+            assertThat(result.length).isLessThan(testImage.length);
+        }
 
-            // Verify dimensions
-            BufferedImage img = ImageIO.read(new ByteArrayInputStream(preview));
-            assertThat(img.getWidth()).isLessThanOrEqualTo(800);
+        @Test
+        @DisplayName("should not upscale smaller images")
+        void generateThumbnail_smallerImageNotUpscaled() throws IOException {
+            byte[] testImage = createTestImage(100, 80);
+
+            byte[] result = service.generateThumbnail(testImage, OutputFormat.JPEG);
+
+            BufferedImage img = ImageIO.read(new ByteArrayInputStream(result));
+            assertThat(img.getWidth()).isLessThanOrEqualTo(100);
         }
 
         @Test
@@ -133,7 +142,7 @@ class ImageProcessingServiceTest {
         void shouldHandleNullOutputFormat() throws IOException {
             byte[] testImage = createTestImage(1000, 800);
 
-            byte[] preview = service.generatePreview(testImage, null);
+            byte[] preview = service.generateThumbnail(testImage, null);
 
             assertThat(preview).isNotNull();
             // Should default to JPEG
@@ -142,14 +151,14 @@ class ImageProcessingServiceTest {
         }
 
         @Test
-        @DisplayName("should not exceed max width")
+        @DisplayName("should not exceed thumbnail max width")
         void shouldNotExceedMaxWidth() throws IOException {
             byte[] testImage = createTestImage(2000, 1600);
 
-            byte[] preview = service.generatePreview(testImage, OutputFormat.JPEG);
+            byte[] preview = service.generateThumbnail(testImage, OutputFormat.JPEG);
 
             BufferedImage img = ImageIO.read(new ByteArrayInputStream(preview));
-            assertThat(img.getWidth()).isEqualTo(800); // PREVIEW_MAX_WIDTH
+            assertThat(img.getWidth()).isEqualTo(200); // THUMBNAIL_MAX_WIDTH
         }
     }
 

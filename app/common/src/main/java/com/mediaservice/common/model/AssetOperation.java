@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
 
 public enum AssetOperation {
   IMAGE_PROCESS("image.process"),
-  IMAGE_PREVIEW("image.preview"),
+  IMAGE_THUMBNAIL("image.thumbnail"),
   DOCUMENT_PREVIEW("document.preview"),
   DOCUMENT_TEXT("document.text");
 

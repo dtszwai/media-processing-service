@@ -13,8 +13,8 @@ export const MediaTypeSchema = z.enum(["image", "document", "video", "audio", "o
 export const OutputFormatSchema = z.enum(["jpeg", "png", "webp"]);
 
 export const AssetStatusSchema = z.enum(["PENDING_UPLOAD", "PENDING", "PROCESSING", "COMPLETE", "ERROR", "DELETED"]);
-export const AssetTypeSchema = z.enum(["ORIGINAL", "DERIVED", "PREVIEW", "TEXT"]);
-export const AssetOperationSchema = z.enum(["image.process", "image.preview", "document.preview", "document.text"]);
+export const AssetTypeSchema = z.enum(["ORIGINAL", "DERIVED", "THUMBNAIL", "TEXT"]);
+export const AssetOperationSchema = z.enum(["image.process", "image.thumbnail", "document.preview", "document.text"]);
 
 export const MediaSchema = z.object({
   mediaId: z.string(),
@@ -37,6 +37,7 @@ export const MediaSchema = z.object({
   documentModifiedDate: z.string().optional(),
   documentTextLength: z.number().optional(),
   documentTextTruncated: z.boolean().optional(),
+  thumbnailUrl: z.string().optional(),
 });
 
 export const InitUploadRequestSchema = z.object({

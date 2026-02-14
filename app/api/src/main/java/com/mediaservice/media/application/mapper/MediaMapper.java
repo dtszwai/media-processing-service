@@ -33,6 +33,12 @@ public class MediaMapper {
         .build();
   }
 
+  public MediaResponse toResponse(Media media, String thumbnailUrl) {
+    MediaResponse response = toResponse(media);
+    response.setThumbnailUrl(thumbnailUrl);
+    return response;
+  }
+
   public MediaResponse toIdResponse(Media media) {
     return MediaResponse.builder().mediaId(media.getMediaId()).build();
   }

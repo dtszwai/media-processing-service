@@ -189,6 +189,13 @@
             <scope>provided</scope>
         </dependency>
 
+        <!-- Thumbnail Generation -->
+        <dependency>
+            <groupId>net.coobird</groupId>
+            <artifactId>thumbnailator</artifactId>
+            <version>0.4.20</version>
+        </dependency>
+
         <!-- PDF Processing -->
         <dependency>
             <groupId>org.apache.pdfbox</groupId>

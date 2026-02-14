@@ -123,7 +123,7 @@ public class DocumentProcessingService {
     PDFRenderer renderer = new PDFRenderer(document);
     BufferedImage pageImage = renderer.renderImageWithDPI(0, config.getDocumentPreviewDpi(), ImageType.RGB);
 
-    int targetWidth = Math.min(StorageConstants.PREVIEW_MAX_WIDTH, pageImage.getWidth());
+    int targetWidth = Math.min(StorageConstants.DOCUMENT_PREVIEW_MAX_WIDTH, pageImage.getWidth());
     int watermarkWidth = Math.max(
         (int) (targetWidth * config.getWatermarkWidthRatio()),
         config.getMinWatermarkWidth() * 2);
@@ -134,7 +134,7 @@ public class DocumentProcessingService {
         .width(targetWidth)
         .outputFormat("png")
         .watermark(Positions.CENTER, resizedWatermark, 0.5f)
-        .outputQuality(StorageConstants.PREVIEW_QUALITY)
+        .outputQuality(StorageConstants.DOCUMENT_PREVIEW_QUALITY)
         .toOutputStream(outputStream);
     return outputStream.toByteArray();
   }

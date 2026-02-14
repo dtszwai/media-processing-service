@@ -228,9 +228,9 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
           outputData = imageProcessingService.processImage(sourceData, width, format);
           contentType = format.getContentType();
         }
-        case IMAGE_PREVIEW -> {
+        case IMAGE_THUMBNAIL -> {
           OutputFormat format = OutputFormat.fromString(outputFormat);
-          outputData = imageProcessingService.generatePreview(sourceData, format);
+          outputData = imageProcessingService.generateThumbnail(sourceData, format);
           contentType = format.getContentType();
         }
         case DOCUMENT_PREVIEW -> {
@@ -259,7 +259,7 @@ public class ManageMediaHandler implements RequestHandler<SQSEvent, String> {
       }
 
       String extension = extensionFromFormat(outputFormat);
-      boolean cachePublic = operation == AssetOperation.IMAGE_PREVIEW || operation == AssetOperation.DOCUMENT_PREVIEW;
+      boolean cachePublic = operation == AssetOperation.IMAGE_THUMBNAIL || operation == AssetOperation.DOCUMENT_PREVIEW;
       s3Service.uploadAsset(tenantId, mediaId, assetId, extension, outputData, contentType, cachePublic);
       dynamoDbService.updateAssetSuccess(mediaId, assetId, outputData.length, outputWidth, outputHeight, contentType);
 

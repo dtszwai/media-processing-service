@@ -3,7 +3,7 @@ package com.mediaservice.common.model;
 import java.util.Locale;
 
 public enum ShortUrlVariant {
-  PREVIEW("preview"),
+  THUMBNAIL("thumbnail"),
   DOWNLOAD("download"),
   ORIGINAL("original");
 

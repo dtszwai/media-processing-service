@@ -67,7 +67,10 @@ public class MediaController {
     log.info("Get all media request: cursor={}, limit={}, mediaType={}", cursor, limit,
         resolvedType != null ? resolvedType.getValue() : "any");
     var result = mediaService.getMediaPaginated(cursor, limit, resolvedType);
-    var items = result.items().stream().map(mediaMapper::toResponse).toList();
+    var thumbnailUrls = mediaService.getThumbnailUrls(result.items());
+    var items = result.items().stream()
+        .map(m -> mediaMapper.toResponse(m, thumbnailUrls.get(m.getMediaId())))
+        .toList();
     return ResponseEntity.ok(PagedResponse.<MediaResponse>builder()
         .items(items)
         .nextCursor(result.nextCursor())

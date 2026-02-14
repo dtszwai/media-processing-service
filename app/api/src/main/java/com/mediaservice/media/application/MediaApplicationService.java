@@ -19,6 +19,7 @@ import com.mediaservice.media.api.dto.InitUploadResponse;
 import com.mediaservice.media.domain.service.DocumentValidationService;
 import com.mediaservice.media.domain.service.ImageValidationService;
 import com.mediaservice.media.domain.service.MediaTypeResolver;
+import com.mediaservice.media.domain.service.ThumbnailService;
 import com.mediaservice.media.infrastructure.messaging.MediaEventPublisher;
 import com.mediaservice.media.infrastructure.persistence.MediaAssetDynamoDbRepository;
 import com.mediaservice.media.infrastructure.persistence.MediaDynamoDbRepository;
@@ -42,7 +43,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
@@ -65,6 +68,7 @@ public class MediaApplicationService {
   private final ImageValidationService imageValidationService;
   private final DocumentValidationService documentValidationService;
   private final MediaTypeResolver mediaTypeResolver;
+  private final ThumbnailService thumbnailService;
   private final CacheInvalidationService cacheInvalidationService;
   private final MultiLevelCacheOrchestrator cacheOrchestrator;
   private final AnalyticsService analyticsService;
@@ -82,6 +86,7 @@ public class MediaApplicationService {
       ImageValidationService imageValidationService,
       DocumentValidationService documentValidationService,
       MediaTypeResolver mediaTypeResolver,
+      ThumbnailService thumbnailService,
       CacheInvalidationService cacheInvalidationService,
       MultiLevelCacheOrchestrator cacheOrchestrator,
       AnalyticsService analyticsService,
@@ -97,6 +102,7 @@ public class MediaApplicationService {
     this.imageValidationService = imageValidationService;
     this.documentValidationService = documentValidationService;
     this.mediaTypeResolver = mediaTypeResolver;
+    this.thumbnailService = thumbnailService;
     this.cacheInvalidationService = cacheInvalidationService;
     this.cacheOrchestrator = cacheOrchestrator;
     this.analyticsService = analyticsService;
@@ -173,6 +179,39 @@ public class MediaApplicationService {
         mediaRepository.deleteMedia(mediaId);
         throw e;
       }
+
+      // Generate thumbnail synchronously for images (file bytes already in memory)
+      if (resolvedType == MediaType.IMAGE) {
+        try {
+          byte[] thumbnailBytes = thumbnailService.generate(file.getBytes());
+          String thumbAssetId = UUID.randomUUID().toString();
+          String thumbExtension = ".jpeg";
+          s3Service.uploadAssetBytes(tenantId, mediaId, thumbAssetId, thumbExtension,
+              thumbnailBytes, "image/jpeg", true);
+
+          MediaAsset thumbAsset = MediaAsset.builder()
+              .assetId(thumbAssetId)
+              .mediaId(mediaId)
+              .tenantId(tenantId)
+              .sourceAssetId(assetId)
+              .type(AssetType.THUMBNAIL)
+              .tags(List.of("thumbnail"))
+              .status(AssetStatus.COMPLETE)
+              .outputFormat("jpeg")
+              .mimetype("image/jpeg")
+              .width(200)
+              .size((long) thumbnailBytes.length)
+              .downloadName(resolveDownloadName(fileName, AssetOperation.IMAGE_THUMBNAIL, "jpeg", null))
+              .operation(AssetOperation.IMAGE_THUMBNAIL)
+              .createdAt(Instant.now())
+              .build();
+          assetRepository.createAsset(thumbAsset);
+        } catch (Exception e) {
+          log.warn("Failed to generate sync thumbnail for media {}: {}", mediaId, e.getMessage());
+          // Non-fatal: thumbnail will be generated async via createAssets if needed
+        }
+      }
+
       cacheInvalidationService.invalidatePaginationCache();
 
       uploadSuccessCounter.add(1);
@@ -224,6 +263,30 @@ public class MediaApplicationService {
   public Optional<String> getAssetDownloadUrlPublic(String mediaId, String assetId) {
     return findPublicDownloadableAssetContext(mediaId, assetId)
         .map(ctx -> buildAssetDownloadUrl(ctx.media, ctx.asset));
+  }
+
+  public Map<String, String> getThumbnailUrls(List<Media> mediaItems) {
+    Map<String, String> urls = new HashMap<>();
+    for (Media media : mediaItems) {
+      if (media.getMediaType() != MediaType.IMAGE) continue;
+      if (media.getStatus() == MediaStatus.DELETED) continue;
+
+      var assets = assetRepository.listAssets(media.getMediaId());
+      var thumbnail = assets.stream()
+          .filter(a -> a.getOperation() == AssetOperation.IMAGE_THUMBNAIL
+              && a.getStatus() == AssetStatus.COMPLETE)
+          .findFirst();
+
+      thumbnail.ifPresent(asset -> {
+        try {
+          String url = buildAssetDownloadUrl(media, asset);
+          urls.put(media.getMediaId(), url);
+        } catch (Exception e) {
+          log.warn("Failed to generate thumbnail URL for media {}: {}", media.getMediaId(), e.getMessage());
+        }
+      });
+    }
+    return urls;
   }
 
   public List<MediaAsset> createAssets(String mediaId, CreateAssetRequest request) {
@@ -280,6 +343,33 @@ public class MediaApplicationService {
 
       createAndPublishProcessingJob(media, asset);
       created.add(asset);
+    }
+
+    // Auto-create thumbnail for image media if one doesn't exist
+    if (media.getMediaType() == MediaType.IMAGE && createdNew) {
+      boolean hasThumbnail = existingAssets.stream()
+          .anyMatch(a -> a.getOperation() == AssetOperation.IMAGE_THUMBNAIL
+              && a.getStatus() != AssetStatus.DELETED);
+      if (!hasThumbnail) {
+        String thumbAssetId = UUID.randomUUID().toString();
+        MediaAsset thumbAsset = MediaAsset.builder()
+            .assetId(thumbAssetId)
+            .mediaId(mediaId)
+            .tenantId(media.getTenantId())
+            .sourceAssetId(sourceAssetId)
+            .type(AssetType.THUMBNAIL)
+            .tags(List.of("thumbnail"))
+            .status(AssetStatus.PENDING)
+            .outputFormat("jpeg")
+            .mimetype("image/jpeg")
+            .width(200)
+            .downloadName(resolveDownloadName(media.getName(), AssetOperation.IMAGE_THUMBNAIL, "jpeg", null))
+            .operation(AssetOperation.IMAGE_THUMBNAIL)
+            .createdAt(Instant.now())
+            .build();
+        assetRepository.createAsset(thumbAsset);
+        createAndPublishProcessingJob(media, thumbAsset);
+      }
     }
 
     if (createdNew) {
@@ -546,21 +636,21 @@ public class MediaApplicationService {
     if (mediaType == MediaType.IMAGE && (operation == AssetOperation.DOCUMENT_PREVIEW || operation == AssetOperation.DOCUMENT_TEXT)) {
       throw new IllegalArgumentException("Document operations are not allowed for image media.");
     }
-    if (mediaType == MediaType.DOCUMENT && (operation == AssetOperation.IMAGE_PROCESS || operation == AssetOperation.IMAGE_PREVIEW)) {
+    if (mediaType == MediaType.DOCUMENT && (operation == AssetOperation.IMAGE_PROCESS || operation == AssetOperation.IMAGE_THUMBNAIL)) {
       throw new IllegalArgumentException("Image operations are not allowed for document media.");
     }
   }
 
   private String resolveOutputFormat(AssetOperation operation, String requested) {
     return switch (operation) {
-      case IMAGE_PROCESS, IMAGE_PREVIEW -> (requested != null && !requested.isBlank()) ? requested : "jpeg";
+      case IMAGE_PROCESS, IMAGE_THUMBNAIL -> (requested != null && !requested.isBlank()) ? requested : "jpeg";
       case DOCUMENT_PREVIEW -> "png";
       case DOCUMENT_TEXT -> "json";
     };
   }
 
   private Integer resolveWidth(AssetOperation operation, Integer requested) {
-    if (operation == AssetOperation.IMAGE_PROCESS || operation == AssetOperation.IMAGE_PREVIEW) {
+    if (operation == AssetOperation.IMAGE_PROCESS || operation == AssetOperation.IMAGE_THUMBNAIL) {
       return mediaProperties.resolveWidth(requested);
     }
     return null;
@@ -568,7 +658,7 @@ public class MediaApplicationService {
 
   private AssetType resolveAssetType(AssetOperation operation) {
     return switch (operation) {
-      case IMAGE_PREVIEW, DOCUMENT_PREVIEW -> AssetType.PREVIEW;
+      case IMAGE_THUMBNAIL, DOCUMENT_PREVIEW -> AssetType.THUMBNAIL;
       case DOCUMENT_TEXT -> AssetType.TEXT;
       case IMAGE_PROCESS -> AssetType.DERIVED;
     };
@@ -579,7 +669,8 @@ public class MediaApplicationService {
       return requested;
     }
     return switch (operation) {
-      case IMAGE_PREVIEW, DOCUMENT_PREVIEW -> List.of("preview");
+      case IMAGE_THUMBNAIL -> List.of("thumbnail");
+      case DOCUMENT_PREVIEW -> List.of("preview");
       case DOCUMENT_TEXT -> List.of("text");
       case IMAGE_PROCESS -> List.of("download");
     };
@@ -593,7 +684,8 @@ public class MediaApplicationService {
         ? originalName.replaceAll("\\.[^.]+$", "")
         : "media";
     String suffix = switch (operation) {
-      case IMAGE_PREVIEW, DOCUMENT_PREVIEW -> "preview";
+      case IMAGE_THUMBNAIL -> "thumbnail";
+      case DOCUMENT_PREVIEW -> "preview";
       case DOCUMENT_TEXT -> "text";
       case IMAGE_PROCESS -> "processed";
     };

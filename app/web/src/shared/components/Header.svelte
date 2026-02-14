@@ -14,8 +14,8 @@
 
   let showDetails = $state(false);
   let showUserMenu = $state(false);
-  let dropdownRef: HTMLDivElement;
-  let userMenuRef: HTMLDivElement;
+  let dropdownRef = $state<HTMLDivElement | undefined>(undefined);
+  let userMenuRef = $state<HTMLDivElement | undefined>(undefined);
 
   const healthQuery = createServiceHealthQuery();
   const versionQuery = createVersionInfoQuery();

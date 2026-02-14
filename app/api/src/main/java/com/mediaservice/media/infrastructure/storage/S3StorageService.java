@@ -92,6 +92,24 @@ public class S3StorageService extends AbstractS3StorageRepository {
   }
 
   /**
+   * Upload raw bytes as a media asset (e.g., generated thumbnails).
+   */
+  public void uploadAssetBytes(String tenantId, String mediaId, String assetId,
+      String extension, byte[] data, String contentType, boolean cachePublic) {
+    String key = buildAssetKey(tenantId, mediaId, assetId, extension);
+    var requestBuilder = software.amazon.awssdk.services.s3.model.PutObjectRequest.builder()
+        .bucket(bucketName)
+        .key(key)
+        .contentType(contentType)
+        .contentLength((long) data.length);
+    if (cachePublic) {
+      requestBuilder.cacheControl("public, max-age=31536000");
+    }
+    s3Client.putObject(requestBuilder.build(), software.amazon.awssdk.core.sync.RequestBody.fromBytes(data));
+    log.info("Uploaded asset bytes to S3: {}", key);
+  }
+
+  /**
    * Delete a media asset.
    */
   public void deleteAsset(String tenantId, String mediaId, String assetId, String fileName) {

@@ -1,9 +1,10 @@
 <script lang="ts">
-  import UploadZone from "../components/UploadZone.svelte";
-  import ResultSection from "../components/ResultSection.svelte";
-  import MediaList from "../components/MediaList.svelte";
-  import { currentMediaId } from "../stores";
-  import type { MediaType } from "../../../shared/types";
+import UploadZone from "../components/UploadZone.svelte";
+import ResultSection from "../components/ResultSection.svelte";
+import MediaList from "../components/MediaList.svelte";
+import { createMediaQuery } from "../queries";
+import { currentMediaId } from "../stores";
+import type { MediaType } from "../../../shared/types";
 
   interface Props {
     mediaType?: MediaType;
@@ -12,6 +13,7 @@
   let { mediaType = "image" }: Props = $props();
 
   const MEDIA_ID_QUERY_PARAM = "mediaId";
+  let selectionContextLabel = $state("Source");
 
   function syncMediaIdFromUrl() {
     if (typeof window === "undefined") return;
@@ -54,8 +56,19 @@
     updateUrlFromMediaId($currentMediaId);
   });
 
+  const currentMediaQuery = $derived($currentMediaId ? createMediaQuery($currentMediaId) : null);
+  let currentMedia = $derived(currentMediaQuery?.data ?? null);
+
+  $effect(() => {
+    if (!$currentMediaId) selectionContextLabel = "Source";
+  });
+
   function closeWorkstation() {
     currentMediaId.set(null);
+  }
+
+  function handleSelectionContextChange(label: string) {
+    selectionContextLabel = label;
   }
 </script>
 
@@ -74,9 +87,13 @@
       {#if $currentMediaId}
         <!-- Workstation Header -->
         <div class="h-14 border-b border-gray-100 flex items-center justify-between px-5 bg-gray-50/50 flex-shrink-0">
-          <h3 class="text-sm font-bold text-gray-800">Workstation</h3>
+          <div class="min-w-0">
+            <h3 class="text-sm font-bold text-gray-800 truncate">{currentMedia?.name || "Media"}</h3>
+            <p class="text-[11px] text-gray-500 truncate">{selectionContextLabel}</p>
+          </div>
           <button
             onclick={closeWorkstation}
+            aria-label="Close workstation"
             class="text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-200 transition-colors"
           >
             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -87,7 +104,7 @@
 
         <!-- Workstation Content -->
         <div class="flex-1 overflow-y-auto">
-          <ResultSection {mediaType} layout="panel" />
+          <ResultSection layout="panel" onSelectionContextChange={handleSelectionContextChange} />
         </div>
       {/if}
     </div>
@@ -98,7 +115,7 @@
     <div class="lg:col-span-2 space-y-6">
       <UploadZone {mediaType} />
       {#if $currentMediaId}
-        <ResultSection {mediaType} />
+        <ResultSection />
       {/if}
     </div>
 

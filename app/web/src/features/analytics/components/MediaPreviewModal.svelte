@@ -38,9 +38,9 @@
         const assets = await listAssets(media.entityId);
         if (cancelled) return;
 
-        const previewAsset = pickAssetByTag(assets, "preview");
-        if (previewAsset?.status === "COMPLETE") {
-          previewUrl = await fetchAssetDownloadUrl(media.entityId, previewAsset.assetId);
+        const thumbnailAsset = pickAssetByTag(assets, "thumbnail") ?? pickAssetByTag(assets, "preview");
+        if (thumbnailAsset?.status === "COMPLETE") {
+          previewUrl = await fetchAssetDownloadUrl(media.entityId, thumbnailAsset.assetId);
         }
 
         const downloadAsset = pickAssetByTag(assets, "download") ?? pickAssetByTag(assets, "original");

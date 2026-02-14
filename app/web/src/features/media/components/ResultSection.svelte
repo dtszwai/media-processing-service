@@ -8,26 +8,20 @@
   } from "../services";
   import { createShortUrl, listShortUrls, revokeShortUrl } from "../../shorturl/services";
   import {
-    createMediaListQuery,
+    createMediaQuery,
     createMediaAssetsQuery,
     createAssetsMutation as buildAssetsMutation,
     createAssetRetryMutation,
   } from "../queries";
   import { invalidateMediaList } from "../../../shared/queries";
   import { currentMediaId, isProcessing } from "../stores";
-  import type {
-    MediaType,
-    OutputFormat,
-    MediaAsset,
-    ShortUrlResponse,
-    CreateAssetRequest,
-  } from "../../../shared/types";
+  import type { OutputFormat, MediaAsset, ShortUrlResponse, CreateAssetRequest } from "../../../shared/types";
 
   type Tab = "TRANSFORM" | "SHARE" | "INFO";
 
   interface Props {
-    mediaType?: MediaType;
     layout?: "default" | "panel";
+    onSelectionContextChange?: (label: string) => void;
   }
 
   interface AssetCollections {
@@ -65,7 +59,7 @@
   const shareExpiryInputId = "share-expiry-input";
   const shareLabelInputId = "share-label-input";
 
-  let { mediaType, layout = "default" }: Props = $props();
+  let { layout = "default", onSelectionContextChange }: Props = $props();
 
   let width = $state(500);
   let selectedFormats = $state<OutputFormat[]>(["jpeg"]);
@@ -96,20 +90,19 @@
   let assetUrls = $state<Record<string, string>>({});
   let assetUrlErrors = $state<Record<string, string>>({});
   let assetUrlLoading = $state<Set<string>>(new Set());
+  let detectedImageDimensions = $state<Record<string, { width: number; height: number }>>({});
 
   let activeTab = $state<Tab>("TRANSFORM");
   let viewedAsset = $state<MediaAsset | null>(null);
 
-  const mediaListQuery = createMediaListQuery(undefined, undefined, mediaType);
-  let mediaList = $derived(mediaListQuery.data?.items ?? []);
-  let filteredList = $derived(
-    mediaType ? mediaList.filter((item) => (item.mediaType || "image") === mediaType) : mediaList,
-  );
-  let currentMedia = $derived(filteredList.find((item) => item.mediaId === $currentMediaId) || null);
+  const mediaQuery = $derived($currentMediaId ? createMediaQuery($currentMediaId) : null);
+  let currentMedia = $derived(mediaQuery?.data ?? null);
 
   const assetsQuery = $derived(currentMedia ? createMediaAssetsQuery(currentMedia.mediaId) : null);
   let assets = $derived(assetsQuery?.data ?? []);
-  let assetCollections = $derived(buildAssetCollections(assets, currentMedia?.originalAssetId ?? null));
+  let assetCollections = $derived(
+    buildAssetCollections(assets, currentMedia?.originalAssetId ?? null, currentMedia?.mediaType || "image"),
+  );
   let visibleAssets = $derived([...assetCollections.source, ...assetCollections.generated]);
 
   let shareableAssets = $derived(visibleAssets.filter((asset) => asset.status === "COMPLETE"));
@@ -216,13 +209,17 @@
       return;
     }
 
-    const currentStillExists =
-      viewedAsset && visibleAssets.some((a) => a.assetId === viewedAsset?.assetId);
+    const currentStillExists = viewedAsset && visibleAssets.some((a) => a.assetId === viewedAsset?.assetId);
     if (currentStillExists) return;
 
-    const readyGenerated = assetCollections.generated.find((a) => a.status === "COMPLETE");
     const readySource = assetCollections.source.find((a) => a.status === "COMPLETE");
-    viewedAsset = readyGenerated || readySource || visibleAssets[0] || null;
+    const readyGenerated = assetCollections.generated.find((a) => a.status === "COMPLETE");
+    viewedAsset = readySource || readyGenerated || visibleAssets[0] || null;
+  });
+
+  $effect(() => {
+    if (!onSelectionContextChange) return;
+    onSelectionContextChange(buildSelectionContextLabel(viewedAsset));
   });
 
   let activeShortUrls = $derived(shortUrls.filter((url) => !isInvalid(url)));
@@ -232,13 +229,18 @@
   let inactiveShortUrlGroups = $derived(groupShortUrlsByAsset(inactiveShortUrls, visibleAssets));
   let generatedAssetDisplayTitles = $derived(buildGeneratedAssetDisplayTitles(assetCollections.generated));
 
-  function buildAssetCollections(items: MediaAsset[], originalAssetId: string | null): AssetCollections {
+  function buildAssetCollections(
+    items: MediaAsset[],
+    originalAssetId: string | null,
+    mediaType: string,
+  ): AssetCollections {
     const sorted = [...items].sort(sortByCreatedAtDesc);
     const source: MediaAsset[] = [];
     const generated: MediaAsset[] = [];
 
     for (const asset of sorted) {
       if (asset.status === "DELETED") continue;
+      if (mediaType === "image" && isImageThumbnailAsset(asset)) continue;
       if (isSourceAsset(asset, originalAssetId)) {
         source.push(asset);
       } else {
@@ -260,6 +262,10 @@
     if (originalAssetId && asset.assetId === originalAssetId) return true;
     if (asset.type === "ORIGINAL") return true;
     return Boolean(asset.tags?.includes("original"));
+  }
+
+  function isImageThumbnailAsset(asset: MediaAsset): boolean {
+    return asset.operation === "image.thumbnail";
   }
 
   function countAssetStatuses(items: MediaAsset[]): AssetStatusCounts {
@@ -415,10 +421,17 @@
 
     const format = assetOutputFormat(asset);
     const dimensions = assetDimensions(asset);
-    const isPreview =
-      asset.type === "PREVIEW" || asset.operation === "image.preview" || asset.operation === "document.preview";
+    const isThumbnail = asset.type === "THUMBNAIL" || asset.operation === "image.thumbnail";
+    const isDocPreview = asset.operation === "document.preview";
 
-    if (isPreview) {
+    if (isThumbnail) {
+      if (format && dimensions) return `Thumbnail · ${format} · ${dimensions}`;
+      if (format) return `Thumbnail · ${format}`;
+      if (dimensions) return `Thumbnail · ${dimensions}`;
+      return "Thumbnail";
+    }
+
+    if (isDocPreview) {
       if (format && dimensions) return `Preview · ${format} · ${dimensions}`;
       if (format) return `Preview · ${format}`;
       if (dimensions) return `Preview · ${dimensions}`;
@@ -435,7 +448,7 @@
   function assetKind(asset: MediaAsset): string {
     if (currentMedia && isSourceAsset(asset, currentMedia.originalAssetId || null)) return "Source";
     if (asset.type === "DERIVED") return "Output";
-    if (asset.type === "PREVIEW") return "Preview";
+    if (asset.type === "THUMBNAIL") return "Thumbnail";
     if (asset.type === "TEXT") return "Text";
     return "Asset";
   }
@@ -467,14 +480,39 @@
     return asset.outputFormat.toUpperCase();
   }
 
+  function rememberImageDimensions(assetId: string, event: Event) {
+    const img = event.currentTarget as HTMLImageElement | null;
+    if (!img) return;
+    const width = img.naturalWidth;
+    const height = img.naturalHeight;
+    if (!width || !height) return;
+
+    const prev = detectedImageDimensions[assetId];
+    if (prev && prev.width === width && prev.height === height) return;
+
+    detectedImageDimensions[assetId] = { width, height };
+    detectedImageDimensions = detectedImageDimensions;
+  }
+
   function assetDimensions(asset: MediaAsset): string | null {
     if (asset.width && asset.height) {
       return `${asset.width}x${asset.height}`;
+    }
+    const detected = detectedImageDimensions[asset.assetId];
+    if (detected) {
+      return `${detected.width}x${detected.height}`;
     }
     if (asset.width) {
       return `${asset.width}px`;
     }
     return null;
+  }
+
+  function assetDimensionsWithUnit(asset: MediaAsset): string | null {
+    const dimensions = assetDimensions(asset);
+    if (!dimensions) return null;
+    if (dimensions.endsWith("px")) return dimensions;
+    return `${dimensions} px`;
   }
 
   function assetMeta(asset: MediaAsset) {
@@ -489,6 +527,20 @@
 
     // Generated titles already include format/dimensions, so keep the support line concise.
     return [size, dimensions, format].filter(Boolean).slice(0, 1).join(" · ");
+  }
+
+  function buildSelectionContextLabel(asset: MediaAsset | null): string {
+    if (!asset) return "Source";
+
+    const isSource = currentMedia ? isSourceAsset(asset, currentMedia.originalAssetId || null) : false;
+    if (isSource) return "Source";
+
+    if (asset.type === "TEXT" || asset.operation === "document.text") return "Extracted text";
+    if (asset.operation === "document.preview") return "Preview";
+
+    const format = assetOutputFormat(asset);
+    if (format) return `${format} output`;
+    return "Output";
   }
 
   function shortUrlTargetLabel(shortUrl: ShortUrlResponse) {
@@ -514,21 +566,22 @@
     if (assetUrls[asset.assetId]) return assetUrls[asset.assetId];
     if (assetUrlLoading.has(asset.assetId)) return null;
 
-    assetUrlLoading = new Set([...assetUrlLoading, asset.assetId]);
+    assetUrlLoading.add(asset.assetId);
+    assetUrlLoading = assetUrlLoading;
 
     try {
       const url = await fetchAssetDownloadUrl(currentMedia.mediaId, asset.assetId);
       if (!url) return null;
-      assetUrls = { ...assetUrls, [asset.assetId]: url };
+      assetUrls[asset.assetId] = url;
+      assetUrls = assetUrls;
       return url;
     } catch (error) {
-      assetUrlErrors = {
-        ...assetUrlErrors,
-        [asset.assetId]: error instanceof Error ? error.message : "Failed to fetch URL",
-      };
+      assetUrlErrors[asset.assetId] = error instanceof Error ? error.message : "Failed to fetch URL";
+      assetUrlErrors = assetUrlErrors;
       return null;
     } finally {
-      assetUrlLoading = new Set([...assetUrlLoading].filter((id) => id !== asset.assetId));
+      assetUrlLoading.delete(asset.assetId);
+      assetUrlLoading = assetUrlLoading;
     }
   }
 
@@ -752,17 +805,20 @@
 {#if layout === "panel" && currentMedia}
   <div class="flex flex-col h-full">
     <!-- Preview Area -->
-    <div class="w-full bg-gray-100 border-b border-gray-200 relative group h-[300px] flex items-center justify-center p-4 flex-shrink-0">
+    <div
+      class="w-full bg-gray-100 border-b border-gray-200 relative group h-[300px] flex items-center justify-center p-4 shrink-0"
+    >
       <div class="absolute inset-0 dot-grid-bg"></div>
 
       {#if viewedAsset?.status === "COMPLETE" && isImageAsset(viewedAsset) && assetUrls[viewedAsset.assetId]}
         <img
           src={assetUrls[viewedAsset.assetId]}
-          class="max-w-full max-h-full object-contain shadow-lg rounded-sm relative z-[1]"
+          class="max-w-full max-h-full object-contain shadow-lg rounded-sm relative z-1"
           alt="Preview"
+          onload={(event) => viewedAsset && rememberImageDimensions(viewedAsset.assetId, event)}
         />
         <div
-          class="absolute top-4 right-4 z-[2] flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+          class="absolute top-4 right-4 z-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
         >
           <button
             onclick={() => viewedAsset && handleOpenAsset(viewedAsset)}
@@ -780,7 +836,7 @@
           </button>
         </div>
       {:else if viewedAsset && (viewedAsset.status === "PROCESSING" || viewedAsset.status === "PENDING")}
-        <div class="flex flex-col items-center justify-center relative z-[1]">
+        <div class="flex flex-col items-center justify-center relative z-1">
           <svg class="w-10 h-10 text-blue-500 animate-spin mb-3" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path
@@ -792,7 +848,7 @@
           <p class="text-sm font-medium text-gray-600">Generating Asset...</p>
         </div>
       {:else if viewedAsset?.status === "ERROR"}
-        <div class="flex flex-col items-center justify-center text-center px-6 relative z-[1]">
+        <div class="flex flex-col items-center justify-center text-center px-6 relative z-1">
           <div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-3">
             <svg class="w-6 h-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path
@@ -811,7 +867,7 @@
           {/if}
         </div>
       {:else}
-        <div class="flex flex-col items-center justify-center relative z-[1]">
+        <div class="flex flex-col items-center justify-center relative z-1">
           <svg class="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
             <circle cx="8.5" cy="8.5" r="1.5"></circle>
@@ -823,30 +879,30 @@
 
       {#if viewedAsset?.status === "COMPLETE"}
         <div
-          class="absolute bottom-4 left-4 bg-gray-900/80 backdrop-blur text-white px-3 py-1.5 rounded-full text-xs font-medium border border-white/10 shadow-lg z-[2]"
+          class="absolute bottom-4 left-4 bg-gray-900/80 backdrop-blur text-white px-3 py-1.5 rounded-full text-xs font-medium border border-white/10 shadow-lg z-2"
         >
-          {#if viewedAsset.width && viewedAsset.height}{viewedAsset.width} &times; {viewedAsset.height} &middot;
-          {/if} {assetOutputFormat(viewedAsset) || "FILE"}
+          {#if assetDimensionsWithUnit(viewedAsset)}{assetDimensionsWithUnit(viewedAsset)} &middot;{/if}
+          {assetOutputFormat(viewedAsset) || "FILE"}
         </div>
       {/if}
     </div>
 
     <!-- Versions Strip -->
     {#if visibleAssets.length > 0}
-      <div class="px-5 py-4 border-b border-gray-100 flex-shrink-0">
+      <div class="px-5 py-4 border-b border-gray-100 shrink-0">
         <div class="flex gap-3 overflow-x-auto pb-2">
           {#each visibleAssets as asset (asset.assetId)}
             <button
               onclick={() => {
                 viewedAsset = asset;
               }}
-              class="relative flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden border-2 transition-all {viewedAsset?.assetId ===
+              class="relative shrink-0 w-12 h-12 rounded-lg overflow-hidden border-2 transition-all {viewedAsset?.assetId ===
               asset.assetId
                 ? 'border-blue-600 ring-1 ring-blue-600'
                 : 'border-gray-200 hover:border-gray-300'}"
             >
               {#if asset.status === "COMPLETE" && isImageAsset(asset) && assetUrls[asset.assetId]}
-                <img src={assetUrls[asset.assetId]} class="w-full h-full object-cover" alt="" />
+                <img src={assetUrls[asset.assetId]} class="w-full h-full object-contain" alt="" />
               {:else}
                 <div class="w-full h-full bg-gray-100 flex items-center justify-center">
                   <span class="text-[10px] font-bold text-gray-400">
@@ -868,7 +924,7 @@
     {/if}
 
     <!-- Tabs -->
-    <div class="flex border-b border-gray-200 px-5 flex-shrink-0">
+    <div class="flex border-b border-gray-200 px-5 shrink-0">
       {#each ["TRANSFORM", "SHARE", "INFO"] as tab (tab)}
         <button
           onclick={() => {
@@ -909,8 +965,12 @@
 
         <div class="space-y-5">
           <div>
-            <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-2">Source</label>
+            <label
+              for="transform-source"
+              class="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-2">Source</label
+            >
             <select
+              id="transform-source"
               bind:value={selectedSourceAssetId}
               class="w-full text-xs bg-white border border-gray-300 rounded-md px-3 py-2 text-gray-700"
             >
@@ -921,8 +981,13 @@
           </div>
 
           <div>
-            <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-2">Format</label>
-            <div class="grid grid-cols-3 gap-2">
+            <p
+              id="transform-format-label"
+              class="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-2"
+            >
+              Format
+            </p>
+            <div role="group" aria-labelledby="transform-format-label" class="grid grid-cols-3 gap-2">
               {#each formatOptions as option}
                 <button
                   onclick={() => {
@@ -945,7 +1010,9 @@
           </div>
 
           <div>
-            <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-2">Width (px)</label>
+            <label for="transform-width" class="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-2"
+              >Width (px)</label
+            >
             <div class="flex gap-2">
               {#each [500, 800, 1000, 1920] as w}
                 <button
@@ -961,6 +1028,7 @@
               {/each}
             </div>
             <input
+              id="transform-width"
               type="number"
               bind:value={width}
               min="100"
@@ -980,8 +1048,11 @@
       {:else if activeTab === "SHARE"}
         <div class="space-y-5">
           <div>
-            <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-2">Asset to share</label>
+            <label for="share-asset" class="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-2"
+              >Asset to share</label
+            >
             <select
+              id="share-asset"
               bind:value={selectedShareAssetId}
               class="w-full text-xs bg-white border border-gray-300 rounded-md px-3 py-2 text-gray-700"
             >
@@ -1052,8 +1123,10 @@
                         </a>
                         <p class="text-[11px] text-gray-400 mt-0.5">
                           {#if shortUrl.createdAt}Created {formatDateTime(shortUrl.createdAt)}{/if}
-                          {#if shortUrl.expiresAt} · Expires {formatDateTime(shortUrl.expiresAt)}{/if}
-                          {#if shortUrl.label} · {shortUrl.label}{/if}
+                          {#if shortUrl.expiresAt}
+                            · Expires {formatDateTime(shortUrl.expiresAt)}{/if}
+                          {#if shortUrl.label}
+                            · {shortUrl.label}{/if}
                         </p>
                       </div>
                       <div class="flex justify-end gap-2 border-t border-gray-100 pt-2 mt-2">
@@ -1082,9 +1155,7 @@
         <div class="space-y-4">
           <div class="flex items-center justify-between">
             <h4 class="text-sm font-semibold text-gray-900 truncate pr-2">{currentMedia.name}</h4>
-            <span class="status-badge status-{workflowSummary.badgeClass} flex-shrink-0"
-              >{workflowSummary.badgeLabel}</span
-            >
+            <span class="status-badge status-{workflowSummary.badgeClass} shrink-0">{workflowSummary.badgeLabel}</span>
           </div>
 
           <div class="grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
@@ -1331,7 +1402,7 @@
                     <img
                       src={assetUrls[asset.assetId]}
                       alt={assetTitle(asset)}
-                      class="w-full h-28 object-cover rounded-lg border border-gray-100 mt-3"
+                      class="w-full h-28 object-contain rounded-lg border border-gray-100 mt-3"
                     />
                   {/if}
 
@@ -1411,7 +1482,7 @@
                     <img
                       src={assetUrls[asset.assetId]}
                       alt={assetTitle(asset)}
-                      class="w-full h-28 object-cover rounded-lg border border-gray-100 mt-3"
+                      class="w-full h-28 object-contain rounded-lg border border-gray-100 mt-3"
                     />
                   {/if}
 

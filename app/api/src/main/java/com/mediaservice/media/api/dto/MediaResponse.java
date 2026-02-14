@@ -35,5 +35,6 @@ public class MediaResponse {
   private Instant documentModifiedDate;
   private Long documentTextLength;
   private Boolean documentTextTruncated;
+  private String thumbnailUrl;
   private String message;
 }

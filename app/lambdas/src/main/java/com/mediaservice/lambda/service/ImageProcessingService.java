@@ -95,38 +95,36 @@ public class ImageProcessingService {
     return format;
   }
 
-  private static final int PREVIEW_MAX_WIDTH = 800;
-  private static final float PREVIEW_QUALITY = 0.6f;
+  private static final int THUMBNAIL_MAX_WIDTH = 200;
+  private static final float THUMBNAIL_QUALITY = 0.5f;
 
   /**
-   * Generate a preview image with heavy watermark for CDN distribution.
-   * Preview is lower quality and smaller for efficient CDN caching.
+   * Generate a small, fast-loading thumbnail for grid display.
+   * No watermark, high compression, 200px max width.
    *
    * @param imageData Original image bytes
    * @param outputFormat Desired output format (defaults to JPEG if null/unsupported)
-   * @return Preview image bytes
+   * @return Thumbnail image bytes
    * @throws IOException If image processing fails
    */
-  public byte[] generatePreview(byte[] imageData, OutputFormat outputFormat) throws IOException {
+  public byte[] generateThumbnail(byte[] imageData, OutputFormat outputFormat) throws IOException {
     OutputFormat format = resolveOutputFormat(outputFormat);
 
-    logger.info("Generating preview with format: {}", format.getFormat());
+    logger.info("Generating thumbnail with format: {}", format.getFormat());
 
     var inputStream = new ByteArrayInputStream(imageData);
     var outputStream = new ByteArrayOutputStream();
 
-    // Heavier watermark for preview - center position, more visible
-    int watermarkWidth = Math.max(200, config.getMinWatermarkWidth() * 2);
-    var resizedWatermark = Thumbnails.of(watermarkImage).width(watermarkWidth).asBufferedImage();
+    BufferedImage sourceImage = ImageIO.read(new ByteArrayInputStream(imageData));
+    int targetWidth = Math.min(THUMBNAIL_MAX_WIDTH, sourceImage.getWidth());
 
-    var builder = Thumbnails.of(inputStream)
-        .width(PREVIEW_MAX_WIDTH)
+    Thumbnails.of(inputStream)
+        .width(targetWidth)
         .outputFormat(format.getFormat())
-        .watermark(Positions.CENTER, resizedWatermark, 0.5f)  // Center, more visible
-        .outputQuality(PREVIEW_QUALITY);
+        .outputQuality(THUMBNAIL_QUALITY)
+        .toOutputStream(outputStream);
 
-    builder.toOutputStream(outputStream);
-    logger.info("Preview generated, size: {} bytes", outputStream.size());
+    logger.info("Thumbnail generated, size: {} bytes", outputStream.size());
     return outputStream.toByteArray();
   }
 }

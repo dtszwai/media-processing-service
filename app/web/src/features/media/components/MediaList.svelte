@@ -1,8 +1,5 @@
 <script lang="ts">
   import { formatFileSize, formatRelativeTime } from "../../../shared/utils";
-  import { authenticatedFetch } from "../../../shared/http";
-  import { API_BASE } from "../../../shared/config/env";
-  import { listAssets, getAssetDownloadUrl } from "../services";
   import {
     createMediaListQuery,
     createDeleteMutation,
@@ -29,13 +26,10 @@
   const assetsMutation = buildAssetsMutation();
 
   let deletingIds = $state<Set<string>>(new Set());
-  let previewUrls = $state<Record<string, string>>({});
-  let previewLoading = $state<Set<string>>(new Set());
-  let previewFailed = $state<Set<string>>(new Set());
   let isDragging = $state(false);
   let isUploading = $state(false);
   let dragCounter = 0;
-  let fileInput: HTMLInputElement;
+  let fileInput = $state<HTMLInputElement | undefined>(undefined);
 
   let mediaList = $derived(mediaListQuery.data?.items ?? []);
   let filteredList = $derived(
@@ -49,82 +43,26 @@
     return "All Media";
   }
 
-  // Load preview thumbnails for grid view (throttled to avoid rate limits)
-  const PREVIEW_BATCH_SIZE = 3;
-  const PREVIEW_BATCH_DELAY_MS = 300;
-  let previewQueue = $state<string[]>([]);
-  let previewLoadingBatch = $state(false);
-
-  $effect(() => {
-    if (layout !== "grid") return;
-    const pending: string[] = [];
-    for (const item of filteredList) {
-      if (item.status !== "COMPLETE" && item.status !== "PROCESSING" && item.status !== "PENDING") continue;
-      if (previewUrls[item.mediaId] || previewLoading.has(item.mediaId) || previewFailed.has(item.mediaId)) continue;
-      pending.push(item.mediaId);
-    }
-    if (pending.length > 0) {
-      previewQueue = pending;
-    }
-  });
-
-  $effect(() => {
-    if (previewQueue.length === 0 || previewLoadingBatch) return;
-    void loadPreviewBatch();
-  });
-
-  async function loadPreviewBatch() {
-    previewLoadingBatch = true;
-    try {
-      while (previewQueue.length > 0) {
-        const batch = previewQueue.slice(0, PREVIEW_BATCH_SIZE);
-        previewQueue = previewQueue.slice(PREVIEW_BATCH_SIZE);
-
-        await Promise.all(batch.map((id) => loadPreview(id)));
-
-        if (previewQueue.length > 0) {
-          await new Promise((r) => setTimeout(r, PREVIEW_BATCH_DELAY_MS));
+  function lazyLoad(node: HTMLImageElement) {
+    if (!("IntersectionObserver" in window)) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            const img = entry.target as HTMLImageElement;
+            const src = img.dataset.src;
+            if (src) {
+              img.src = src;
+              img.removeAttribute("data-src");
+            }
+            observer.unobserve(img);
+          }
         }
-      }
-    } finally {
-      previewLoadingBatch = false;
-    }
-  }
-
-  async function loadPreview(mediaId: string) {
-    previewLoading = new Set([...previewLoading, mediaId]);
-    try {
-      const assets = await listAssets(mediaId);
-      // Pick the first COMPLETE asset as thumbnail (prefer processed/preview over original)
-      const completeAssets = assets.filter((a) => a.status === "COMPLETE");
-      const best =
-        completeAssets.find((a) => a.operation === "image.process" || a.operation === "image.preview") ??
-        completeAssets.find((a) => a.type === "ORIGINAL") ??
-        completeAssets[0];
-      if (!best) {
-        previewFailed = new Set([...previewFailed, mediaId]);
-        return;
-      }
-
-      // Use the direct download endpoint (302 redirect to S3 presigned URL)
-      const downloadUrl = getAssetDownloadUrl(mediaId, best.assetId);
-      const response = await authenticatedFetch(downloadUrl);
-      if (!response.ok) {
-        previewFailed = new Set([...previewFailed, mediaId]);
-        return;
-      }
-      const blob = await response.blob();
-      if (blob.size > 0 && blob.type.startsWith("image/")) {
-        previewUrls = { ...previewUrls, [mediaId]: URL.createObjectURL(blob) };
-      } else {
-        previewFailed = new Set([...previewFailed, mediaId]);
-      }
-    } catch {
-      // Preview not available — show placeholder; don't retry
-      previewFailed = new Set([...previewFailed, mediaId]);
-    } finally {
-      previewLoading = new Set([...previewLoading].filter((id) => id !== mediaId));
-    }
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(node);
+    return { destroy: () => observer.disconnect() };
   }
 
   // Upload handlers (grid mode)
@@ -386,9 +324,15 @@
               onkeydown={(e) => handleCardKeydown(e, item.mediaId)}
             >
               <!-- Thumbnail -->
-              <div class="aspect-[4/3] bg-gray-100 relative overflow-hidden">
-                {#if previewUrls[item.mediaId]}
-                  <img src={previewUrls[item.mediaId]} class="w-full h-full object-cover" alt={item.name} />
+              <div class="aspect-4/3 bg-gray-100 relative overflow-hidden">
+                {#if item.thumbnailUrl}
+                  <img
+                    data-src={item.thumbnailUrl}
+                    use:lazyLoad
+                    class="w-full h-full object-contain"
+                    alt={item.name}
+                    loading="lazy"
+                  />
                 {:else if item.status === "ERROR"}
                   <div class="w-full h-full flex items-center justify-center bg-gray-50">
                     <svg class="w-8 h-8 text-red-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
