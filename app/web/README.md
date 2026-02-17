@@ -4,21 +4,28 @@ Web interface for the Media Processing Service built with Svelte 5, TypeScript, 
 
 ## Features
 
-- Image upload with drag & drop
-- Direct upload for files up to 50MB
-- Presigned S3 URL upload for large files (up to 1GB) with progress tracking
-- Image resize with width slider (100-1024px)
-- Side-by-side original vs processed comparison
-- Media history with status badges
-- Analytics dashboard with view counts and format usage
-- Delete with confirmation
+- Tenant registration/login with token refresh
+- API key management UI
+- Image and PDF upload via drag and drop
+- Direct upload (<= 50MB) and presigned upload (> 5MB, up to 1GB)
+- Image derivative generation (`jpeg/png/webp`) with width controls
+- PDF derivative generation (`document.preview`, `document.text`)
+- Asset-centric result viewer (download, retry failed jobs, status polling)
+- Per-asset short URL creation/revocation
+- Media library with lazy-loaded thumbnails
+- Analytics dashboard and DLQ admin tooling
 
 ## Routes
 
-| Path         | Page          | Description                                           |
-| ------------ | ------------- | ----------------------------------------------------- |
-| `/`          | MediaPage     | Upload images, view processing results, media history |
-| `/analytics` | AnalyticsPage | View counts, top media, format usage statistics       |
+| Path | Page | Description |
+| --- | --- | --- |
+| `/login` | `LoginPage` | Tenant login |
+| `/register` | `RegisterPage` | Tenant + admin registration |
+| `/media/images` | `MediaPage` | Image upload and media library |
+| `/media/documents` | `MediaPage` | PDF upload and document processing |
+| `/analytics` | `AnalyticsPage` | Usage metrics and leaderboards |
+| `/settings/api-keys` | `ApiKeysPage` | API key management |
+| `/admin/dlq` | `DlqPage` | Dead letter queue operations |
 
 ## Development
 
@@ -38,11 +45,12 @@ pnpm build
 
 ### Environment Variables
 
-Configure the API backend URL via environment variable:
+Configure the API backend URL and document limits:
 
 ```bash
 # .env.local (optional, defaults to localhost:9000)
 VITE_API_URL=http://localhost:9000
+VITE_DOCUMENT_MAX_PAGES=200
 ```
 
 ## Testing
@@ -70,19 +78,21 @@ The codebase follows a **Domain-Driven Design (DDD)** feature-based architecture
 src/
 ├── features/                 # Feature modules (bounded contexts)
 │   ├── media/                # Media upload & management feature
-│   │   ├── components/       # UploadZone, ResultSection, MediaList
+│   │   ├── components/       # UploadZone, MediaList, ResultSection
 │   │   ├── pages/            # MediaPage
 │   │   ├── services/         # media.service.ts (API calls)
 │   │   ├── queries/          # media.queries.ts (TanStack Query)
 │   │   ├── stores/           # currentMediaId, isProcessing
 │   │   └── index.ts          # Barrel export
-│   │
-│   └── analytics/            # Analytics dashboard feature
-│       ├── components/       # Dashboard, Charts, Tables, Modal
-│       ├── pages/            # AnalyticsPage
-│       ├── services/         # analytics.service.ts
-│       ├── queries/          # analytics.queries.ts
-│       └── index.ts          # Barrel export
+│   ├── analytics/            # Analytics dashboard feature
+│   │   ├── components/       # Dashboard, Charts, Tables, Modal
+│   │   ├── pages/            # AnalyticsPage
+│   │   ├── services/         # analytics.service.ts
+│   │   ├── queries/          # analytics.queries.ts
+│   │   └── index.ts          # Barrel export
+│   ├── auth/                 # Login/register/user/api-key flows
+│   ├── shorturl/             # Short URL service integration
+│   └── admin/                # DLQ admin page + queries/services
 │
 ├── shared/                   # Cross-cutting concerns
 │   ├── components/           # Header (shared UI)
@@ -115,11 +125,12 @@ Each feature module is self-contained with its own:
 
 ### Architecture
 
-- **DDD feature modules** - Each feature (media, analytics) is a self-contained bounded context
+- **DDD feature modules** - Each feature (media, analytics, auth, admin, shorturl) is isolated
 - **Layered architecture** - Components → Queries → Services → API
 - **Shared infrastructure** - Cross-cutting concerns in `shared/` (types, utils, http, queries)
 - **Custom routing** - Simple path-based routing in App.svelte (no external router)
-- **Centralized state** - Svelte stores for shared state within features
+- **Auth-aware routing** - Public routes (`/login`, `/register`) and guarded app routes
+- **Centralized state** - Svelte stores for auth and media workflow state
 - **Separated API layer** - All fetch calls in services, components use queries
 - **Zod validation** - API responses validated with Zod schemas
 - **Barrel exports** - Clean imports via index.ts files

@@ -13,62 +13,68 @@ This directory contains the application source code for the media processing ser
 
 ## API Documentation
 
-Interactive API documentation available at `/swagger-ui.html` when the API is running.
+Interactive API documentation is available at `/swagger-ui.html` when the API is running.
 
-## Media Status Flow
+## Domain Model
 
-```
-PENDING_UPLOAD → PENDING → PROCESSING → COMPLETE
-                                    ↘ ERROR
-                              DELETING → (deleted)
-```
+### Media Status
 
-| Status           | Description                                            |
-| ---------------- | ------------------------------------------------------ |
-| `PENDING_UPLOAD` | Presigned URL created, waiting for client upload to S3 |
-| `PENDING`        | Upload complete, queued for processing                 |
-| `PROCESSING`     | Lambda is processing the image                         |
-| `COMPLETE`       | Processing finished, ready for download                |
-| `ERROR`          | Processing failed                                      |
-| `DELETING`       | Delete requested, waiting for Lambda                   |
+| Status | Meaning |
+| --- | --- |
+| `PENDING_UPLOAD` | Presigned upload initialized; waiting for client to upload to S3 |
+| `PENDING` | Reserved/legacy transitional state (may exist on older records) |
+| `PROCESSING` | One or more derived assets are processing |
+| `COMPLETE` | All required assets are complete |
+| `ERROR` | At least one processing operation failed |
+| `DELETED` | Soft-deleted record retained for TTL/analytics; S3 cleanup happens asynchronously |
 
-## Processing Flow
+### Asset Status
 
-### Direct Upload (up to 50MB)
+| Status | Meaning |
+| --- | --- |
+| `PENDING_UPLOAD` | Original asset awaiting presigned upload completion |
+| `PENDING` | Asset job queued |
+| `PROCESSING` | Lambda is processing this asset |
+| `COMPLETE` | Asset available for download |
+| `ERROR` | Asset processing failed |
+| `DELETED` | Asset is no longer active |
 
-1. Client uploads media → API validates and stores in S3, metadata in DynamoDB (`PENDING` for images, `COMPLETE` for PDFs)
-2. API publishes `media.v1.process` event to SNS (images only)
-3. Lambda receives event, sets status to `PROCESSING`, processes image
-4. Lambda stores result in S3 `processed/` + `preview/` variants, updates status to `COMPLETE`
-5. Client polls status, downloads via presigned URL
+### Supported Asset Operations
 
-### Presigned URL Upload (up to 1GB)
+| Operation | Media Type | Output |
+| --- | --- | --- |
+| `image.process` | `image` | Resized/converted derivative (JPEG/PNG/WebP) |
+| `image.thumbnail` | `image` | Small preview image |
+| `document.preview` | `document` | First-page PNG preview |
+| `document.text` | `document` | Extracted text as JSON |
 
-1. Client calls `POST /v1/media/upload/init` → API returns presigned S3 PUT URL (`PENDING_UPLOAD`)
-2. Client uploads directly to S3 using presigned URL
-3. Client calls `POST /v1/media/{id}/upload/complete` → API verifies and publishes event (`PENDING` for images, `COMPLETE` for PDFs)
-4. Processing continues as above (images only)
+## Processing Flows
 
-### Resize
+### Upload and Derive Assets
 
-1. Client requests resize → API sets status to `PENDING`, publishes `media.v1.resize`
-2. Lambda processes and updates to `COMPLETE`
+1. Upload original media:
+   - Direct: `POST /v1/media/upload` (<= 50MB)
+   - Presigned: `POST /v1/media/upload/init` -> upload to S3 -> `POST /v1/media/{id}/upload/complete` (<= 1GB)
+2. API stores media + original asset metadata in DynamoDB.
+3. Client requests derivatives via `POST /v1/media/{id}/assets`.
+4. API creates processing jobs and publishes events.
+5. Lambda updates asset/media status and persists results.
 
-### Delete
+### Document-Specific Processing
 
-1. Client requests delete → API sets status to `DELETING`, publishes `media.v1.delete`
-2. Lambda deletes files from S3, removes metadata from DynamoDB
+- Validates PDF magic bytes, encryption, and max pages (default 200)
+- Generates preview PNG (`document.preview`)
+- Extracts per-page text payload (`document.text`)
+- Stores document metadata on media record (title, author, page count, text stats)
 
-## Configuration
+### Delete Flow
 
-| Variable                    | Description                | Default      |
-| --------------------------- | -------------------------- | ------------ |
-| `APP_PORT`                  | API server port            | 9000         |
-| `AWS_REGION`                | AWS region                 | us-west-2    |
-| `MEDIA_BUCKET_NAME`         | S3 bucket name             | media-bucket |
-| `MEDIA_DYNAMODB_TABLE_NAME` | DynamoDB table             | media        |
-| `RATE_LIMITING_ENABLED`     | Enable rate limiting       | true         |
-| `RATE_LIMIT_API_RPM`        | API requests per minute    | 100          |
-| `RATE_LIMIT_UPLOAD_RPM`     | Upload requests per minute | 10           |
+1. `DELETE /v1/media/{id}` marks media as `DELETED` with retention TTL.
+2. Delete event is published.
+3. Lambda removes associated S3 objects asynchronously.
 
-See root `docker-compose.yml` for full configuration.
+## Where To Find Details
+
+- Endpoint-level API details: OpenAPI/Swagger (`/swagger-ui.html`)
+- Runtime/service configuration: `/app/api/src/main/resources/application.yml`
+- Local environment defaults: `/docker-compose.yml`

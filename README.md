@@ -1,60 +1,80 @@
 # Distributed Media Processing Service
 
-An event-driven media processing pipeline built with Spring Boot and AWS Lambda, demonstrating decoupled architecture patterns and distributed tracing. Currently supports images and PDFs.
+An event-driven media platform built with Spring Boot, AWS Lambda, and S3/DynamoDB. It supports multi-tenant uploads, asynchronous asset generation, analytics, short links, and operational tooling.
 
 ## Overview
 
-This service handles media uploads asynchronously using an event-driven architecture. The REST API accepts uploads and publishes events, while Lambda functions handle CPU-intensive image transformations independently, enabling the system to scale ingestion and processing separately. PDFs are stored and served as original files (processing features will be added later).
+- Upload media via direct multipart (up to 50MB) or presigned S3 flow (up to 1GB)
+- Process image and document assets asynchronously through SNS/SQS + Lambda
+- Create derived assets on demand (`image.process`, `image.thumbnail`, `document.preview`, `document.text`)
+- Extract PDF metadata/text and generate document preview images
+- Manage auth with tenant-scoped JWT and API keys
+- Track analytics (views/downloads, top media, format usage, summary)
+- Generate and revoke short URLs for specific media assets
+- Operate DLQ replay/delete/purge endpoints for failed message handling
 
 ## Architecture
 
 ![High-Level System Architecture](images/high-level-system-architecture.png)
 
-**Key Design Decisions:**
+Key design choices:
 
-- **SNS/SQS buffering** decouples high-throughput API ingestion from CPU-intensive image transformation
-- **Async processing** allows the API to respond immediately while processing happens in background
-- **Status polling** enables clients to track processing state without blocking
-- **Soft delete** preserves analytics data when media is deleted (see [ADR-0002](docs/adr/0002-soft-delete-pattern.md))
+- SNS/SQS buffering decouples API ingestion from processing workload
+- Asset-based processing model allows multiple outputs per media item
+- Soft delete keeps metadata for analytics and audit while removing S3 objects
+- OpenTelemetry traces flow API -> SNS/SQS -> Lambda for end-to-end visibility
 
-## Tech Stack
+## Core Workflows
 
-- Java 21, Spring Boot 3.x
-- AWS Lambda (image processing)
-- AWS S3 (object storage), DynamoDB (metadata)
-- AWS SNS/SQS (event messaging)
-- Redis (caching, rate limiting, analytics)
-- OpenTelemetry (distributed tracing)
-- Grafana (visualization)
-- LocalStack (local AWS emulation)
-- Terraform (infrastructure as code)
+1. Upload media (`/v1/media/upload` or `/v1/media/upload/init` + `/upload/complete`).
+2. API stores original asset in S3 + metadata in DynamoDB.
+3. Client requests derived assets via `POST /v1/media/{mediaId}/assets`.
+4. Lambda processes jobs and updates per-asset + media status.
+5. Client fetches assets, download links, and analytics through API/Web UI.
 
-## Production Infrastructure
+## Security and Tenancy
 
-The API includes production-ready features:
+- Authentication methods: `Authorization: Bearer <jwt>` or `X-API-Key`
+- Tenant isolation is enforced when `AUTH_ENFORCEMENT_ENABLED=true`
+- Local default keeps enforcement off for easier bootstrapping
+- Admin-only access applies to `/admin/**` when enforcement is enabled
 
-| Feature               | Description                                                                                    |
-| --------------------- | ---------------------------------------------------------------------------------------------- |
-| **Rate Limiting**     | Redis-backed distributed per-IP limits (100 req/min API, 10 req/min uploads)                   |
-| **Caching**           | Redis-backed Spring Cache for media metadata, status, and presigned URLs                       |
-| **Analytics**         | View counts, leaderboards (day/week/month/all-time), format usage tracking                     |
-| **Circuit Breaker**   | Resilience4j protects AWS calls; opens at 50% failure rate                                     |
-| **Security Headers**  | HSTS, CSP, X-Frame-Options, X-Content-Type-Options                                             |
-| **Request Tracking**  | UUID per request via `X-Request-ID` header, MDC log correlation                                |
-| **Health Checks**     | Kubernetes probes at `/actuator/health/liveness` and `/actuator/health/readiness`              |
-| **API Documentation** | OpenAPI/Swagger at `/swagger-ui.html`                                                          |
-| **Metrics**           | Actuator metrics at `/actuator/metrics`, circuit breaker status at `/actuator/circuitbreakers` |
+## Local Development
 
-Configuration via environment variables or `application.yml`.
+### Prerequisites
 
-## Observability
+- Docker + Docker Compose
+- `make`
+- Optional: `pnpm` (for web-only local iteration)
 
-End-to-end distributed tracing with OpenTelemetry enables cross-service visibility from API to Lambda. Traces propagate through SNS/SQS messages, allowing bottleneck detection across the entire pipeline.
+### Recommended Start
 
-Grafana dashboards visualize:
+```bash
+make local-up
+```
 
-- P95 latency across services
-- Processing throughput and error rates
-- Trace waterfall views for debugging
+This builds modules, starts LocalStack/Redis/Grafana/API, and applies Terraform.
 
-Access Grafana at http://localhost:3000 when running locally.
+Service URLs:
+
+- API: http://localhost:9000
+- Swagger: http://localhost:9000/swagger-ui.html
+- Grafana: http://localhost:3000
+- LocalStack: http://localhost:4566
+- Web UI (when running `make run-web`): http://localhost:3001
+
+## Observability and Reliability
+
+- OpenTelemetry tracing with context propagation through messaging
+- Actuator endpoints for health/metrics/circuit breaker visibility
+- Redis-backed rate limits, caches, and hot-key protections
+- Resilience4j circuit breakers/retries/time limiters around AWS integrations
+- Grafana dashboard is pre-provisioned in local setup (`data/grafana/dashboards/media-service.json`) and available at `http://localhost:3000`
+
+## Documentation Map
+
+- Commands and local workflows: run `make help`
+- API reference: OpenAPI/Swagger at `/swagger-ui.html`
+- App-level implementation guide: [app/README.md](app/README.md)
+- Web UI guide: [app/web/README.md](app/web/README.md)
+- Architecture decisions: [docs/adr](docs/adr)
