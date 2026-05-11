@@ -10,6 +10,7 @@ import com.mediaservice.media.application.MediaApplicationService;
 import com.mediaservice.media.application.mapper.MediaMapper;
 import com.mediaservice.common.model.MediaAsset;
 import com.mediaservice.common.model.AssetStatus;
+import com.mediaservice.common.model.MediaSource;
 import com.mediaservice.common.model.MediaType;
 import com.mediaservice.shared.http.PagedResponse;
 import com.mediaservice.shared.http.error.ErrorResponse;
@@ -59,14 +60,17 @@ public class MediaController {
   public ResponseEntity<PagedResponse<MediaResponse>> getAllMedia(
       @RequestParam(required = false) String cursor,
       @RequestParam(required = false) Integer limit,
-      @RequestParam(required = false) String mediaType) {
+      @RequestParam(required = false) String mediaType,
+      @RequestParam(required = false) String source) {
     MediaType resolvedType = MediaType.fromString(mediaType);
     if (mediaType != null && resolvedType == null) {
       throw new IllegalArgumentException("Invalid mediaType. Supported values: image, document, video, audio, other.");
     }
-    log.info("Get all media request: cursor={}, limit={}, mediaType={}", cursor, limit,
-        resolvedType != null ? resolvedType.getValue() : "any");
-    var result = mediaService.getMediaPaginated(cursor, limit, resolvedType);
+    MediaSource resolvedSource = source != null ? MediaSource.fromString(source) : null;
+    log.info("Get all media request: cursor={}, limit={}, mediaType={}, source={}", cursor, limit,
+        resolvedType != null ? resolvedType.getValue() : "any",
+        resolvedSource != null ? resolvedSource.getValue() : "any");
+    var result = mediaService.getMediaPaginated(cursor, limit, resolvedType, resolvedSource);
     var thumbnailUrls = mediaService.getThumbnailUrls(result.items());
     var items = result.items().stream()
         .map(m -> mediaMapper.toResponse(m, thumbnailUrls.get(m.getMediaId())))
@@ -196,6 +200,30 @@ public class MediaController {
       return ResponseEntity.status(HttpStatus.ACCEPTED).build();
     }
     return mediaService.getAssetDownloadUrl(mediaId, assetId)
+        .map(url -> ResponseEntity.ok(AssetDownloadUrlResponse.builder().url(url).build()))
+        .orElse(ResponseEntity.status(HttpStatus.ACCEPTED).build());
+  }
+
+  @Operation(summary = "Get presigned inline preview URL for an asset")
+  @ApiResponses({
+      @ApiResponse(responseCode = "200", description = "Preview URL generated"),
+      @ApiResponse(responseCode = "202", description = "Asset still processing"),
+      @ApiResponse(responseCode = "404", description = "Asset not found")
+  })
+  @GetMapping("/{mediaId}/assets/{assetId}/preview-url")
+  public ResponseEntity<AssetDownloadUrlResponse> getAssetPreviewUrl(
+      @PathVariable String mediaId,
+      @PathVariable String assetId) {
+    log.info("Get asset preview URL request: mediaId={}, assetId={}", mediaId, assetId);
+    var assetOpt = mediaService.getAsset(mediaId, assetId);
+    if (assetOpt.isEmpty()) {
+      return ResponseEntity.notFound().build();
+    }
+    var asset = assetOpt.get();
+    if (!isAssetComplete(asset)) {
+      return ResponseEntity.status(HttpStatus.ACCEPTED).build();
+    }
+    return mediaService.getAssetPreviewUrl(mediaId, assetId)
         .map(url -> ResponseEntity.ok(AssetDownloadUrlResponse.builder().url(url).build()))
         .orElse(ResponseEntity.status(HttpStatus.ACCEPTED).build());
   }

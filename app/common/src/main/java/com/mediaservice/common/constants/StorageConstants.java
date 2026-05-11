@@ -9,8 +9,6 @@ package com.mediaservice.common.constants;
  * <pre>
  * {tenantId}/{mediaId}/assets/{assetId}.{ext}
  * </pre>
- *
- * @see <a href="docs/adr/0001-s3-storage-structure.md">ADR-0001: S3 Storage Structure</a>
  */
 public final class StorageConstants {
 
@@ -37,6 +35,27 @@ public final class StorageConstants {
   public static final String DYNAMO_PK_SHORT_URL_PREFIX = "SHORT#";
   public static final String DYNAMO_SK_SHORT_URL_PREFIX = "SHORT#";
 
+  // Generation pipeline key patterns (single-table)
+  public static final String DYNAMO_PK_GEN_PREFIX = "GEN#";
+  public static final String DYNAMO_SK_GEN_JOB = "JOB";
+  public static final String DYNAMO_SK_STAGE_PREFIX = "STAGE#";
+  public static final String DYNAMO_SK_ARTIFACT_PREFIX = "ARTIFACT#";
+  public static final String DYNAMO_SK_IDEMPOTENCY_PREFIX = "IDEMPOTENCY#";
+  public static final String DYNAMO_SK_SAFETY_PREFIX = "SAFETY#";
+  public static final String DYNAMO_SK_AUDIT_PREFIX = "AUDIT#";
+
+  // Budget reservation key patterns
+  public static final String DYNAMO_PK_BUDGET_PREFIX = "BUDGET#";
+  public static final String DYNAMO_SK_BUDGET_RESERVED = "RESERVED";
+  public static final String DYNAMO_SK_BUDGET_RESERVED_PREFIX = "RESERVED#";
+  public static final String DYNAMO_SK_BUDGET_USED = "USED";
+
+  // Simulator state + control row keys
+  public static final String DYNAMO_PK_SIM_PREFIX = "SIM#";
+  public static final String DYNAMO_SK_SIM_STATE = "STATE";
+  public static final String DYNAMO_PK_GENERATION_CONTROL = "GENERATION#CONTROL";
+  public static final String DYNAMO_SK_GEN_CONTROL_SIMULATOR = "SIMULATOR";
+
   // DynamoDB attribute names
   public static final String DYNAMO_ATTR_ORIGINAL_FILENAME = "originalFilename";
   public static final String DYNAMO_ATTR_TENANT_ID = "tenantId";
@@ -54,6 +73,42 @@ public final class StorageConstants {
    */
   public static String buildAssetKey(String tenantId, String mediaId, String assetId, String extension) {
     return tenantId + "/" + mediaId + "/" + S3_ASSET_PREFIX + "/" + assetId + extension;
+  }
+
+  public static String buildGenPk(String jobId) {
+    return DYNAMO_PK_GEN_PREFIX + jobId;
+  }
+
+  public static String buildBudgetPk(String tenantId, String date) {
+    return DYNAMO_PK_BUDGET_PREFIX + tenantId + "#" + date;
+  }
+
+  public static String buildStageSk(String stage, int attempt) {
+    return DYNAMO_SK_STAGE_PREFIX + stage + "#" + attempt;
+  }
+
+  public static String buildSafetySk(String stage, String gate, long timestampMillis) {
+    return DYNAMO_SK_SAFETY_PREFIX + stage + "#" + gate + "#" + timestampMillis;
+  }
+
+  public static String buildAuditSk(String category, String gate, long timestampMillis) {
+    return DYNAMO_SK_AUDIT_PREFIX + category + "#" + gate + "#" + timestampMillis;
+  }
+
+  public static String buildIdempotencySk(String stage, String operation) {
+    return DYNAMO_SK_IDEMPOTENCY_PREFIX + stage + "#" + operation;
+  }
+
+  public static String buildArtifactSk(String artifactId) {
+    return DYNAMO_SK_ARTIFACT_PREFIX + artifactId;
+  }
+
+  public static String buildSimPk(String providerJobId) {
+    return DYNAMO_PK_SIM_PREFIX + providerJobId;
+  }
+
+  public static String buildReservedJobSk(String jobId) {
+    return DYNAMO_SK_BUDGET_RESERVED_PREFIX + jobId;
   }
 
   /**

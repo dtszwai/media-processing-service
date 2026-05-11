@@ -1,6 +1,7 @@
 <script lang="ts">
   import { QueryClientProvider } from "@tanstack/svelte-query";
   import { queryClient } from "./shared/queries";
+  import { isAudioRoute, isImagesRoute } from "./shared/utils";
   import { authStore } from "./features/auth/stores/auth.store";
   import Header from "./shared/components/Header.svelte";
   import MediaPage from "./features/media/pages/MediaPage.svelte";
@@ -61,9 +62,8 @@
 
   let authState = $derived($authStore);
   let isPublicPage = $derived(PUBLIC_ROUTES.includes(currentPath));
-  let isMediaImagesRoute = $derived(
-    currentPath === "/" || currentPath === "/media" || currentPath.startsWith("/media/images"),
-  );
+  let isMediaImagesRoute = $derived(isImagesRoute(currentPath));
+  let isMediaAudioRoute = $derived(isAudioRoute(currentPath));
 </script>
 
 <QueryClientProvider client={queryClient}>
@@ -102,6 +102,8 @@
               <ApiKeysPage />
             {:else if currentPath === "/media/documents"}
               <MediaPage mediaType="document" />
+            {:else if isMediaAudioRoute}
+              <MediaPage mediaType="audio" />
             {:else}
               <MediaPage mediaType="image" />
             {/if}

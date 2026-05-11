@@ -1,0 +1,10 @@
+# NotebookLM one-time login — used by scripts/notebooklm_login.py to drive
+# a Chromium browser, capture the Google session, and write storage_state.json.
+#
+# Install on the host machine (not inside the API container):
+#   pip install -r scripts/notebooklm-login-requirements.txt
+#   playwright install chromium
+#
+# Once you have storage_state.json, the runtime container only needs the
+# lighter scripts/notebooklm-requirements.txt (no Chromium).
+notebooklm-py[browser,cookies]

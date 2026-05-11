@@ -13,6 +13,7 @@ public final class LambdaConfig {
   private final String s3Endpoint;
   private final String bucketName;
   private final String tableName;
+  private final String generationTopicArn;
 
   // Redis Configuration (for Analytics Lambda)
   private final String redisHost;
@@ -39,6 +40,7 @@ public final class LambdaConfig {
     this.s3Endpoint = getEnv("AWS_S3_ENDPOINT", null);
     this.bucketName = getEnv("MEDIA_BUCKET_NAME", "media-bucket");
     this.tableName = getEnv("MEDIA_DYNAMODB_TABLE_NAME", "media");
+    this.generationTopicArn = getEnv("MEDIA_GENERATION_TOPIC_ARN", null);
 
     this.redisHost = getEnv("REDIS_HOST", "localhost");
     this.redisPort = getEnvInt("REDIS_PORT", 6379);

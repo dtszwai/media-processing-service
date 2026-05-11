@@ -3,6 +3,7 @@
   import { authStore } from "../../features/auth/stores/auth.store";
   import { queryClient } from "../queries";
   import type { HealthStatus, UserInfo } from "../types";
+  import { isAudioRoute, isDocumentsRoute, isImagesRoute } from "../utils";
 
   interface Props {
     currentPath: string;
@@ -21,10 +22,9 @@
   const versionQuery = createVersionInfoQuery();
 
   let isAdmin = $derived(user?.roles?.includes("ADMIN") ?? false);
-  let isImagesRoute = $derived(
-    currentPath === "/" || currentPath === "/media" || currentPath.startsWith("/media/images"),
-  );
-  let isDocumentsRoute = $derived(currentPath.startsWith("/media/documents"));
+  let onImagesRoute = $derived(isImagesRoute(currentPath));
+  let onDocumentsRoute = $derived(isDocumentsRoute(currentPath));
+  let onAudioRoute = $derived(isAudioRoute(currentPath));
 
   function handleClickOutside(event: MouseEvent) {
     if (showDetails && dropdownRef && !dropdownRef.contains(event.target as Node)) {
@@ -102,16 +102,23 @@
       <a
         href="/media/images"
         onclick={(e) => handleNavClick(e, "/media/images")}
-        class="transition-colors {isImagesRoute ? 'text-gray-900' : 'text-gray-500 hover:text-gray-900'}"
+        class="transition-colors {onImagesRoute ? 'text-gray-900' : 'text-gray-500 hover:text-gray-900'}"
       >
         Images
       </a>
       <a
         href="/media/documents"
         onclick={(e) => handleNavClick(e, "/media/documents")}
-        class="transition-colors {isDocumentsRoute ? 'text-gray-900' : 'text-gray-500 hover:text-gray-900'}"
+        class="transition-colors {onDocumentsRoute ? 'text-gray-900' : 'text-gray-500 hover:text-gray-900'}"
       >
         Documents
+      </a>
+      <a
+        href="/media/audio"
+        onclick={(e) => handleNavClick(e, "/media/audio")}
+        class="transition-colors {onAudioRoute ? 'text-gray-900' : 'text-gray-500 hover:text-gray-900'}"
+      >
+        Audio Overviews
       </a>
       <a
         href="/analytics"

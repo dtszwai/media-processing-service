@@ -10,16 +10,24 @@
   } from "../queries";
   import { invalidateMediaList } from "../../../shared/queries";
   import { currentMediaId, isProcessing } from "../stores";
-  import type { MediaType, OutputFormat, CreateAssetRequest } from "../../../shared/types";
+  import type { MediaType, MediaSource, OutputFormat, CreateAssetRequest } from "../../../shared/types";
+
+  const SOURCE_FILTERS: ReadonlyArray<{ value: MediaSource | undefined; label: string }> = [
+    { value: undefined, label: "All" },
+    { value: "upload", label: "Uploaded" },
+    { value: "generated", label: "Generated" },
+  ];
 
   interface Props {
     mediaType?: MediaType;
+    source?: MediaSource;
     layout?: "list" | "grid";
   }
 
-  let { mediaType, layout = "list" }: Props = $props();
+  let { mediaType, source: initialSource = undefined, layout = "list" }: Props = $props();
 
-  const mediaListQuery = createMediaListQuery(undefined, undefined, mediaType);
+  let sourceFilter = $state<MediaSource | undefined>(initialSource);
+  const mediaListQuery = $derived(createMediaListQuery({ mediaType, source: sourceFilter }));
   const deleteMutation = createDeleteMutation();
   const uploadMutation = createUploadMutation();
   const presignedUploadMutation = createPresignedUploadMutation();
@@ -40,6 +48,7 @@
   function getListTitle(type?: MediaType): string {
     if (type === "image") return "Images";
     if (type === "document") return "Documents";
+    if (type === "audio") return "Audio Overviews";
     return "All Media";
   }
 
@@ -230,6 +239,20 @@
     <div class="flex items-center justify-between">
       <h2 class="text-2xl font-bold text-gray-900 tracking-tight">Library</h2>
       <div class="flex items-center gap-3">
+        <div class="flex rounded-lg border border-gray-300 bg-white p-1" role="group" aria-label="Filter by source">
+          {#each SOURCE_FILTERS as option (option.label)}
+            <button
+              type="button"
+              onclick={() => (sourceFilter = option.value)}
+              class="rounded-md px-3 py-1 text-xs font-medium transition-colors {sourceFilter === option.value
+                ? 'bg-gray-900 text-white'
+                : 'text-gray-600 hover:bg-gray-100'}"
+              aria-pressed={sourceFilter === option.value}
+            >
+              {option.label}
+            </button>
+          {/each}
+        </div>
         <button
           onclick={handleRefresh}
           disabled={mediaListQuery.isFetching}
@@ -458,6 +481,21 @@
           </svg>
         </button>
       </div>
+    </div>
+
+    <div class="mb-3 flex rounded-lg border border-gray-300 bg-white p-1" role="group" aria-label="Filter by source">
+      {#each SOURCE_FILTERS as option (option.label)}
+        <button
+          type="button"
+          onclick={() => (sourceFilter = option.value)}
+          class="flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors {sourceFilter === option.value
+            ? 'bg-gray-900 text-white'
+            : 'text-gray-600 hover:bg-gray-100'}"
+          aria-pressed={sourceFilter === option.value}
+        >
+          {option.label}
+        </button>
+      {/each}
     </div>
 
     <div class="space-y-2 max-h-80 overflow-y-auto">

@@ -7,6 +7,7 @@ import com.mediaservice.common.model.AssetStatus;
 import com.mediaservice.common.model.AssetType;
 import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaAsset;
+import com.mediaservice.common.model.MediaSource;
 import com.mediaservice.common.model.MediaStatus;
 import com.mediaservice.common.model.MediaType;
 import com.mediaservice.common.model.OutputFormat;
@@ -155,6 +156,7 @@ public class MediaApplicationService {
           .name(fileName)
           .mimetype(contentType)
           .mediaType(resolvedType)
+          .source(MediaSource.UPLOAD)
           .status(MediaStatus.COMPLETE)
           .originalAssetId(assetId)
           .createdAt(Instant.now())
@@ -242,6 +244,11 @@ public class MediaApplicationService {
     return mediaRepository.getMediaPaginated(cursor, limit, mediaType);
   }
 
+  public MediaDynamoDbRepository.MediaPagedResult getMediaPaginated(String cursor, Integer limit, MediaType mediaType,
+      MediaSource source) {
+    return mediaRepository.getMediaPaginated(cursor, limit, mediaType, source);
+  }
+
   public List<MediaAsset> listAssets(String mediaId) {
     getActiveMedia(mediaId);
     return assetRepository.listAssets(mediaId);
@@ -258,6 +265,11 @@ public class MediaApplicationService {
   public Optional<String> getAssetDownloadUrl(String mediaId, String assetId) {
     return findAuthorizedDownloadableAssetContext(mediaId, assetId)
         .map(this::buildDownloadUrlForAuthorizedRequest);
+  }
+
+  public Optional<String> getAssetPreviewUrl(String mediaId, String assetId) {
+    return findAuthorizedDownloadableAssetContext(mediaId, assetId)
+        .map(ctx -> buildAssetPreviewUrl(ctx.media, ctx.asset));
   }
 
   public Optional<String> getAssetDownloadUrlPublic(String mediaId, String assetId) {
@@ -438,6 +450,7 @@ public class MediaApplicationService {
         .name(request.getFileName())
         .mimetype(request.getContentType())
         .mediaType(resolvedType)
+        .source(MediaSource.UPLOAD)
         .status(MediaStatus.PENDING_UPLOAD)
         .originalAssetId(assetId)
         .webhookUrl(request.getWebhookUrl())
@@ -630,14 +643,23 @@ public class MediaApplicationService {
   }
 
   private void validateOperation(MediaType mediaType, AssetOperation operation) {
+    if (mediaType == null) {
+      throw new IllegalArgumentException("Media type is required for asset operations.");
+    }
     if (operation == null) {
       throw new IllegalArgumentException("operation is required");
     }
     if (mediaType == MediaType.IMAGE && (operation == AssetOperation.DOCUMENT_PREVIEW || operation == AssetOperation.DOCUMENT_TEXT)) {
-      throw new IllegalArgumentException("Document operations are not allowed for image media.");
+      throw new IllegalArgumentException(
+          String.format("Operation '%s' is not supported for media type '%s'", operation, mediaType.getValue()));
     }
     if (mediaType == MediaType.DOCUMENT && (operation == AssetOperation.IMAGE_PROCESS || operation == AssetOperation.IMAGE_THUMBNAIL)) {
-      throw new IllegalArgumentException("Image operations are not allowed for document media.");
+      throw new IllegalArgumentException(
+          String.format("Operation '%s' is not supported for media type '%s'", operation, mediaType.getValue()));
+    }
+    if (mediaType != MediaType.IMAGE && mediaType != MediaType.DOCUMENT) {
+      throw new IllegalArgumentException(
+          String.format("Operation '%s' is not supported for media type '%s'", operation, mediaType.getValue()));
     }
   }
 
@@ -786,6 +808,17 @@ public class MediaApplicationService {
         asset.getAssetId(),
         extension,
         asset.getDownloadName(),
+        asset.getMimetype());
+  }
+
+  private String buildAssetPreviewUrl(Media media, MediaAsset asset) {
+    String tenantId = resolveTenantId(media);
+    String extension = extensionFromFormat(asset.getOutputFormat());
+    return s3Service.getAssetPreviewPresignedUrl(
+        tenantId,
+        media.getMediaId(),
+        asset.getAssetId(),
+        extension,
         asset.getMimetype());
   }
 

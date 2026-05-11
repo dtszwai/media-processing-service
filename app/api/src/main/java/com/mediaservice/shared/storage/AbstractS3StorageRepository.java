@@ -105,35 +105,30 @@ public abstract class AbstractS3StorageRepository implements S3StorageRepository
 
   @Override
   public String generatePresignedDownloadUrl(String key, Duration expiration) {
-    var getObjectRequest = GetObjectRequest.builder()
-        .bucket(bucketName)
-        .key(key)
-        .build();
-    var presignRequest = GetObjectPresignRequest.builder()
-        .signatureDuration(expiration)
-        .getObjectRequest(getObjectRequest)
-        .build();
-    var presignedRequest = s3Presigner.presignGetObject(presignRequest);
-    log.debug("Generated presigned download URL for: bucket={}, key={}", bucketName, key);
-    return presignedRequest.url().toString();
+    return presignedGet(key, expiration, null, null);
   }
 
   /**
    * Generate a presigned download URL with optional content disposition/type overrides.
-   *
-   * @param key          The S3 object key
-   * @param expiration   Signature duration
-   * @param downloadName Optional filename for Content-Disposition
-   * @param contentType  Optional response Content-Type override
-   * @return Presigned URL
    */
   public String generatePresignedDownloadUrl(String key, Duration expiration, String downloadName, String contentType) {
-    var requestBuilder = GetObjectRequest.builder()
-        .bucket(bucketName)
-        .key(key);
-    if (downloadName != null && !downloadName.isBlank()) {
-      String safeName = downloadName.replace("\"", "");
-      requestBuilder.responseContentDisposition("attachment; filename=\"" + safeName + "\"");
+    String disposition = (downloadName != null && !downloadName.isBlank())
+        ? "attachment; filename=\"" + downloadName.replace("\"", "") + "\""
+        : null;
+    return presignedGet(key, expiration, disposition, contentType);
+  }
+
+  /**
+   * Generate a presigned URL intended for inline browser preview.
+   */
+  public String generatePresignedPreviewUrl(String key, Duration expiration, String contentType) {
+    return presignedGet(key, expiration, "inline", contentType);
+  }
+
+  private String presignedGet(String key, Duration expiration, String contentDisposition, String contentType) {
+    var requestBuilder = GetObjectRequest.builder().bucket(bucketName).key(key);
+    if (contentDisposition != null && !contentDisposition.isBlank()) {
+      requestBuilder.responseContentDisposition(contentDisposition);
     }
     if (contentType != null && !contentType.isBlank()) {
       requestBuilder.responseContentType(contentType);
@@ -142,9 +137,9 @@ public abstract class AbstractS3StorageRepository implements S3StorageRepository
         .signatureDuration(expiration)
         .getObjectRequest(requestBuilder.build())
         .build();
-    var presignedRequest = s3Presigner.presignGetObject(presignRequest);
-    log.debug("Generated presigned download URL with disposition for: bucket={}, key={}", bucketName, key);
-    return presignedRequest.url().toString();
+    String url = s3Presigner.presignGetObject(presignRequest).url().toString();
+    log.debug("Generated presigned GET URL for: bucket={}, key={}", bucketName, key);
+    return url;
   }
 
   @Override

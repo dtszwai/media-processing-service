@@ -6,10 +6,15 @@ import { queryClient } from "./client";
 export const queryKeys = {
   media: {
     all: ["media"] as const,
-    list: (cursor?: string, limit?: number, mediaType?: string) =>
-      ["media", "list", { cursor, limit, mediaType }] as const,
+    list: (cursor?: string, limit?: number, mediaType?: string, source?: string) =>
+      ["media", "list", { cursor, limit, mediaType, source }] as const,
     detail: (id: string) => ["media", "detail", id] as const,
     assets: (id: string) => ["media", "assets", id] as const,
+  },
+  generation: {
+    all: ["generation"] as const,
+    detail: (id: string) => ["generation", "detail", id] as const,
+    result: (id: string) => ["generation", "result", id] as const,
   },
   health: {
     all: ["health"] as const,

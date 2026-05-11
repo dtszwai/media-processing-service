@@ -71,6 +71,18 @@ public class S3StorageService extends AbstractS3StorageRepository {
   }
 
   /**
+   * Get a presigned URL for inline browser preview.
+   */
+  public String getAssetPreviewPresignedUrl(String tenantId, String mediaId, String assetId, String extension,
+      String contentType) {
+    String key = buildAssetKey(tenantId, mediaId, assetId, extension);
+    Duration expiration = Duration.ofSeconds(mediaProperties.getDownload().getPresignedUrlExpirationSeconds());
+    String url = generatePresignedPreviewUrl(key, expiration, contentType);
+    log.info("Generated presigned preview URL for: {}", key);
+    return url;
+  }
+
+  /**
    * Generate a presigned URL for uploading a media file directly to S3.
    */
   public String generatePresignedUploadUrl(String tenantId, String mediaId, String assetId, String fileName,

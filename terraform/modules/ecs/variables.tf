@@ -44,6 +44,21 @@ variable "media_management_topic_arn" {
   type        = string
 }
 
+variable "generation_topic_arn" {
+  description = "ARN of the SNS topic for generation jobs"
+  type        = string
+}
+
+variable "generation_queue_arn" {
+  description = "ARN of the SQS queue for generation jobs"
+  type        = string
+}
+
+variable "generation_queue_url" {
+  description = "URL of the SQS queue for generation jobs"
+  type        = string
+}
+
 variable "media_s3_bucket_name" {
   description = "S3 bucket name for media files"
   type        = string
@@ -87,4 +102,10 @@ variable "container_sg_id" {
 variable "desired_task_count" {
   description = "Number of tasks to run"
   type        = number
+}
+
+variable "generation_budget_alert_pct" {
+  description = "Percentage of the daily generation budget at which to fire a budget-used alert."
+  type        = string
+  default     = "80"
 }

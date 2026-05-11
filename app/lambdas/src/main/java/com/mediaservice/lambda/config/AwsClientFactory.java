@@ -4,6 +4,7 @@ import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.sns.SnsClient;
 
 import java.net.URI;
 
@@ -13,6 +14,7 @@ public class AwsClientFactory {
 
   private static DynamoDbClient dynamoDbClient;
   private static S3Client s3Client;
+  private static SnsClient snsClient;
 
   public static synchronized DynamoDbClient getDynamoDbClient() {
     if (dynamoDbClient == null) {
@@ -39,5 +41,19 @@ public class AwsClientFactory {
       s3Client = builder.build();
     }
     return s3Client;
+  }
+
+  public static synchronized SnsClient getSnsClient() {
+    if (snsClient == null) {
+      var builder = SnsClient.builder()
+          .region(Region.of(CONFIG.getAwsRegion()))
+          .credentialsProvider(DefaultCredentialsProvider.create());
+      String endpoint = System.getenv("AWS_SNS_ENDPOINT");
+      if (endpoint != null && !endpoint.isBlank()) {
+        builder.endpointOverride(URI.create(endpoint));
+      }
+      snsClient = builder.build();
+    }
+    return snsClient;
   }
 }

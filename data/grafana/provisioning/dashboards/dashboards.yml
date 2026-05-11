@@ -4,5 +4,5 @@ providers:
   - name: 'Media Service'
     type: file
     options:
-      path: /otel-lgtm/media-service-dashboard.json
+      path: /otel-lgtm/dashboards
       foldersFromFilesStructure: false

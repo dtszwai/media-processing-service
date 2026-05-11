@@ -2,6 +2,7 @@ package com.mediaservice.media.infrastructure.persistence;
 
 import com.mediaservice.common.constants.StorageConstants;
 import com.mediaservice.common.model.Media;
+import com.mediaservice.common.model.MediaSource;
 import com.mediaservice.common.model.MediaStatus;
 import com.mediaservice.common.model.MediaType;
 import com.mediaservice.shared.persistence.AbstractDynamoDbRepository;
@@ -59,6 +60,7 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
         .name(getString(item, "name"))
         .mimetype(getString(item, "mimetype"))
         .mediaType(MediaType.fromString(getString(item, "mediaType")))
+        .source(MediaSource.fromString(getString(item, "source")))
         .status(MediaStatus.valueOf(getString(item, "status")))
         .createdAt(getInstant(item, "createdAt"))
         .updatedAt(getInstant(item, "updatedAt"))
@@ -94,6 +96,7 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
     if (media.getMediaType() != null) {
       item.put("mediaType", s(media.getMediaType().getValue()));
     }
+    item.put("source", s(media.getSource() != null ? media.getSource().getValue() : MediaSource.UPLOAD.getValue()));
     if (media.getOriginalAssetId() != null) {
       item.put("originalAssetId", s(media.getOriginalAssetId()));
     }
@@ -186,7 +189,7 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
   private record MediaFilterSpec(String expression, Map<String, String> names, Map<String, AttributeValue> values) {
   }
 
-  private MediaFilterSpec buildMediaFilter(MediaType mediaType) {
+  private MediaFilterSpec buildMediaFilter(MediaType mediaType, MediaSource source) {
     var names = new HashMap<String, String>();
     var values = new HashMap<String, AttributeValue>();
 
@@ -205,6 +208,16 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
       }
     }
 
+    if (source != null) {
+      names.put("#source", "source");
+      values.put(":source", s(source.getValue()));
+      if (source == MediaSource.UPLOAD) {
+        filter += " AND (attribute_not_exists(#source) OR #source = :source)";
+      } else {
+        filter += " AND #source = :source";
+      }
+    }
+
     return new MediaFilterSpec(filter, names, values);
   }
 
@@ -212,8 +225,12 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
    * Get media records with pagination, excluding soft-deleted items.
    */
   public MediaPagedResult getMediaPaginated(String cursor, Integer limit, MediaType mediaType) {
+    return getMediaPaginated(cursor, limit, mediaType, null);
+  }
+
+  public MediaPagedResult getMediaPaginated(String cursor, Integer limit, MediaType mediaType, MediaSource source) {
     int pageSize = (limit != null && limit > 0 && limit <= 100) ? limit : DEFAULT_PAGE_SIZE;
-    var filter = buildMediaFilter(mediaType);
+    var filter = buildMediaFilter(mediaType, source);
     var values = new HashMap<>(filter.values());
     values.put(":sk", s(StorageConstants.DYNAMO_SK_MEDIA));
     values.put(":pkPrefix", s(StorageConstants.DYNAMO_PK_PREFIX));
@@ -237,9 +254,14 @@ public class MediaDynamoDbRepository extends AbstractDynamoDbRepository<Media> {
    * Get media records for a specific tenant with pagination, excluding soft-deleted items.
    */
   public MediaPagedResult getMediaPaginatedByTenant(String tenantId, String cursor, Integer limit, MediaType mediaType) {
+    return getMediaPaginatedByTenant(tenantId, cursor, limit, mediaType, null);
+  }
+
+  public MediaPagedResult getMediaPaginatedByTenant(String tenantId, String cursor, Integer limit, MediaType mediaType,
+      MediaSource source) {
     int pageSize = (limit != null && limit > 0 && limit <= 100) ? limit : DEFAULT_PAGE_SIZE;
     String[] tenantCursorAttributes = { StorageConstants.DYNAMO_ATTR_TENANT_ID, "createdAt", "PK", "SK" };
-    var filter = buildMediaFilter(mediaType);
+    var filter = buildMediaFilter(mediaType, source);
     var values = new HashMap<>(filter.values());
     values.put(":tenantId", s(tenantId));
     values.put(":pkPrefix", s(StorageConstants.DYNAMO_PK_PREFIX));

@@ -1,5 +1,6 @@
 package com.mediaservice.shared.http.error;
 
+import com.mediaservice.providers.generation.core.GenerationProviderException;
 import com.mediaservice.shared.http.filter.RequestIdFilter;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import lombok.extern.slf4j.Slf4j;
@@ -173,6 +174,47 @@ public class GlobalExceptionHandler {
             .status(503)
             .requestId(getRequestId())
             .build());
+  }
+
+  @ExceptionHandler(GenerationProviderException.class)
+  public ResponseEntity<ErrorResponse> handleGenerationProviderException(GenerationProviderException e) {
+    HttpStatus status = switch (e.getCode()) {
+      case "BUDGET_EXCEEDED", "ADMISSION_BACKPRESSURE",
+          "ADMISSION_DAILY_QUOTA_EXCEEDED", "ADMISSION_MONTHLY_QUOTA_EXCEEDED",
+          "ADMISSION_TIER_PAUSED", "ADMISSION_OUTSTANDING_LIMIT",
+          "ADMISSION_ABUSE_SIGNAL", "ADMISSION_BALANCE_REQUIRED"
+          -> HttpStatus.TOO_MANY_REQUESTS;
+      case "MODERATION_BLOCKED", "OUTPUT_BLOCKED" -> HttpStatus.UNPROCESSABLE_ENTITY;
+      case "NOT_CONFIGURED", "REAL_PROVIDER_DISABLED", "ADMISSION_CHECK_UNAVAILABLE" -> HttpStatus.SERVICE_UNAVAILABLE;
+      default -> HttpStatus.INTERNAL_SERVER_ERROR;
+    };
+    log.warn("Generation request failed: {} {}", e.getCode(), e.getMessage());
+    var responseBuilder = ResponseEntity.status(status);
+    if (status == HttpStatus.TOO_MANY_REQUESTS) {
+      Integer retryAfterSeconds = extractRetryAfterSeconds(e);
+      if (retryAfterSeconds != null && retryAfterSeconds > 0) {
+        responseBuilder = responseBuilder.header("Retry-After", String.valueOf(retryAfterSeconds));
+      }
+    }
+    return responseBuilder
+        .body(ErrorResponse.builder()
+            .message(e.getMessage())
+            .status(status.value())
+            .requestId(getRequestId())
+            .build());
+  }
+
+  private Integer extractRetryAfterSeconds(GenerationProviderException e) {
+    try {
+      var method = e.getClass().getMethod("getRetryAfterSeconds");
+      Object value = method.invoke(e);
+      if (value instanceof Number n) {
+        return n.intValue();
+      }
+    } catch (ReflectiveOperationException | RuntimeException ignored) {
+      // Field is optional; absence is normal.
+    }
+    return null;
   }
 
   @ExceptionHandler(NoResourceFoundException.class)

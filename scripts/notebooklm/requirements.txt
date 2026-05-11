@@ -1,0 +1,12 @@
+# NotebookLM runtime — used by scripts/notebooklm_overview.py at request time.
+#
+# notebooklm-py is the community-maintained client that speaks NotebookLM's
+# private HTTP API using cookies captured from a real browser login. It is
+# unaffiliated with Google and may break when Google rotates internal
+# endpoints; refresh storage_state.json via scripts/notebooklm_login.py and
+# bump this pin if Google has changed shape.
+#
+# Runtime only needs HTTP — no Chromium. The login helper has its own
+# requirements file (scripts/notebooklm-login-requirements.txt) that pulls
+# in Playwright for the one-time browser sign-in.
+notebooklm-py

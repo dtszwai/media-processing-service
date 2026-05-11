@@ -29,3 +29,31 @@ output "dlq_alarm_arn" {
   description = "ARN of the DLQ CloudWatch alarm (if enabled)"
   value       = var.dlq_alarm_enabled ? aws_cloudwatch_metric_alarm.dlq_not_empty[0].arn : null
 }
+
+output "generation_topic_arn" {
+  value = aws_sns_topic.generation_jobs_topic.arn
+}
+
+output "generation_sqs_queue_arn" {
+  value = aws_sqs_queue.generation_jobs_queue.arn
+}
+
+output "generation_sqs_queue_url" {
+  value = aws_sqs_queue.generation_jobs_queue.url
+}
+
+output "generation_dlq_queue_arn" {
+  value = aws_sqs_queue.generation_jobs_dlq.arn
+}
+
+output "generation_dlq_queue_url" {
+  value = aws_sqs_queue.generation_jobs_dlq.url
+}
+
+output "generation_paid_sqs_queue_arn" {
+  value = aws_sqs_queue.generation_paid_jobs_queue.arn
+}
+
+output "generation_paid_sqs_queue_url" {
+  value = aws_sqs_queue.generation_paid_jobs_queue.url
+}

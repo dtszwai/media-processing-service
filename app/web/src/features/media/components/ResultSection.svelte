@@ -1,7 +1,7 @@
 <script lang="ts">
   import { formatFileSize, formatDateTime } from "../../../shared/utils";
   import {
-    fetchAssetDownloadUrl,
+    fetchAssetPreviewUrl,
     refreshPresignedUploadUrl,
     uploadToPresignedUrl,
     completePresignedUpload,
@@ -192,7 +192,7 @@
     }
 
     const previewCandidates = visibleAssets
-      .filter((asset) => asset.status === "COMPLETE" && isImageAsset(asset))
+      .filter((asset) => asset.status === "COMPLETE" && isPreviewableAsset(asset))
       .slice(0, 8);
 
     for (const asset of previewCandidates) {
@@ -570,7 +570,7 @@
     assetUrlLoading = assetUrlLoading;
 
     try {
-      const url = await fetchAssetDownloadUrl(currentMedia.mediaId, asset.assetId);
+      const url = await fetchAssetPreviewUrl(currentMedia.mediaId, asset.assetId);
       if (!url) return null;
       assetUrls[asset.assetId] = url;
       assetUrls = assetUrls;
@@ -587,7 +587,12 @@
 
   async function handleOpenAsset(asset: MediaAsset) {
     const url = await ensureAssetUrl(asset);
-    if (url) window.open(url, "_blank");
+    if (!url) return;
+    if (isPlayableAsset(asset)) {
+      viewedAsset = asset;
+      return;
+    }
+    window.open(url, "_blank");
   }
 
   function isImageAsset(asset: MediaAsset | null) {
@@ -596,6 +601,30 @@
       return asset.mimetype.startsWith("image/");
     }
     return (currentMedia?.mediaType || "image") === "image";
+  }
+
+  function isAudioAsset(asset: MediaAsset | null) {
+    if (!asset) return false;
+    if (asset.mimetype) {
+      return asset.mimetype.startsWith("audio/");
+    }
+    return (currentMedia?.mediaType || "") === "audio";
+  }
+
+  function isVideoAsset(asset: MediaAsset | null) {
+    if (!asset) return false;
+    if (asset.mimetype) {
+      return asset.mimetype.startsWith("video/");
+    }
+    return (currentMedia?.mediaType || "") === "video";
+  }
+
+  function isPlayableAsset(asset: MediaAsset | null) {
+    return isAudioAsset(asset) || isVideoAsset(asset);
+  }
+
+  function isPreviewableAsset(asset: MediaAsset | null) {
+    return isImageAsset(asset) || isPlayableAsset(asset);
   }
 
   async function handleCreateAssets() {
@@ -835,6 +864,20 @@
             </svg>
           </button>
         </div>
+      {:else if viewedAsset?.status === "COMPLETE" && isAudioAsset(viewedAsset) && assetUrls[viewedAsset.assetId]}
+        <div class="relative z-1 w-full max-w-xl rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <p class="mb-3 truncate text-sm font-semibold text-gray-800">{assetTitle(viewedAsset)}</p>
+          <!-- svelte-ignore a11y_media_has_caption -->
+          <audio controls preload="metadata" src={assetUrls[viewedAsset.assetId]} class="w-full"></audio>
+        </div>
+      {:else if viewedAsset?.status === "COMPLETE" && isVideoAsset(viewedAsset) && assetUrls[viewedAsset.assetId]}
+        <!-- svelte-ignore a11y_media_has_caption -->
+        <video
+          controls
+          preload="metadata"
+          src={assetUrls[viewedAsset.assetId]}
+          class="relative z-1 max-h-full max-w-full rounded-lg border border-gray-200 bg-black shadow-lg"
+        ></video>
       {:else if viewedAsset && (viewedAsset.status === "PROCESSING" || viewedAsset.status === "PENDING")}
         <div class="flex flex-col items-center justify-center relative z-1">
           <svg class="w-10 h-10 text-blue-500 animate-spin mb-3" fill="none" viewBox="0 0 24 24">
@@ -895,6 +938,7 @@
             <button
               onclick={() => {
                 viewedAsset = asset;
+                if (isPreviewableAsset(asset)) void ensureAssetUrl(asset);
               }}
               class="relative shrink-0 w-12 h-12 rounded-lg overflow-hidden border-2 transition-all {viewedAsset?.assetId ===
               asset.assetId
@@ -1290,85 +1334,87 @@
       </div>
     {/if}
 
-    <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-sm font-semibold text-gray-900">Create Outputs</h3>
-        <span class="text-xs text-gray-500">{visibleAssets.length} assets</span>
-      </div>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div>
-          <label for={sourceAssetSelectId} class="text-xs text-gray-500">Source Asset</label>
-          <select
-            id={sourceAssetSelectId}
-            bind:value={selectedSourceAssetId}
-            class="mt-1 w-full text-xs bg-white border border-gray-300 rounded px-2 py-2 text-gray-700"
-          >
-            {#each visibleAssets as asset}
-              <option value={asset.assetId}>{assetLabel(asset)}</option>
-            {/each}
-          </select>
+    {#if (currentMedia.mediaType || "image") !== "audio"}
+      <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-semibold text-gray-900">Create Outputs</h3>
+          <span class="text-xs text-gray-500">{visibleAssets.length} assets</span>
         </div>
-        {#if (currentMedia.mediaType || "image") === "image"}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <label for={outputWidthId} class="text-xs text-gray-500">Width</label>
-            <input id={outputWidthId} type="range" min="100" max="1024" bind:value={width} class="w-full mt-2" />
-            <div class="text-xs text-gray-500 mt-1">{width}px</div>
-          </div>
-          <fieldset>
-            <legend class="text-xs text-gray-500">Formats</legend>
-            <div class="mt-2 flex flex-wrap gap-3">
-              {#each formatOptions as option}
-                <label class="inline-flex items-center gap-2 text-xs text-gray-700">
-                  <input
-                    type="checkbox"
-                    value={option.value}
-                    checked={selectedFormats.includes(option.value)}
-                    onchange={(e) => {
-                      const target = e.currentTarget as HTMLInputElement;
-                      const value = target.value as OutputFormat;
-                      if (target.checked) {
-                        selectedFormats = Array.from(new Set([...selectedFormats, value]));
-                      } else {
-                        selectedFormats = selectedFormats.filter((format) => format !== value);
-                      }
-                    }}
-                    class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  {option.label}
-                </label>
+            <label for={sourceAssetSelectId} class="text-xs text-gray-500">Source Asset</label>
+            <select
+              id={sourceAssetSelectId}
+              bind:value={selectedSourceAssetId}
+              class="mt-1 w-full text-xs bg-white border border-gray-300 rounded px-2 py-2 text-gray-700"
+            >
+              {#each visibleAssets as asset}
+                <option value={asset.assetId}>{assetLabel(asset)}</option>
               {/each}
+            </select>
+          </div>
+          {#if (currentMedia.mediaType || "image") === "image"}
+            <div>
+              <label for={outputWidthId} class="text-xs text-gray-500">Width</label>
+              <input id={outputWidthId} type="range" min="100" max="1024" bind:value={width} class="w-full mt-2" />
+              <div class="text-xs text-gray-500 mt-1">{width}px</div>
             </div>
-          </fieldset>
-        {:else}
-          <fieldset>
-            <legend class="text-xs text-gray-500">Outputs</legend>
-            <div class="mt-2 flex flex-col gap-2">
-              <label class="inline-flex items-center gap-2 text-xs text-gray-700">
-                <input type="checkbox" bind:checked={includePreview} class="rounded border-gray-300 text-blue-600" />
-                Generate preview
-              </label>
-              <label class="inline-flex items-center gap-2 text-xs text-gray-700">
-                <input type="checkbox" bind:checked={includeText} class="rounded border-gray-300 text-blue-600" />
-                Extract text
-              </label>
-            </div>
-          </fieldset>
-        {/if}
-      </div>
-      <div class="mt-3">
-        <button
-          onclick={handleCreateAssets}
-          disabled={isCreatingAssets || $isProcessing}
-          class="btn-primary px-4 py-2 text-xs font-medium rounded-lg"
-        >
-          {#if isCreatingAssets}
-            Creating...
+            <fieldset>
+              <legend class="text-xs text-gray-500">Formats</legend>
+              <div class="mt-2 flex flex-wrap gap-3">
+                {#each formatOptions as option}
+                  <label class="inline-flex items-center gap-2 text-xs text-gray-700">
+                    <input
+                      type="checkbox"
+                      value={option.value}
+                      checked={selectedFormats.includes(option.value)}
+                      onchange={(e) => {
+                        const target = e.currentTarget as HTMLInputElement;
+                        const value = target.value as OutputFormat;
+                        if (target.checked) {
+                          selectedFormats = Array.from(new Set([...selectedFormats, value]));
+                        } else {
+                          selectedFormats = selectedFormats.filter((format) => format !== value);
+                        }
+                      }}
+                      class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    {option.label}
+                  </label>
+                {/each}
+              </div>
+            </fieldset>
           {:else}
-            Create Outputs
+            <fieldset>
+              <legend class="text-xs text-gray-500">Outputs</legend>
+              <div class="mt-2 flex flex-col gap-2">
+                <label class="inline-flex items-center gap-2 text-xs text-gray-700">
+                  <input type="checkbox" bind:checked={includePreview} class="rounded border-gray-300 text-blue-600" />
+                  Generate preview
+                </label>
+                <label class="inline-flex items-center gap-2 text-xs text-gray-700">
+                  <input type="checkbox" bind:checked={includeText} class="rounded border-gray-300 text-blue-600" />
+                  Extract text
+                </label>
+              </div>
+            </fieldset>
           {/if}
-        </button>
+        </div>
+        <div class="mt-3">
+          <button
+            onclick={handleCreateAssets}
+            disabled={isCreatingAssets || $isProcessing}
+            class="btn-primary px-4 py-2 text-xs font-medium rounded-lg"
+          >
+            {#if isCreatingAssets}
+              Creating...
+            {:else}
+              Create Outputs
+            {/if}
+          </button>
+        </div>
       </div>
-    </div>
+    {/if}
 
     <div class="space-y-3">
       <div class="flex items-center justify-between">
@@ -1390,12 +1436,12 @@
                     : 'border-gray-200'}"
                 >
                   <div class="flex items-start justify-between gap-2">
-                    <div>
+                    <div class="min-w-0 flex-1">
                       <div class="text-[11px] uppercase tracking-widest text-gray-400">{assetKind(asset)}</div>
                       <h4 class="text-sm font-semibold text-gray-800 truncate">{assetTitle(asset)}</h4>
-                      <p class="text-xs text-gray-500">{assetMeta(asset) || "—"}</p>
+                      <p class="text-xs text-gray-500 truncate">{assetMeta(asset) || "—"}</p>
                     </div>
-                    <span class="status-badge status-{asset.status.toLowerCase()}">{asset.status}</span>
+                    <span class="status-badge status-{asset.status.toLowerCase()} shrink-0">{asset.status}</span>
                   </div>
 
                   {#if asset.status === "COMPLETE" && isImageAsset(asset) && assetUrls[asset.assetId]}
@@ -1404,6 +1450,17 @@
                       alt={assetTitle(asset)}
                       class="w-full h-28 object-contain rounded-lg border border-gray-100 mt-3"
                     />
+                  {:else if asset.status === "COMPLETE" && isAudioAsset(asset) && assetUrls[asset.assetId]}
+                    <!-- svelte-ignore a11y_media_has_caption -->
+                    <audio controls preload="metadata" src={assetUrls[asset.assetId]} class="mt-3 w-full"></audio>
+                  {:else if asset.status === "COMPLETE" && isVideoAsset(asset) && assetUrls[asset.assetId]}
+                    <!-- svelte-ignore a11y_media_has_caption -->
+                    <video
+                      controls
+                      preload="metadata"
+                      src={assetUrls[asset.assetId]}
+                      class="mt-3 aspect-video w-full rounded-lg border border-gray-100 bg-black"
+                    ></video>
                   {/if}
 
                   {#if asset.status === "ERROR" && asset.errorMessage}
@@ -1422,7 +1479,7 @@
                         {#if assetUrlLoading.has(asset.assetId)}
                           Preparing...
                         {:else}
-                          Open file
+                          {isPlayableAsset(asset) ? "Play here" : "Open file"}
                         {/if}
                       </button>
                       <button
@@ -1463,10 +1520,10 @@
                     : 'border-gray-200'}"
                 >
                   <div class="flex items-start justify-between gap-2">
-                    <div>
+                    <div class="min-w-0 flex-1">
                       <div class="text-[11px] uppercase tracking-widest text-gray-400">{assetKind(asset)}</div>
                       <h4 class="text-sm font-semibold text-gray-800 truncate">{assetTitle(asset)}</h4>
-                      <p class="text-xs text-gray-500">{assetMeta(asset) || "—"}</p>
+                      <p class="text-xs text-gray-500 truncate">{assetMeta(asset) || "—"}</p>
                       {#if shortUrlCountsByAsset[asset.assetId]}
                         <p class="text-[11px] text-gray-400 mt-1">
                           {shortUrlCountsByAsset[asset.assetId]} active link{shortUrlCountsByAsset[asset.assetId] === 1
@@ -1475,7 +1532,7 @@
                         </p>
                       {/if}
                     </div>
-                    <span class="status-badge status-{asset.status.toLowerCase()}">{asset.status}</span>
+                    <span class="status-badge status-{asset.status.toLowerCase()} shrink-0">{asset.status}</span>
                   </div>
 
                   {#if asset.status === "COMPLETE" && isImageAsset(asset) && assetUrls[asset.assetId]}
@@ -1484,6 +1541,17 @@
                       alt={assetTitle(asset)}
                       class="w-full h-28 object-contain rounded-lg border border-gray-100 mt-3"
                     />
+                  {:else if asset.status === "COMPLETE" && isAudioAsset(asset) && assetUrls[asset.assetId]}
+                    <!-- svelte-ignore a11y_media_has_caption -->
+                    <audio controls preload="metadata" src={assetUrls[asset.assetId]} class="mt-3 w-full"></audio>
+                  {:else if asset.status === "COMPLETE" && isVideoAsset(asset) && assetUrls[asset.assetId]}
+                    <!-- svelte-ignore a11y_media_has_caption -->
+                    <video
+                      controls
+                      preload="metadata"
+                      src={assetUrls[asset.assetId]}
+                      class="mt-3 aspect-video w-full rounded-lg border border-gray-100 bg-black"
+                    ></video>
                   {/if}
 
                   {#if asset.status === "ERROR" && asset.errorMessage}
@@ -1502,7 +1570,7 @@
                         {#if assetUrlLoading.has(asset.assetId)}
                           Preparing...
                         {:else}
-                          Open file
+                          {isPlayableAsset(asset) ? "Play here" : "Open file"}
                         {/if}
                       </button>
                       <button

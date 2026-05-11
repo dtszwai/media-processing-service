@@ -67,3 +67,15 @@ variable "webhook_secret" {
   default     = ""
   sensitive   = true
 }
+
+variable "generation_worker_image_uri" {
+  description = "Docker image URI for the generation-worker Lambda (container-image path). See module variable for details."
+  type        = string
+  default     = ""
+}
+
+variable "local_stage_poller_enabled" {
+  description = "Skip generation-worker SQS event source mappings so the API's in-process poller consumes the queues. See module variable for details."
+  type        = bool
+  default     = false
+}

@@ -6,6 +6,10 @@ output "analytics_rollup_function_name" {
   value = aws_lambda_function.analytics_rollup.function_name
 }
 
+output "generation_worker_function_name" {
+  value = aws_lambda_function.generation_worker.function_name
+}
+
 output "manage_media_function_arn" {
   value = aws_lambda_function.manage_media.arn
 }

@@ -12,6 +12,7 @@ import type {
   InitUploadResponse,
   UploadResponse,
   MediaType,
+  MediaSource,
   PagedResponse,
   CreateAssetRequest,
   AssetDownloadUrlResponse,
@@ -26,11 +27,13 @@ export async function getAllMedia(
   cursor?: string,
   limit?: number,
   mediaType?: MediaType,
+  source?: MediaSource,
 ): Promise<PagedResponse<Media>> {
   const params = new URLSearchParams();
   if (cursor) params.set("cursor", cursor);
   if (limit) params.set("limit", limit.toString());
   if (mediaType) params.set("mediaType", mediaType);
+  if (source) params.set("source", source);
 
   const url = params.toString() ? `${API_BASE}?${params}` : API_BASE;
   const response = await authenticatedFetch(url);
@@ -192,11 +195,12 @@ export function getAssetDownloadUrl(mediaId: string, assetId: string): string {
   return `${API_BASE}/${mediaId}/assets/${assetId}/download`;
 }
 
-/**
- * Fetch presigned download URL for a media asset
- */
-export async function fetchAssetDownloadUrl(mediaId: string, assetId: string): Promise<string | null> {
-  const response = await authenticatedFetch(`${API_BASE}/${mediaId}/assets/${assetId}/download-url`);
+async function fetchAssetUrl(
+  mediaId: string,
+  assetId: string,
+  kind: "download" | "preview",
+): Promise<string | null> {
+  const response = await authenticatedFetch(`${API_BASE}/${mediaId}/assets/${assetId}/${kind}-url`);
   if (response.status === 202) {
     return null;
   }
@@ -205,6 +209,14 @@ export async function fetchAssetDownloadUrl(mediaId: string, assetId: string): P
   }
   const payload = await handleResponse<AssetDownloadUrlResponse>(response);
   return payload.url;
+}
+
+export function fetchAssetDownloadUrl(mediaId: string, assetId: string): Promise<string | null> {
+  return fetchAssetUrl(mediaId, assetId, "download");
+}
+
+export function fetchAssetPreviewUrl(mediaId: string, assetId: string): Promise<string | null> {
+  return fetchAssetUrl(mediaId, assetId, "preview");
 }
 
 /**

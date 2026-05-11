@@ -10,6 +10,8 @@ export const MediaStatusSchema = z.enum(["PENDING_UPLOAD", "PENDING", "PROCESSIN
 
 export const MediaTypeSchema = z.enum(["image", "document", "video", "audio", "other"]);
 
+export const MediaSourceSchema = z.enum(["upload", "generated"]);
+
 export const OutputFormatSchema = z.enum(["jpeg", "png", "webp"]);
 
 export const AssetStatusSchema = z.enum(["PENDING_UPLOAD", "PENDING", "PROCESSING", "COMPLETE", "ERROR", "DELETED"]);
@@ -22,6 +24,7 @@ export const MediaSchema = z.object({
   size: z.number(),
   mimetype: z.string(),
   mediaType: MediaTypeSchema.optional(),
+  source: MediaSourceSchema.default("upload"),
   status: MediaStatusSchema,
   originalAssetId: z.string().optional(),
   createdAt: z.string().optional(),
@@ -95,6 +98,74 @@ export const CreateAssetRequestSchema = z.object({
 
 export const AssetDownloadUrlResponseSchema = z.object({
   url: z.string(),
+});
+
+// ============= Generation Schemas =============
+
+export const GenerationStatusSchema = z.enum(["QUEUED", "RUNNING", "BLOCKED", "FAILED", "COMPLETE"]);
+
+export const GenerationStageSchema = z.enum([
+  "ADMISSION",
+  "PREPROCESS",
+  "INFERENCE",
+  "INFERENCE_POLL",
+  "POSTPROCESS",
+  "DELIVERY",
+]);
+
+export const CreateGenerationRequestSchema = z.object({
+  prompt: z.string().min(1).max(4000),
+  model: z.string().optional(),
+  resolution: z.string().optional(),
+  tier: z.enum(["free", "paid"]).optional(),
+  seed: z.number().optional(),
+  webhook_url: z.string().url().optional(),
+});
+
+export const CreateAudioOverviewRequestSchema = z.object({
+  topic: z.string().min(1).max(4000),
+  tier: z.enum(["free", "paid"]).optional(),
+  webhook_url: z.string().url().optional(),
+  provider: z.enum(["simulated", "notebooklm"]).optional(),
+});
+
+export const AcceptedConfigSchema = z
+  .object({
+    resolution: z.string().optional(),
+    enhancement: z.boolean().optional(),
+  })
+  .passthrough();
+
+export const GenerationResponseSchema = z.object({
+  job_id: z.string(),
+  media_id: z.string(),
+  status: GenerationStatusSchema,
+  stage: GenerationStageSchema.optional(),
+  estimated_wait_seconds: z.number().optional(),
+  accepted_config: AcceptedConfigSchema.optional(),
+  admission: z.record(z.string(), z.unknown()).optional(),
+  created_at: z.string().optional(),
+  updated_at: z.string().optional(),
+  error_code: z.string().optional().nullable(),
+  error_message: z.string().optional().nullable(),
+  is_ai_generated: z.boolean().optional(),
+});
+
+export const GenerationStatusResponseSchema = GenerationResponseSchema.extend({
+  progress: z.number().min(0).max(100).optional(),
+  stage: z.string().optional(),
+});
+
+export const GenerationResultResponseSchema = z.object({
+  job_id: z.string(),
+  media_id: z.string(),
+  status: GenerationStatusSchema,
+  image_url: z.string().optional(),
+  audio_url: z.string().optional(),
+  expires_at: z.string().optional(),
+  // TODO: structure variants as objects with metadata once API stabilizes
+  variants: z.array(z.string()).optional(),
+  is_ai_generated: z.boolean().optional(),
 });
 
 // ============= Document Text Schemas =============
@@ -279,6 +350,7 @@ export const ApiKeyResponseSchema = z.object({
 // Media types
 export type MediaStatus = z.infer<typeof MediaStatusSchema>;
 export type MediaType = z.infer<typeof MediaTypeSchema>;
+export type MediaSource = z.infer<typeof MediaSourceSchema>;
 export type OutputFormat = z.infer<typeof OutputFormatSchema>;
 export type AssetStatus = z.infer<typeof AssetStatusSchema>;
 export type AssetType = z.infer<typeof AssetTypeSchema>;
@@ -291,6 +363,14 @@ export type MediaAsset = z.infer<typeof MediaAssetSchema>;
 export type CreateAssetOutput = z.infer<typeof CreateAssetOutputSchema>;
 export type CreateAssetRequest = z.infer<typeof CreateAssetRequestSchema>;
 export type AssetDownloadUrlResponse = z.infer<typeof AssetDownloadUrlResponseSchema>;
+export type GenerationStatus = z.infer<typeof GenerationStatusSchema>;
+export type GenerationStage = z.infer<typeof GenerationStageSchema>;
+export type CreateGenerationRequest = z.infer<typeof CreateGenerationRequestSchema>;
+export type CreateAudioOverviewRequest = z.infer<typeof CreateAudioOverviewRequestSchema>;
+export type GenerationResponse = z.infer<typeof GenerationResponseSchema>;
+export type GenerationStatusResponse = z.infer<typeof GenerationStatusResponseSchema>;
+export type GenerationResultResponse = z.infer<typeof GenerationResultResponseSchema>;
+export type AcceptedConfig = z.infer<typeof AcceptedConfigSchema>;
 export type DocumentText = z.infer<typeof DocumentTextSchema>;
 export type PagedMediaResponse = z.infer<typeof PagedMediaResponseSchema>;
 export type ApiError = z.infer<typeof ApiErrorSchema>;

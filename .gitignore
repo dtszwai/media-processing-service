@@ -18,6 +18,11 @@ Thumbs.db
 .settings/
 .history/
 CLAUDE.md
+AGENTS.md
+.agents/
+.agents
+.claude/
+.claude
 
 # Java / Maven
 target/
@@ -56,3 +61,4 @@ tmp/
 *.log
 terraform-state/*
 !terraform-state/main.tf
+.local

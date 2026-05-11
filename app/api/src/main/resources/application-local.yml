@@ -13,6 +13,13 @@ aws:
   sns:
     topic-arn: arn:aws:sns:us-west-2:000000000000:media-management-topic
     endpoint: http://localhost:4566
+  sqs:
+    endpoint: http://localhost:4566
+
+media:
+  generation:
+    topic-arn: arn:aws:sns:us-west-2:000000000000:generation-jobs
+    queue-url: http://localhost:4566/000000000000/generation-jobs
 
 otel:
   exporter:

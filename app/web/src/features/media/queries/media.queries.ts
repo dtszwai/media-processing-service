@@ -25,6 +25,7 @@ import type {
   Media,
   MediaAsset,
   MediaType,
+  MediaSource,
   InitUploadRequest,
   PagedMediaResponse,
   CreateAssetRequest,
@@ -41,11 +42,19 @@ export { PRESIGNED_UPLOAD_THRESHOLD, MAX_DIRECT_UPLOAD_SIZE, MAX_PRESIGNED_UPLOA
 /**
  * Query for paginated media list
  */
-export function createMediaListQuery(cursor?: string, limit?: number, mediaType?: MediaType) {
+export interface MediaListQueryParams {
+  cursor?: string;
+  limit?: number;
+  mediaType?: MediaType;
+  source?: MediaSource;
+}
+
+export function createMediaListQuery(params: MediaListQueryParams = {}) {
+  const { cursor, limit, mediaType, source } = params;
   return createQuery(() => ({
-    queryKey: queryKeys.media.list(cursor, limit, mediaType),
+    queryKey: queryKeys.media.list(cursor, limit, mediaType, source),
     queryFn: async (): Promise<PagedMediaResponse> => {
-      const data = await getAllMedia(cursor, limit, mediaType);
+      const data = await getAllMedia(cursor, limit, mediaType, source);
       return PagedMediaResponseSchema.parse(data);
     },
     staleTime: 30 * 1000,

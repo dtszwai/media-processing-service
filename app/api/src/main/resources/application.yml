@@ -95,6 +95,37 @@ media:
   upload:
     presigned-url-expiration-seconds: 3600 # 1 hour
     max-presigned-upload-size: 1073741824 # 1GB (presigned S3 upload)
+  generation:
+    topic-arn: ${MEDIA_GENERATION_TOPIC_ARN:}
+    queue-url: ${MEDIA_GENERATION_QUEUE_URL:}
+    paid-queue-url: ${MEDIA_GENERATION_PAID_QUEUE_URL:}
+    local-stage-poller:
+      enabled: ${MEDIA_GENERATION_LOCAL_STAGE_POLLER_ENABLED:false}
+      max-messages: ${MEDIA_GENERATION_LOCAL_STAGE_POLLER_MAX_MESSAGES:5}
+      wait-seconds: ${MEDIA_GENERATION_LOCAL_STAGE_POLLER_WAIT_SECONDS:10}
+      visibility-seconds: ${MEDIA_GENERATION_LOCAL_STAGE_POLLER_VISIBILITY_SECONDS:300}
+    budget-alert-pct: ${GENERATION_BUDGET_ALERT_PCT:80}
+    provider-timeout-ms: ${GENERATION_PROVIDER_TIMEOUT_MS:60000}
+    budget-daily-usd: ${GENERATION_BUDGET_DAILY_USD:50.0}
+    backpressure:
+      max-queue-depth: ${GENERATION_BACKPRESSURE_MAX_QUEUE_DEPTH:500}
+      delayed-threshold-pct: ${GENERATION_BACKPRESSURE_DELAYED_THRESHOLD_PCT:60}
+      degraded-threshold-pct: ${GENERATION_BACKPRESSURE_DEGRADED_THRESHOLD_PCT:80}
+      retry-after-seconds: ${GENERATION_BACKPRESSURE_RETRY_AFTER_SECONDS:30}
+      fail-open: ${GENERATION_BACKPRESSURE_FAIL_OPEN:true}
+    admission:
+      free-daily-limit: ${GENERATION_FREE_DAILY_LIMIT:25}
+      paid-daily-limit: ${GENERATION_PAID_DAILY_LIMIT:1000}
+      free-monthly-limit: ${GENERATION_FREE_MONTHLY_LIMIT:250}
+      paid-monthly-limit: ${GENERATION_PAID_MONTHLY_LIMIT:30000}
+      free-outstanding-limit: ${GENERATION_FREE_OUTSTANDING_LIMIT:2}
+      paid-outstanding-limit: ${GENERATION_PAID_OUTSTANDING_LIMIT:50}
+    chaos:
+      enabled: ${GENERATION_SIMULATOR_CHAOS_BUSINESS_HOURS_ENABLED:false}
+      failure-rate: ${GENERATION_SIMULATOR_CHAOS_FAILURE_RATE:0.05}
+      start-hour-utc: ${GENERATION_SIMULATOR_CHAOS_START_HOUR_UTC:16}
+      end-hour-utc: ${GENERATION_SIMULATOR_CHAOS_END_HOUR_UTC:1}
+      refresh-ms: ${GENERATION_SIMULATOR_CHAOS_REFRESH_MS:60000}
 
 # Cache TTL Configuration (L2 Redis)
 cache:
@@ -253,7 +284,7 @@ management:
         enabled: true
       group:
         readiness:
-          include: readinessState,dynamoDb,s3,sns,redis
+          include: readinessState,dynamoDb,s3,sns,generationSns,redis
         liveness:
           include: livenessState
   health:

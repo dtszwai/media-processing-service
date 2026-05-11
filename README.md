@@ -77,4 +77,3 @@ Service URLs:
 - API reference: OpenAPI/Swagger at `/swagger-ui.html`
 - App-level implementation guide: [app/README.md](app/README.md)
 - Web UI guide: [app/web/README.md](app/web/README.md)
-- Architecture decisions: [docs/adr](docs/adr)

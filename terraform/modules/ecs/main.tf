@@ -47,6 +47,10 @@ resource "aws_alb_target_group" "api" {
   vpc_id      = var.vpc_id
   target_type = "ip"
 
+  # Deregistration timeout: long enough for in-flight HTTP requests to complete, short enough
+  # that rolling deploys do not stall. Matches the container stopTimeout above (120s).
+  deregistration_delay = 120
+
   health_check {
     protocol            = "HTTP"
     port                = var.app_port
@@ -183,16 +187,34 @@ data "aws_iam_policy_document" "task_policy" {
       "dynamodb:PutItem",
       "dynamodb:Query",
       "dynamodb:Scan",
+      "dynamodb:TransactWriteItems",
       "dynamodb:UpdateItem"
     ]
-    resources = [var.dynamodb_table_arn]
+    # IAM does not grant GSI access via the table ARN alone — enumerate each index.
+    resources = [
+      var.dynamodb_table_arn,
+      "${var.dynamodb_table_arn}/index/SK-createdAt-index",
+      "${var.dynamodb_table_arn}/index/tenantId-createdAt-index",
+      "${var.dynamodb_table_arn}/index/email-index",
+      "${var.dynamodb_table_arn}/index/tenantId-index",
+    ]
   }
 
   statement {
-    sid       = "SNS"
+    sid     = "SNS"
+    effect  = "Allow"
+    actions = ["sns:Publish"]
+    resources = [
+      var.media_management_topic_arn,
+      var.generation_topic_arn
+    ]
+  }
+
+  statement {
+    sid       = "GenerationSqsRead"
     effect    = "Allow"
-    actions   = ["sns:Publish"]
-    resources = [var.media_management_topic_arn]
+    actions   = ["sqs:GetQueueAttributes"]
+    resources = [var.generation_queue_arn]
   }
 }
 
@@ -234,11 +256,36 @@ resource "aws_ecs_task_definition" "api" {
       name      = "api"
       image     = var.api_image_uri
       essential = true
+      # Allow Spring's graceful shutdown (timeout-per-shutdown-phase = 30s in application.yml)
+      # plus ALB deregistration to complete before SIGKILL. Fargate caps stop_timeout at 120s.
+      stopTimeout = 120
       environment = [
         { name = "APP_PORT", value = tostring(var.app_port) },
         { name = "MEDIA_BUCKET_NAME", value = var.media_s3_bucket_name },
         { name = "MEDIA_DYNAMODB_TABLE_NAME", value = var.dynamodb_table_name },
         { name = "MEDIA_MANAGEMENT_TOPIC_ARN", value = var.media_management_topic_arn },
+        { name = "MEDIA_GENERATION_TOPIC_ARN", value = var.generation_topic_arn },
+        { name = "MEDIA_GENERATION_QUEUE_URL", value = var.generation_queue_url },
+        { name = "GENERATION_PROVIDER", value = "simulated" },
+        { name = "GENERATION_MODERATION_PROVIDER", value = "simulated" },
+        { name = "GENERATION_TTS_PROVIDER", value = "simulated" },
+        { name = "GENERATION_AUDIO_OVERVIEW_PROVIDER", value = "simulated" },
+        { name = "GENERATION_REGION", value = data.aws_region.current.name },
+        { name = "GENERATION_MODEL", value = "simulator-v1" },
+        { name = "GENERATION_BUDGET_DAILY_USD", value = "50" },
+        { name = "GENERATION_BUDGET_ALERT_PCT", value = var.generation_budget_alert_pct },
+        { name = "GENERATION_BACKPRESSURE_MAX_QUEUE_DEPTH", value = "500" },
+        { name = "GENERATION_BACKPRESSURE_DELAYED_THRESHOLD_PCT", value = "60" },
+        { name = "GENERATION_BACKPRESSURE_DEGRADED_THRESHOLD_PCT", value = "80" },
+        { name = "GENERATION_FREE_DAILY_LIMIT", value = "25" },
+        { name = "GENERATION_PAID_DAILY_LIMIT", value = "1000" },
+        { name = "GENERATION_FREE_MONTHLY_LIMIT", value = "250" },
+        { name = "GENERATION_PAID_MONTHLY_LIMIT", value = "30000" },
+        { name = "GENERATION_FREE_OUTSTANDING_LIMIT", value = "2" },
+        { name = "GENERATION_PAID_OUTSTANDING_LIMIT", value = "50" },
+        { name = "GENERATION_PROMPT_ENHANCEMENT_ENABLED", value = "true" },
+        { name = "GENERATION_STAGE_MAX_ATTEMPTS", value = "3" },
+        { name = "GENERATION_SIMULATOR_CHAOS_BUSINESS_HOURS_ENABLED", value = "false" },
         { name = "OTEL_EXPORTER_OTLP_ENDPOINT", value = var.otel_exporter_endpoint },
         { name = "OTEL_SERVICE_NAME", value = "media-service" }
       ]

@@ -15,6 +15,16 @@ terraform {
   }
 }
 
+# ARN of the Secrets Manager entry holding the real OpenAI API key in non-local
+# environments. Empty allows is_local=true (LocalStack provisions its own stub
+# below). The lambda module enforces this is set when is_local = false via a
+# lifecycle.precondition on aws_lambda_function.generation_worker.
+variable "generation_openai_api_key_secret_arn" {
+  description = "Secrets Manager ARN for the generation OpenAI API key (required when is_local = false)."
+  type        = string
+  default     = ""
+}
+
 provider "aws" {
   region = var.aws_region
 
@@ -36,6 +46,7 @@ provider "aws" {
       iam            = var.localstack_endpoint
       cloudwatchlogs = var.localstack_endpoint
       events         = var.localstack_endpoint
+      secretsmanager = var.localstack_endpoint
     }
   }
 }
@@ -120,6 +131,22 @@ resource "aws_dynamodb_table" "media_table_local" {
   }
 }
 
+resource "aws_secretsmanager_secret" "generation_openai_api_key_local" {
+  count                   = var.is_local ? 1 : 0
+  name                    = "media-service/local/generation/openai-api-key"
+  recovery_window_in_days = 0
+
+  tags = merge(local.common_tags, {
+    Name = "media-service-local-generation-openai-api-key"
+  })
+}
+
+resource "aws_secretsmanager_secret_version" "generation_openai_api_key_local" {
+  count         = var.is_local ? 1 : 0
+  secret_id     = aws_secretsmanager_secret.generation_openai_api_key_local[0].id
+  secret_string = jsonencode({ api_key = "not-configured" })
+}
+
 # =============================================================================
 # Messaging
 # =============================================================================
@@ -128,6 +155,132 @@ module "sns-sqs" {
   source            = "./modules/sns-sqs"
   additional_tags   = local.common_tags
   dlq_alarm_enabled = var.is_local ? false : true
+}
+
+# TODO: align metric name with plan (used_usd vs used_pct). Worker currently
+# emits `generation.budget.used_pct`; the plan calls the source metric
+# `generation.budget.used_usd`. Keeping `used_pct` here to avoid forcing app-code
+# churn from this layer.
+resource "aws_cloudwatch_metric_alarm" "generation_budget_used_pct" {
+  count = var.is_local ? 0 : 1
+
+  alarm_name          = "generation-budget-used-80pct"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "generation.budget.used_pct"
+  namespace           = "MediaService/Generation"
+  period              = 300
+  statistic           = "Maximum"
+  threshold           = 80
+  alarm_description   = "Daily generation budget at or above 80 percent of cap"
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    service = "generation-worker"
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "generation-budget-used-80pct"
+  })
+}
+
+resource "aws_cloudwatch_metric_alarm" "generation_budget_used_100pct" {
+  count = var.is_local ? 0 : 1
+
+  alarm_name          = "generation-budget-used-100pct"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "generation.budget.used_pct"
+  namespace           = "MediaService/Generation"
+  period              = 300
+  statistic           = "Maximum"
+  threshold           = 100
+  alarm_description   = "Daily generation budget fully exhausted"
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    service = "generation-worker"
+  }
+
+  # Distinct alarm action from the 80% alarm (e.g. page-on-call SNS) is wired
+  # separately via alarm_actions when the on-call topic ARN is provided.
+
+  tags = merge(local.common_tags, {
+    Name = "generation-budget-used-100pct"
+  })
+}
+
+resource "aws_cloudwatch_dashboard" "generation_service" {
+  count = var.is_local ? 0 : 1
+
+  dashboard_name = "media-service-generation"
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric"
+        x      = 0
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          region = var.aws_region
+          title  = "Generation queue depth and age"
+          metrics = [
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "generation-jobs", { stat = "Maximum" }],
+            [".", "ApproximateNumberOfMessagesNotVisible", ".", ".", { stat = "Maximum" }],
+            [".", "ApproximateAgeOfOldestMessage", ".", ".", { stat = "Maximum", yAxis = "right" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          region = var.aws_region
+          title  = "Generation worker errors, throttles, and duration"
+          metrics = [
+            ["AWS/Lambda", "Errors", "FunctionName", module.lambda.generation_worker_function_name, { stat = "Sum" }],
+            [".", "Throttles", ".", ".", { stat = "Sum" }],
+            [".", "Duration", ".", ".", { stat = "p95", yAxis = "right" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          region = var.aws_region
+          title  = "Generation stage latency"
+          metrics = [
+            ["MediaService/Generation", "generation.stage.latency_ms", "service", "generation-worker", { stat = "p50" }],
+            [".", ".", ".", ".", { stat = "p95" }],
+            [".", ".", ".", ".", { stat = "p99" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          region = var.aws_region
+          title  = "Generation cost guardrails"
+          metrics = [
+            ["MediaService/Generation", "BudgetUsedPct", "Service", "media-service-generation", { stat = "Maximum" }],
+            [".", "generation.artifact.cost_usd", "service", "generation-worker", { stat = "Sum", yAxis = "right" }]
+          ]
+        }
+      }
+    ]
+  })
 }
 
 # =============================================================================
@@ -234,6 +387,9 @@ module "ecs" {
 
   media_bucket_arn           = module.s3.media_bucket_arn
   media_management_topic_arn = module.sns-sqs.media_management_topic_arn
+  generation_topic_arn       = module.sns-sqs.generation_topic_arn
+  generation_queue_arn       = module.sns-sqs.generation_sqs_queue_arn
+  generation_queue_url       = module.sns-sqs.generation_sqs_queue_url
   media_s3_bucket_name       = var.media_s3_bucket_name
 
   application_environment = var.application_environment
@@ -266,9 +422,15 @@ module "lambda" {
   dynamodb_table_arn  = var.is_local ? aws_dynamodb_table.media_table_local[0].arn : module.dynamodb[0].dynamodb_table_arn
   dynamodb_table_name = var.media_dynamo_table_name
 
-  media_bucket_arn               = module.s3.media_bucket_arn
-  media_management_sqs_queue_arn = module.sns-sqs.media_management_sqs_queue_arn
-  media_s3_bucket_name           = var.media_s3_bucket_name
+  media_bucket_arn                     = module.s3.media_bucket_arn
+  media_management_sqs_queue_arn       = module.sns-sqs.media_management_sqs_queue_arn
+  generation_sqs_queue_arn             = module.sns-sqs.generation_sqs_queue_arn
+  generation_paid_sqs_queue_arn        = module.sns-sqs.generation_paid_sqs_queue_arn
+  generation_topic_arn                 = module.sns-sqs.generation_topic_arn
+  generation_openai_api_key_secret_arn = var.is_local ? aws_secretsmanager_secret.generation_openai_api_key_local[0].arn : var.generation_openai_api_key_secret_arn
+  media_s3_bucket_name                 = var.media_s3_bucket_name
+
+  region = var.aws_region
 
   otel_exporter_endpoint = var.otel_exporter_endpoint
 
@@ -285,6 +447,15 @@ module "lambda" {
 
   # Webhook HMAC signing secret
   webhook_secret = var.webhook_secret
+
+  # Container-image deployment for the generation-worker (AWS only — LocalStack
+  # community does not support container Lambdas). When set, the image bundles
+  # Python + notebooklm-py alongside the JAR for the NotebookLM provider.
+  generation_worker_image_uri = var.generation_worker_image_uri
+
+  # When true, skip the generation-worker SQS event source mappings so the API
+  # container's in-process stage poller is the sole consumer. LocalStack path.
+  local_stage_poller_enabled = var.local_stage_poller_enabled
 }
 
 # =============================================================================
@@ -327,4 +498,24 @@ output "dlq_queue_url" {
 output "dlq_queue_arn" {
   description = "ARN of the dead-letter queue"
   value       = module.sns-sqs.dlq_queue_arn
+}
+
+output "generation_topic_arn" {
+  value = module.sns-sqs.generation_topic_arn
+}
+
+output "generation_sqs_queue_url" {
+  value = module.sns-sqs.generation_sqs_queue_url
+}
+
+output "generation_dlq_queue_url" {
+  value = module.sns-sqs.generation_dlq_queue_url
+}
+
+output "generation_lambda_function_name" {
+  value = module.lambda.generation_worker_function_name
+}
+
+output "generation_openai_api_key_secret_arn" {
+  value = var.is_local ? aws_secretsmanager_secret.generation_openai_api_key_local[0].arn : var.generation_openai_api_key_secret_arn
 }

@@ -27,6 +27,9 @@ public class Media {
   private String name;
   private String mimetype;
   private MediaType mediaType;
+  /** Origin of the media record. Legacy rows default to UPLOAD when the field is absent. */
+  @Builder.Default
+  private MediaSource source = MediaSource.UPLOAD;
   /** Summary status for overall media processing lifecycle. */
   private MediaStatus status;
   /** Original asset ID in the asset table */

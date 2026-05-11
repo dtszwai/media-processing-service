@@ -1,3 +1,7 @@
+data "aws_region" "current" {}
+
+data "aws_caller_identity" "current" {}
+
 data "aws_iam_policy_document" "assume_role" {
   statement {
     effect = "Allow"
@@ -11,6 +15,9 @@ data "aws_iam_policy_document" "assume_role" {
   }
 }
 
+# Shared policy for manage_media + analytics_rollup ONLY.
+# Generation-specific permissions (Secrets, KMS, EventBridge, generation SNS/SQS)
+# now live in a dedicated policy attached to the generation_worker role.
 data "aws_iam_policy_document" "lambda_iam_policy_document" {
   statement {
     sid    = "EC2Networking"
@@ -49,7 +56,8 @@ data "aws_iam_policy_document" "lambda_iam_policy_document" {
       "s3:GetObject",
       "s3:PutObject",
       "s3:ListBucket",
-      "s3:DeleteObject"
+      "s3:DeleteObject",
+      "s3:AbortMultipartUpload"
     ]
     resources = [
       var.media_bucket_arn,
@@ -68,9 +76,13 @@ data "aws_iam_policy_document" "lambda_iam_policy_document" {
       "dynamodb:PutItem",
       "dynamodb:Query",
       "dynamodb:Scan",
+      "dynamodb:TransactWriteItems",
       "dynamodb:UpdateItem"
     ]
-    resources = [var.dynamodb_table_arn]
+    resources = [
+      var.dynamodb_table_arn,
+      "${var.dynamodb_table_arn}/index/*"
+    ]
   }
 
   statement {
@@ -79,9 +91,12 @@ data "aws_iam_policy_document" "lambda_iam_policy_document" {
     actions = [
       "sqs:ReceiveMessage",
       "sqs:DeleteMessage",
-      "sqs:GetQueueAttributes"
+      "sqs:GetQueueAttributes",
+      "sqs:ChangeMessageVisibility"
     ]
-    resources = [var.media_management_sqs_queue_arn]
+    resources = [
+      var.media_management_sqs_queue_arn
+    ]
   }
 }
 
@@ -99,6 +114,166 @@ resource "aws_iam_policy" "lambda_iam_policy" {
   )
 }
 
+# =============================================================================
+# Generation worker IAM (separate role + policy)
+# =============================================================================
+#
+# Isolation rationale: keeps Secrets Manager / KMS / EventBridge / SNS-Publish-on-
+# generation-topic / SQS-on-generation-queue out of the shared role used by the
+# media handler and analytics rollup. Least-privilege per worker.
+
+data "aws_iam_policy_document" "generation_worker_policy_document" {
+  statement {
+    sid    = "EC2Networking"
+    effect = "Allow"
+    actions = [
+      "ec2:AssignPrivateIpAddresses",
+      "ec2:UnassignPrivateIpAddresses",
+      "ec2:AttachNetworkInterface",
+      "ec2:CreateNetworkInterface",
+      "ec2:CreateNetworkInterfacePermission",
+      "ec2:DeleteNetworkInterface",
+      "ec2:DeleteNetworkInterfacePermission",
+      "ec2:Describe*",
+      "ec2:DetachNetworkInterface",
+      "ec2:GetSecurityGroupsForVpc"
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "CloudWatchLogs"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+    ]
+    resources = ["arn:aws:logs:*:*:*"]
+  }
+
+  statement {
+    sid    = "S3"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:ListBucket",
+      "s3:DeleteObject",
+      "s3:AbortMultipartUpload"
+    ]
+    resources = [
+      var.media_bucket_arn,
+      "${var.media_bucket_arn}/*"
+    ]
+  }
+
+  statement {
+    sid    = "DynamoDB"
+    effect = "Allow"
+    actions = [
+      "dynamodb:BatchGetItem",
+      "dynamodb:BatchWriteItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:Query",
+      "dynamodb:TransactWriteItems",
+      "dynamodb:UpdateItem"
+    ]
+    # IAM does not grant GSI access via the table ARN alone — enumerate each index.
+    resources = [
+      var.dynamodb_table_arn,
+      "${var.dynamodb_table_arn}/index/SK-createdAt-index",
+      "${var.dynamodb_table_arn}/index/tenantId-createdAt-index",
+      "${var.dynamodb_table_arn}/index/email-index",
+      "${var.dynamodb_table_arn}/index/tenantId-index",
+    ]
+  }
+
+  statement {
+    sid    = "GenerationSQS"
+    effect = "Allow"
+    actions = [
+      "sqs:ReceiveMessage",
+      "sqs:DeleteMessage",
+      "sqs:GetQueueAttributes",
+      "sqs:ChangeMessageVisibility"
+    ]
+    resources = [var.generation_sqs_queue_arn, var.generation_paid_sqs_queue_arn]
+  }
+
+  statement {
+    sid       = "GenerationSNS"
+    effect    = "Allow"
+    actions   = ["sns:Publish"]
+    resources = [var.generation_topic_arn]
+  }
+
+  statement {
+    sid       = "GenerationSecrets"
+    effect    = "Allow"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [var.generation_openai_api_key_secret_arn]
+  }
+
+  # KMS scoped to the table CMK and the secret CMK. compact() drops nulls so
+  # the policy stays valid when CMKs are not configured (e.g. LocalStack).
+  dynamic "statement" {
+    for_each = length(compact([var.media_table_cmk_arn, var.generation_secret_cmk_arn])) > 0 ? [1] : []
+    content {
+      sid    = "GenerationKMS"
+      effect = "Allow"
+      actions = [
+        "kms:Decrypt",
+        "kms:GenerateDataKey"
+      ]
+      resources = compact([var.media_table_cmk_arn, var.generation_secret_cmk_arn])
+    }
+  }
+
+  # EventBridge Scheduler scoped to rules with the `generation-` prefix used
+  # by long-delay async polls.
+  statement {
+    sid    = "GenerationScheduler"
+    effect = "Allow"
+    actions = [
+      "events:PutRule",
+      "events:PutTargets",
+      "events:DeleteRule",
+      "events:RemoveTargets"
+    ]
+    resources = [
+      "arn:aws:events:${var.region}:${data.aws_caller_identity.current.account_id}:rule/generation-*"
+    ]
+  }
+}
+
+resource "aws_iam_role" "generation_worker_role" {
+  name               = "media-service-generation-worker-role"
+  assume_role_policy = data.aws_iam_policy_document.assume_role.json
+
+  tags = merge(var.additional_tags, {
+    Name = "media-service-generation-worker-role"
+  })
+}
+
+resource "aws_iam_policy" "generation_worker_policy" {
+  name        = "media-service-generation-worker-policy"
+  path        = "/"
+  description = "Least-privilege policy for the generation worker Lambda"
+  policy      = data.aws_iam_policy_document.generation_worker_policy_document.json
+
+  tags = merge(var.additional_tags, {
+    Name = "media-service-generation-worker-policy"
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "generation_worker_policy_attachment" {
+  role       = aws_iam_role.generation_worker_role.name
+  policy_arn = aws_iam_policy.generation_worker_policy.arn
+}
+
 #######################
 # Build Java Lambda JAR #
 #######################
@@ -112,6 +287,7 @@ locals {
   combined_hash_input   = join("", concat(values(local.java_file_hashes), [local.pom_hash]))
   source_directory_hash = sha256(local.combined_hash_input)
   lambda_jar_file       = "${var.lambdas_src_path}/target/media-service-lambdas.jar"
+  otel_exporter         = var.is_local ? "none" : "otlp"
 }
 
 resource "null_resource" "build_lambda_jar" {
@@ -193,9 +369,9 @@ resource "aws_lambda_function" "manage_media" {
         MEDIA_DYNAMODB_TABLE_NAME   = var.dynamodb_table_name
         OTEL_EXPORTER_OTLP_ENDPOINT = var.otel_exporter_endpoint
         OTEL_SERVICE_NAME           = "media-service-lambda"
-        OTEL_TRACES_EXPORTER        = "otlp"
-        OTEL_METRICS_EXPORTER       = "otlp"
-        OTEL_LOGS_EXPORTER          = "otlp"
+        OTEL_TRACES_EXPORTER        = local.otel_exporter
+        OTEL_METRICS_EXPORTER       = local.otel_exporter
+        OTEL_LOGS_EXPORTER          = local.otel_exporter
         OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf"
         WEBHOOK_SECRET              = var.webhook_secret
       },
@@ -245,6 +421,192 @@ resource "aws_lambda_event_source_mapping" "sqs_event_source_mapping" {
   )
 }
 
+locals {
+  generation_worker_name      = "media-service-generation-worker"
+  generation_worker_use_image = length(trimspace(var.generation_worker_image_uri)) > 0
+  generation_worker_handler   = "com.mediaservice.lambda.GenerationWorkerHandler::handleRequest"
+}
+
+resource "aws_lambda_function" "generation_worker" {
+  dynamic "vpc_config" {
+    for_each = var.is_local ? [] : [1]
+    content {
+      security_group_ids = [var.lambda_sg]
+      subnet_ids         = var.private_subnet_ids
+    }
+  }
+
+  package_type     = local.generation_worker_use_image ? "Image" : "Zip"
+  image_uri        = local.generation_worker_use_image ? var.generation_worker_image_uri : null
+  filename         = local.generation_worker_use_image ? null : local.lambda_jar_file
+  source_code_hash = local.generation_worker_use_image ? null : filebase64sha256(local.lambda_jar_file)
+  handler          = local.generation_worker_use_image ? null : local.generation_worker_handler
+  runtime          = local.generation_worker_use_image ? null : "java21"
+
+  dynamic "image_config" {
+    for_each = local.generation_worker_use_image ? [1] : []
+    content {
+      command = [local.generation_worker_handler]
+    }
+  }
+
+  function_name = local.generation_worker_name
+  role          = aws_iam_role.generation_worker_role.arn
+  architectures = [var.lambda_architecture]
+  timeout       = 300
+  memory_size   = 2048
+  # SnapStart is only available for the zip-JAR managed runtime.
+  publish = (var.is_local || local.generation_worker_use_image) ? false : var.enable_snapstart
+
+  dynamic "snap_start" {
+    for_each = (var.is_local || local.generation_worker_use_image) ? [] : (var.enable_snapstart ? [1] : [])
+    content {
+      apply_on = "PublishedVersions"
+    }
+  }
+
+  environment {
+    variables = merge(
+      {
+        MEDIA_BUCKET_NAME                                 = var.media_s3_bucket_name
+        MEDIA_DYNAMODB_TABLE_NAME                         = var.dynamodb_table_name
+        MEDIA_GENERATION_TOPIC_ARN                        = var.generation_topic_arn
+        GENERATION_PROVIDER                               = "simulated"
+        GENERATION_MODERATION_PROVIDER                    = "simulated"
+        GENERATION_TTS_PROVIDER                           = "simulated"
+        GENERATION_AUDIO_OVERVIEW_PROVIDER                = "simulated"
+        GENERATION_REGION                                 = data.aws_region.current.name
+        GENERATION_MODEL                                  = "simulator-v1"
+        GENERATION_BUDGET_DAILY_USD                       = "50"
+        GENERATION_BUDGET_ALERT_PCT                       = var.generation_budget_alert_pct
+        GENERATION_OPENAI_API_KEY_SECRET_ARN              = var.generation_openai_api_key_secret_arn
+        GENERATION_PROVIDER_TIMEOUT_MS                    = "30000"
+        GENERATION_PROMPT_ENHANCEMENT_ENABLED             = "true"
+        GENERATION_STAGE_MAX_ATTEMPTS                     = "3"
+        GENERATION_SIMULATOR_CHAOS_BUSINESS_HOURS_ENABLED = "false"
+        # Chaos failure injection only enabled for local development.
+        GENERATION_SIMULATOR_CHAOS_FAILURE_RATE = var.is_local ? "0.05" : "0.0"
+        OTEL_EXPORTER_OTLP_ENDPOINT             = var.otel_exporter_endpoint
+        OTEL_SERVICE_NAME                       = "media-service-generation-worker"
+        OTEL_TRACES_EXPORTER                    = local.otel_exporter
+        OTEL_METRICS_EXPORTER                   = local.otel_exporter
+        OTEL_LOGS_EXPORTER                      = local.otel_exporter
+        OTEL_EXPORTER_OTLP_PROTOCOL             = "http/protobuf"
+        WEBHOOK_SECRET                          = var.webhook_secret
+      },
+      var.is_local ? {
+        AWS_S3_ENDPOINT             = var.localstack_endpoint
+        AWS_DYNAMODB_ENDPOINT       = var.localstack_endpoint
+        AWS_SNS_ENDPOINT            = var.localstack_endpoint
+        AWS_SECRETSMANAGER_ENDPOINT = var.localstack_endpoint
+      } : {}
+    )
+  }
+
+  # Reject deploying with an unconfigured OpenAI key secret outside LocalStack.
+  lifecycle {
+    precondition {
+      condition     = var.is_local || length(var.generation_openai_api_key_secret_arn) > 0
+      error_message = "generation_openai_api_key_secret_arn must be set when is_local = false. Provision the Secrets Manager entry and pass its ARN."
+    }
+  }
+
+  tags = merge(
+    var.additional_tags,
+    {
+      Name = local.generation_worker_name
+    }
+  )
+}
+
+resource "aws_cloudwatch_log_group" "generation_worker_log_group" {
+  count             = var.is_local ? 0 : 1
+  depends_on        = [aws_lambda_function.generation_worker]
+  name              = "/aws/lambda/${local.generation_worker_name}"
+  retention_in_days = 7
+
+  tags = merge(var.additional_tags, {
+    Name = "media-service-generation-worker-log-group"
+  })
+}
+
+resource "aws_lambda_event_source_mapping" "generation_sqs_event_source_mapping" {
+  count            = var.local_stage_poller_enabled ? 0 : 1
+  event_source_arn = var.generation_sqs_queue_arn
+  function_name    = aws_lambda_function.generation_worker.arn
+  batch_size       = 1
+
+  tags = merge(
+    var.additional_tags,
+    {
+      Name = "generation-sqs-event-source-mapping"
+    }
+  )
+}
+
+# Per-tier priority queue: paid jobs route through their own SQS queue so head-of-line blocking
+# by free traffic cannot starve paid SLAs (build-guide §5.3). Same Lambda processes both — the
+# isolation lives in the queue, not the consumer.
+resource "aws_lambda_event_source_mapping" "generation_paid_sqs_event_source_mapping" {
+  count            = var.local_stage_poller_enabled ? 0 : 1
+  event_source_arn = var.generation_paid_sqs_queue_arn
+  function_name    = aws_lambda_function.generation_worker.arn
+  batch_size       = 1
+
+  tags = merge(
+    var.additional_tags,
+    {
+      Name = "generation-paid-sqs-event-source-mapping"
+    }
+  )
+}
+
+resource "aws_cloudwatch_metric_alarm" "generation_worker_errors" {
+  count = var.is_local ? 0 : 1
+
+  alarm_name          = "generation-worker-errors"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "Errors"
+  namespace           = "AWS/Lambda"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 1
+  alarm_description   = "Alarm when the generation worker reports Lambda errors"
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    FunctionName = aws_lambda_function.generation_worker.function_name
+  }
+
+  tags = merge(var.additional_tags, {
+    Name = "generation-worker-errors-alarm"
+  })
+}
+
+resource "aws_cloudwatch_metric_alarm" "generation_worker_throttles" {
+  count = var.is_local ? 0 : 1
+
+  alarm_name          = "generation-worker-throttles"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "Throttles"
+  namespace           = "AWS/Lambda"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 1
+  alarm_description   = "Alarm when the generation worker is throttled"
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    FunctionName = aws_lambda_function.generation_worker.function_name
+  }
+
+  tags = merge(var.additional_tags, {
+    Name = "generation-worker-throttles-alarm"
+  })
+}
+
 # =============================================================================
 # Analytics Rollup Lambda (Roll-Up Pattern)
 # =============================================================================
@@ -291,9 +653,9 @@ resource "aws_lambda_function" "analytics_rollup" {
         MEDIA_DYNAMODB_TABLE_NAME   = var.dynamodb_table_name
         OTEL_EXPORTER_OTLP_ENDPOINT = var.otel_exporter_endpoint
         OTEL_SERVICE_NAME           = "media-service-analytics-lambda"
-        OTEL_TRACES_EXPORTER        = "otlp"
-        OTEL_METRICS_EXPORTER       = "otlp"
-        OTEL_LOGS_EXPORTER          = "otlp"
+        OTEL_TRACES_EXPORTER        = local.otel_exporter
+        OTEL_METRICS_EXPORTER       = local.otel_exporter
+        OTEL_LOGS_EXPORTER          = local.otel_exporter
         OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf"
         JAVA_TOOL_OPTIONS           = "-XX:+TieredCompilation -XX:TieredStopAtLevel=1"
       },

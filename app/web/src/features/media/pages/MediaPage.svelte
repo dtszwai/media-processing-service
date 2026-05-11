@@ -1,10 +1,11 @@
 <script lang="ts">
-import UploadZone from "../components/UploadZone.svelte";
-import ResultSection from "../components/ResultSection.svelte";
-import MediaList from "../components/MediaList.svelte";
-import { createMediaQuery } from "../queries";
-import { currentMediaId } from "../stores";
-import type { MediaType } from "../../../shared/types";
+  import UploadZone from "../components/UploadZone.svelte";
+  import ResultSection from "../components/ResultSection.svelte";
+  import MediaList from "../components/MediaList.svelte";
+  import GenerationPanel from "../components/GenerationPanel.svelte";
+  import { createMediaQuery } from "../queries";
+  import { currentMediaId } from "../stores";
+  import type { MediaType } from "../../../shared/types";
 
   interface Props {
     mediaType?: MediaType;
@@ -77,6 +78,7 @@ import type { MediaType } from "../../../shared/types";
   <div class="flex gap-6 h-full relative">
     <!-- Library Area -->
     <div class="flex-1 flex flex-col gap-5 transition-all duration-300 ease-in-out min-w-0 {$currentMediaId ? 'mr-[440px]' : ''}">
+      <GenerationPanel mode="image" />
       <MediaList {mediaType} layout="grid" />
     </div>
 
@@ -107,6 +109,19 @@ import type { MediaType } from "../../../shared/types";
           <ResultSection layout="panel" onSelectionContextChange={handleSelectionContextChange} />
         </div>
       {/if}
+    </div>
+  </div>
+{:else if mediaType === "audio"}
+  <div class="grid gap-6 lg:grid-cols-3">
+    <div class="lg:col-span-2 space-y-6">
+      <GenerationPanel mode="audio" />
+      {#if $currentMediaId}
+        <ResultSection />
+      {/if}
+    </div>
+
+    <div class="lg:col-span-1">
+      <MediaList {mediaType} />
     </div>
   </div>
 {:else}

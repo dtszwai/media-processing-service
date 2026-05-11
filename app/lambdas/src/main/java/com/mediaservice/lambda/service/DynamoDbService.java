@@ -6,6 +6,7 @@ import com.mediaservice.common.model.AssetStatus;
 import com.mediaservice.common.model.AssetType;
 import com.mediaservice.common.model.Media;
 import com.mediaservice.common.model.MediaAsset;
+import com.mediaservice.common.model.MediaSource;
 import com.mediaservice.common.model.MediaStatus;
 import com.mediaservice.common.model.MediaType;
 import com.mediaservice.common.model.ProcessingJobStatus;
@@ -248,6 +249,7 @@ public class DynamoDbService {
     getString(attrs, StorageConstants.DYNAMO_ATTR_TENANT_ID).ifPresent(builder::tenantId);
     getString(attrs, StorageConstants.DYNAMO_ATTR_USER_ID).ifPresent(builder::userId);
     getString(attrs, "mediaType").map(MediaType::fromString).ifPresent(builder::mediaType);
+    getString(attrs, "source").map(MediaSource::fromString).ifPresent(builder::source);
     getString(attrs, "deletedAt").map(Instant::parse).ifPresent(builder::deletedAt);
     getString(attrs, "webhookUrl").ifPresent(builder::webhookUrl);
     getLong(attrs, "size").ifPresent(builder::size);
