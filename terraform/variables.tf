@@ -1,81 +1,69 @@
+# Variables for the LocalStack-targeted Terraform configuration.
+#
+# This config has one apply target (LocalStack Community via tflocal). Modules
+# that LocalStack Community cannot run are gated with `count = 0` at their call
+# sites in main.tf, with a comment explaining why.
+
 variable "aws_region" {
-  description = "AWS region"
+  description = "AWS region for the deployment."
   type        = string
-  default     = "us-west-2"
+  default     = "us-east-1"
 }
 
-variable "is_local" {
-  description = "Whether running in LocalStack (skips AWS-only resources)"
-  type        = bool
-  default     = false
-}
-
-variable "localstack_endpoint" {
-  description = "LocalStack endpoint URL (only used when is_local=true)"
+variable "localstack_provider_endpoint" {
+  description = "LocalStack endpoint Terraform uses from the host."
   type        = string
   default     = "http://localhost:4566"
 }
 
-variable "localstack_lambda_endpoint" {
-  description = "LocalStack endpoint for Lambda env vars (Docker network)"
+variable "localstack_runtime_endpoint" {
+  description = "LocalStack endpoint used by Lambda and container runtimes."
   type        = string
   default     = "http://localstack:4566"
 }
 
-variable "application_environment" {
-  description = "Environment (localstack or aws)"
+variable "name_prefix" {
+  description = "Prefix applied to SNS/SQS/Lambda/IAM resource names."
   type        = string
+  default     = "media-service-go-local"
 }
 
 variable "api_port" {
-  description = "Port the API listens on"
+  description = "TCP port the api container listens on. Must match cmd/api API_HTTP_ADDR."
   type        = number
   default     = 9000
 }
 
 variable "media_s3_bucket_name" {
-  description = "S3 bucket for media files"
+  description = "S3 bucket holding media + assets. Must match the value the api reads via S3_BUCKET."
   type        = string
+  default     = "media-service-local"
 }
 
-variable "media_dynamo_table_name" {
-  description = "DynamoDB table for media metadata"
+variable "media_dynamodb_table_name" {
+  description = "DynamoDB single-table name. Must match the value the api reads via DDB_TABLE."
   type        = string
-}
-
-variable "desired_task_count" {
-  description = "Number of ECS tasks to run"
-  type        = number
-  default     = 1
+  default     = "media-v1"
 }
 
 variable "otel_exporter_endpoint" {
-  description = "OpenTelemetry exporter endpoint"
+  description = "OTLP gRPC endpoint Lambdas publish traces to (Grafana otel-lgtm container)."
   type        = string
-  default     = "http://localhost:4318"
+  default     = "http://grafana:4317"
 }
 
-variable "enable_snapstart" {
-  description = "Enable Lambda SnapStart for faster cold starts (Java 21 runtime)"
-  type        = bool
-  default     = true
+variable "tags" {
+  description = "Common tags applied to all resources."
+  type        = map(string)
+  default = {
+    App = "media-service"
+  }
 }
 
-variable "webhook_secret" {
-  description = "Secret for HMAC-signing webhook payloads"
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "generation_worker_image_uri" {
-  description = "Docker image URI for the generation-worker Lambda (container-image path). See module variable for details."
+variable "lease_reaper_tenants" {
+  # Default is empty so the lease-reaper Lambda scans nothing until operators
+  # explicitly list the tenant IDs they want reaped on each 5-minute cron.
+  description = "Comma-separated tenant IDs the lease-reaper Lambda scans on each cron invocation. Empty disables reaping."
   type        = string
   default     = ""
-}
-
-variable "local_stage_poller_enabled" {
-  description = "Skip generation-worker SQS event source mappings so the API's in-process poller consumes the queues. See module variable for details."
-  type        = bool
-  default     = false
 }

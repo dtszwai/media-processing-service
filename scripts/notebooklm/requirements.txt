@@ -9,4 +9,9 @@
 # Runtime only needs HTTP — no Chromium. The login helper has its own
 # requirements file (scripts/notebooklm-login-requirements.txt) that pulls
 # in Playwright for the one-time browser sign-in.
-notebooklm-py
+#
+# Pinned because overview.py monkey-patches notebooklm-py internals
+# (auth._fetch_tokens_with_jar, ClientCore._build_url, ArtifactsAPI._download_url,
+# NotebookLMClient.refresh_auth) to route through ?authuser=N. Each version
+# bump requires re-checking those signatures.
+notebooklm-py==0.4.1

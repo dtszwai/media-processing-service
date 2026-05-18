@@ -1,7 +1,7 @@
 apiVersion: 1
 
 providers:
-  - name: 'Media Service'
+  - name: 'default'
     type: file
     options:
       path: /otel-lgtm/dashboards

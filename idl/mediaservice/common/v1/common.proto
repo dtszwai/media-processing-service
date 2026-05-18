@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package mediaservice.common.v1;
+
+option go_package = "github.com/dtszwai/media-processing-service/backend/pkg/contracts/common/v1;commonv1";
+
+enum Tier {
+  TIER_UNSPECIFIED = 0;
+  TIER_FREE = 1;
+  TIER_PAID = 2;
+}
+
+enum MediaType {
+  MEDIA_TYPE_UNSPECIFIED = 0;
+  MEDIA_TYPE_IMAGE = 1;
+  MEDIA_TYPE_AUDIO = 2;
+}
+
+enum Origin {
+  ORIGIN_UNSPECIFIED = 0;
+  ORIGIN_UPLOAD = 1;
+  ORIGIN_GENERATED = 2;
+}
+
+message Page {
+  uint32 limit = 1;
+  string cursor = 2;
+}
+
+message PageInfo {
+  string next_cursor = 1;
+  bool has_more = 2;
+}

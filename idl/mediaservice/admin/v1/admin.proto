@@ -1,0 +1,313 @@
+syntax = "proto3";
+
+package mediaservice.admin.v1;
+
+option go_package = "github.com/dtszwai/media-processing-service/backend/pkg/contracts/mediaservice/admin/v1;adminv1";
+
+import "google/protobuf/timestamp.proto";
+
+// All mutations take dlq_name + receipt_handle / message_id in the JSON body
+// since receipt handles carry path-unsafe characters and a single endpoint
+// fans out across 18 named DLQs (16 generation + media + webhook).
+
+message DLQQueue {
+  string name = 1;
+  string queue_url = 2;
+  string source_queue_url = 3;
+  int32 approximate_message_count = 4;
+}
+
+message GetDLQStatusRequest {}
+
+message GetDLQStatusResponse {
+  repeated DLQQueue queues = 1;
+}
+
+message ListDLQMessagesRequest {
+  string dlq_name = 1;
+  int32 limit = 2;
+}
+
+message DLQMessage {
+  string message_id = 1;
+  string receipt_handle = 2;
+  string body = 3;
+  map<string, string> message_attributes = 4;
+  optional string sent_timestamp = 5;
+  optional int32 approximate_receive_count = 6;
+  // body_signature is an HMAC over (dlq_name|message_id|body|canonical-attrs)
+  // returned by Peek; Replay echoes it back and the server verifies before
+  // re-sending so the body cannot be tampered with between Peek and Replay.
+  string body_signature = 7;
+}
+
+message ListDLQMessagesResponse {
+  repeated DLQMessage messages = 1;
+}
+
+message DLQMessageInput {
+  string message_id = 1;
+  string receipt_handle = 2;
+  string body = 3;
+  map<string, string> message_attributes = 4;
+  string body_signature = 5;
+}
+
+message ReplayDLQMessagesRequest {
+  string dlq_name = 1;
+  repeated DLQMessageInput messages = 2;
+}
+
+message DLQReplayFailure {
+  string error_code = 1;
+  string error_message = 2;
+  bool retryable = 3;
+}
+
+message DLQReplayResult {
+  string original_message_id = 1;
+  optional string new_message_id = 2;
+  optional DLQReplayFailure failure = 3;
+}
+
+message ReplayDLQMessagesResponse {
+  repeated DLQReplayResult results = 1;
+}
+
+message DeleteDLQMessageRequest {
+  string dlq_name = 1;
+  string receipt_handle = 2;
+}
+
+message DeleteDLQMessageResponse {}
+
+message PurgeDLQRequest {
+  string dlq_name = 1;
+}
+
+message PurgeDLQResponse {}
+
+service DLQAdminService {
+  rpc GetDLQStatus(GetDLQStatusRequest) returns (GetDLQStatusResponse);
+
+  rpc ListDLQMessages(ListDLQMessagesRequest) returns (ListDLQMessagesResponse);
+
+  rpc ReplayDLQMessages(ReplayDLQMessagesRequest) returns (ReplayDLQMessagesResponse);
+
+  rpc DeleteDLQMessage(DeleteDLQMessageRequest) returns (DeleteDLQMessageResponse);
+
+  rpc PurgeDLQ(PurgeDLQRequest) returns (PurgeDLQResponse);
+}
+
+// OutboxDLQRow is a poisoned transactional-outbox row that the relay couldn't
+// publish after exhausting retries. Operators can replay (write a fresh
+// outbox event with `replayed_from_event_id`) or abandon (mark the row
+// terminally failed so dashboards stop alarming).
+message OutboxDLQRow {
+  string stream = 1;
+  string shard = 2;
+  string event_id = 3;
+  string event_type = 4;
+  string tenant_id = 5;
+  bytes body = 6;
+  optional string last_error = 7;
+  int32 attempts = 8;
+  google.protobuf.Timestamp partition_ts = 9;
+  google.protobuf.Timestamp first_failed_at = 10;
+  google.protobuf.Timestamp last_failed_at = 11;
+}
+
+message ListOutboxDlqRowsRequest {
+  string stream = 1;
+  int32 limit = 2;
+  optional string cursor = 3;
+}
+
+message ListOutboxDlqRowsResponse {
+  repeated OutboxDLQRow rows = 1;
+  optional string next_cursor = 2;
+}
+
+message ReplayOutboxDlqRowRequest {
+  string stream = 1;
+  string event_id = 2;
+  string reason = 3;
+}
+
+message ReplayOutboxDlqRowResponse {
+  // replayed_from_event_id is the original DLQ row's event id; new_event_id
+  // is the freshly-allocated replay row. Operators correlate audit + metrics
+  // through replayed_from_event_id.
+  string replayed_from_event_id = 1;
+  string new_event_id = 2;
+}
+
+message AbandonOutboxDlqRowRequest {
+  string stream = 1;
+  string event_id = 2;
+  string reason = 3;
+}
+
+message AbandonOutboxDlqRowResponse {}
+
+message DeleteOutboxDlqRowRequest {
+  string stream = 1;
+  string event_id = 2;
+  string reason = 3;
+}
+
+message DeleteOutboxDlqRowResponse {}
+
+message PurgeOutboxDlqRowsRequest {
+  string stream = 1;
+  string reason = 2;
+}
+
+message PurgeOutboxDlqRowsResponse {
+  int32 deleted_count = 1;
+}
+
+// InspectIdempotencyClaimRequest reads a claim row without mutation. The
+// scope is the full IDEMPOTENCY#... primary key as written by the
+// idempotency package — operators copy it from logs or audit rows.
+message InspectIdempotencyClaimRequest {
+  string scope = 1;
+}
+
+message IdempotencyClaim {
+  string scope = 1;
+  string status = 2;
+  string input_hash = 3;
+  string result_ref = 4;
+  optional google.protobuf.Timestamp claimed_at = 5;
+  optional google.protobuf.Timestamp completed_at = 6;
+  optional google.protobuf.Timestamp ttl_at = 7;
+  optional int32 attempts = 8;
+  optional string last_error = 9;
+}
+
+message InspectIdempotencyClaimResponse {
+  IdempotencyClaim claim = 1;
+}
+
+// ResetIdempotencyClaim invalidates an existing claim so the next request
+// proceeds as NEW. Used as the operator escape hatch when a claim row gets
+// wedged in CLAIMED past its TTL. Reset is audited and returns the next
+// `reset_generation` value derived from the invalidated row.
+message ResetIdempotencyClaimRequest {
+  string scope = 1;
+  string reason = 2;
+}
+
+message ResetIdempotencyClaimResponse {
+  string scope = 1;
+  int32 reset_generation = 2;
+}
+
+// OverrideQuotaCap raises (or lowers) the daily quota reservoir for a tenant
+// + metric combination. Conditional update on the reservoir version prevents
+// lost updates from concurrent overrides.
+message OverrideQuotaCapRequest {
+  string tenant_id = 1;
+  string metric = 2;
+  // period is the YYYYMMDD bucket for daily quotas. Weekly/monthly buckets
+  // use the same string format prefixed with the period kind (e.g.
+  // "W#202620" for ISO week 20 of 2026).
+  string period = 3;
+  int64 new_cap = 4;
+  string reason = 5;
+}
+
+message OverrideQuotaCapResponse {
+  string tenant_id = 1;
+  string metric = 2;
+  string period = 3;
+  int64 previous_cap = 4;
+  int64 new_cap = 5;
+  int64 reservoir_version = 6;
+}
+
+// OutboxDLQAdminService groups the outbox-relay DLQ admin RPCs. They are
+// declared on a separate service from SQS DLQ admin because they map to a
+// different underlying DDB table (`outbox_dlq` vs SQS RedrivePolicy) and a
+// different operator workflow (write-a-replay-row vs send-message). The API
+// wires this service when the outbox DLQ admin dependency is configured;
+// otherwise calls fail with FailedPrecondition.
+service OutboxDLQAdminService {
+  rpc ListOutboxDlqRows(ListOutboxDlqRowsRequest) returns (ListOutboxDlqRowsResponse);
+
+  rpc ReplayOutboxDlqRow(ReplayOutboxDlqRowRequest) returns (ReplayOutboxDlqRowResponse);
+
+  rpc AbandonOutboxDlqRow(AbandonOutboxDlqRowRequest) returns (AbandonOutboxDlqRowResponse);
+
+  rpc DeleteOutboxDlqRow(DeleteOutboxDlqRowRequest) returns (DeleteOutboxDlqRowResponse);
+
+  rpc PurgeOutboxDlqRows(PurgeOutboxDlqRowsRequest) returns (PurgeOutboxDlqRowsResponse);
+}
+
+// IdempotencyAdminService groups idempotency-claim inspection + reset. The
+// scope-keyed surface is sensitive — every Reset writes an audit row and
+// bumps a reset_generation counter. The API wires this service when the
+// idempotency admin dependency is configured; otherwise calls fail with
+// FailedPrecondition.
+service IdempotencyAdminService {
+  rpc InspectIdempotencyClaim(InspectIdempotencyClaimRequest) returns (InspectIdempotencyClaimResponse);
+
+  rpc ResetIdempotencyClaim(ResetIdempotencyClaimRequest) returns (ResetIdempotencyClaimResponse);
+}
+
+// QuotaAdminService exposes daily quota cap overrides so admins don't conflate
+// per-tenant rate limits with the platform-wide fiscal budget. The API wires
+// this service when the quota admin dependency is configured; otherwise calls
+// fail with FailedPrecondition.
+service QuotaAdminService {
+  rpc OverrideQuotaCap(OverrideQuotaCapRequest) returns (OverrideQuotaCapResponse);
+}
+
+message RotateWebhookSecretRequest {
+  string tenant_id = 1;
+  string endpoint_id = 2;
+  string reason = 3;
+}
+
+message RotateWebhookSecretResponse {
+  string tenant_id = 1;
+  string endpoint_id = 2;
+  string old_secret_key_id = 3;
+  string new_secret_key_id = 4;
+}
+
+service WebhookAdminService {
+  rpc RotateWebhookSecret(RotateWebhookSecretRequest) returns (RotateWebhookSecretResponse);
+}
+
+message SuspendTenantRequest {
+  string tenant_id = 1;
+  string reason = 2;
+}
+
+message SuspendTenantResponse {}
+
+message UnsuspendTenantRequest {
+  string tenant_id = 1;
+  string reason = 2;
+}
+
+message UnsuspendTenantResponse {}
+
+service TenantAdminService {
+  rpc SuspendTenant(SuspendTenantRequest) returns (SuspendTenantResponse);
+
+  rpc UnsuspendTenant(UnsuspendTenantRequest) returns (UnsuspendTenantResponse);
+}
+
+message CancelWorkflowJobRequest {
+  string job_id = 1;
+  string reason = 2;
+}
+
+message CancelWorkflowJobResponse {}
+
+service WorkflowAdminService {
+  rpc CancelWorkflowJob(CancelWorkflowJobRequest) returns (CancelWorkflowJobResponse);
+}

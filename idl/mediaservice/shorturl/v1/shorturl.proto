@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package mediaservice.shorturl.v1;
+
+option go_package = "github.com/dtszwai/media-processing-service/backend/pkg/contracts/mediaservice/shorturl/v1;shorturlv1";
+
+import "google/protobuf/timestamp.proto";
+
+// Optional fields use proto3 `optional` so protojson omits them when zero.
+message ShortURL {
+  string code = 1;
+  optional string short_url = 2;
+  string media_id = 3;
+  string asset_id = 4;
+  optional bool is_public = 5;
+  optional google.protobuf.Timestamp created_at = 6;
+  optional string created_by = 7;
+  optional google.protobuf.Timestamp expires_at = 8;
+  optional google.protobuf.Timestamp revoked_at = 9;
+  optional string label = 10;
+}
+
+message CreateRequest {
+  string media_id = 1;
+  string asset_id = 2;
+  optional string alias = 3;
+  optional google.protobuf.Timestamp expires_at = 4;
+  optional string label = 5;
+}
+
+message CreateResponse {
+  ShortURL url = 1;
+}
+
+message ListRequest {
+  string media_id = 1;
+  int32 limit = 2;
+}
+
+message ListResponse {
+  repeated ShortURL urls = 1;
+}
+
+message RevokeRequest {
+  string code = 1;
+}
+
+message RevokeResponse {}
+
+service ShortURLService {
+  rpc Create(CreateRequest) returns (CreateResponse);
+
+  rpc List(ListRequest) returns (ListResponse);
+
+  rpc Revoke(RevokeRequest) returns (RevokeResponse);
+}

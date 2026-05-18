@@ -1,0 +1,59 @@
+# Default application config. Embedded into every binary via embed.FS.
+#
+# Anything in this file is non-secret and safe to commit. Secrets (API keys,
+# JWT signing keys, KMS key IDs) and Terraform-generated values (SNS/SQS ARNs)
+# stay in env vars — they are intentionally absent here.
+#
+# Override precedence (low → high):
+#   1. defaults below
+#   2. env vars (existing names preserved: DDB_TABLE, AWS_REGION, …)
+
+# Deployment label, surfaced as the OTel `deployment.environment` semantic
+# attribute. Override via the MSG_ENV env var.
+env: local
+
+aws:
+  region: us-east-1
+  endpoint_url: ""
+  ddb_table: media-v1
+  s3_bucket: media-service-local
+  topics:
+    media: media-management-topic
+    media_cleanup: media-cleanup-topic
+    generation: generation-jobs-topic
+    analytics: analytics-events-topic
+  queues:
+    media: media-jobs
+    media_cleanup: media-cleanup
+    media_upload_events: media-upload-events
+    analytics: analytics-tracker
+    webhook: webhook-delivery
+
+api:
+  addr: ":9000"
+  cors_origins: ""
+  auth_enforcement: false
+
+generation:
+  # NotebookLM path defaults stay empty here; the consumer fills them in with
+  # $HOME-relative paths when blank. The YAML can't express ~ portably.
+  notebooklm:
+    script_path: ""
+    state_path: ""
+    state_display_path: ""
+    python_bin: ""
+
+quota:
+  # 5 USD / day cap on the tenant cost reservoir, in micro-USD. The
+  # reservoir primitive is generic; API-key / vendor / service caps land
+  # alongside their call sites in follow-up slices.
+  tenant_cost_cap_micro_usd: 5000000
+
+lease_reaper:
+  tenants: []
+
+telemetry:
+  log_level: info
+  traces_sampler: 1.0
+  logs_disabled: false
+  otlp_endpoint: ""

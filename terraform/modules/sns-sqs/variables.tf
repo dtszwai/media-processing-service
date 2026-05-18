@@ -1,35 +1,21 @@
-variable "media_mngmt_topic_name" {
-  description = "Name of the SNS topic"
+variable "name_prefix" {
+  description = "Prefix applied to every SNS / SQS resource."
   type        = string
-  default     = "media-management-topic"
-}
-
-variable "media_mngmt_queue_name" {
-  description = "Name of the SQS queue"
-  type        = string
-  default     = "media-management-sqs-queue"
-}
-
-variable "media_mngmt_dlq_name" {
-  description = "Name of the SQS dead-letter queue"
-  type        = string
-  default     = "media-management-sqs-dlq"
 }
 
 variable "additional_tags" {
-  description = "Additional tags to apply to resources"
+  description = "Additional tags to apply to all resources."
   type        = map(string)
   default     = {}
 }
 
-variable "dlq_alarm_enabled" {
-  description = "Enable CloudWatch alarm for DLQ"
-  type        = bool
-  default     = true
-}
-
 variable "dlq_alarm_threshold" {
-  description = "Number of messages in DLQ to trigger alarm"
+  description = "DLQ depth that trips the ApproximateNumberOfMessagesVisible alarm. 1 enforces that any sustained DLQ backlog is actionable."
   type        = number
   default     = 1
+}
+
+variable "media_bucket_name" {
+  description = "Name of the media S3 bucket. The module constructs the bucket ARN from this so the queue policy can scope publish access to one bucket without creating a module-cycle with the s3 module."
+  type        = string
 }

@@ -1,0 +1,446 @@
+syntax = "proto3";
+
+// Package ops is the operator console's read + mutate surface. It is gated by
+// LOCAL_ONLY=true on the API process; production deploys MUST NOT mount the
+// OpsService handler. The surface is intentionally separate from the public
+// API (auth/media/generation/admin) so the product surface is not polluted
+// with infra-shaped types.
+package mediaservice.ops.v1;
+
+option go_package = "github.com/dtszwai/media-processing-service/backend/pkg/contracts/mediaservice/ops/v1;opsv1";
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// JobSummary is one row in the jobs / library tables. The console renders
+// thousands of these in a virtual list so the projection is intentionally
+// thin — full per-job state lives on FullJobView.
+message JobSummary {
+  string job_id = 1;
+  string tenant_id = 2;
+  string media_id = 3;
+  string status = 4;
+  string current_stage = 5;
+  string output_type = 6;
+  string tier = 7;
+  string model = 8;
+  int32 attempts = 9;
+  string error_code = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+  optional google.protobuf.Timestamp completed_at = 13;
+}
+
+message ListJobsRequest {
+  // Filters are AND-ed; empty strings disable the filter. status filters by
+  // generation.Status; tenant_id scopes to one tenant (default: hard-coded
+  // LOCAL_ONLY tenant). limit defaults to 50, max 200.
+  string tenant_id = 1;
+  string status = 2;
+  string output_type = 3;
+  int32 limit = 4;
+  string cursor = 5;
+}
+
+message ListJobsResponse {
+  repeated JobSummary jobs = 1;
+  string next_cursor = 2;
+}
+
+// TraceSpan is one row on the waterfall. spans form a flat list; parent_id
+// links a child (provider request, gate audit, asset put) to its stage row.
+// scale-axis fields are start_at + end_at (or duration_ms); the client
+// computes the bar width from the job's overall window.
+message TraceSpan {
+  string id = 1;
+  string parent_id = 2;
+  // kind: STAGE, ATTEMPT, PROVIDER_REQUEST, GATE_AUDIT, ASSET_PUT, OUTPUT,
+  // VARIANT, TERMINAL.
+  string kind = 3;
+  string label = 4;
+  // status: OK, TRANSIENT_FAIL, TERMINAL_FAIL, PENDING.
+  string status = 5;
+  // stage is set on STAGE / ATTEMPT spans so the console can group by FSM stage
+  // even if the parent link is missing.
+  string stage = 6;
+  string resource_class = 7;
+  int32 attempt_no = 8;
+  string error_code = 9;
+  string error_message = 10;
+  // Free-form key/value pairs surfaced on the span detail panel. The Connect
+  // client renders these as a KeyValueGrid.
+  map<string, string> attributes = 11;
+  google.protobuf.Timestamp start_at = 12;
+  google.protobuf.Timestamp end_at = 13;
+  int64 duration_ms = 14;
+  // The DynamoDB PK/SK that backs this span, when there is one. STAGE spans
+  // are synthetic rollups of their ATTEMPT children and carry no row of
+  // their own; all other spans (ATTEMPT, PROVIDER_REQUEST, TERMINAL, OUTPUT,
+  // VARIANT, GATE_AUDIT, TERMINAL_AUDIT) are 1:1 with a row and these
+  // populate. The console uses them to render the span's id as a link to the
+  // DDB inspector.
+  string pk = 15;
+  string sk = 16;
+}
+
+// GateDecision is the typed projection of the AUDIT#GATE row. It is its own
+// type (rather than a TraceSpan) so the Gate Decision side panel can render
+// per-requirement ✓/✗ checks without re-parsing attributes.
+message GateDecision {
+  string job_id = 1;
+  string tenant_id = 2;
+  string gate_version = 3;
+  string output_type = 4;
+  string provider = 5;
+  string model = 6;
+  string decision = 7; // "PASS" or "FAIL"
+  string error_code = 8;
+  bool watermark_present = 9;
+  bool disclosure_present = 10;
+  bool safety_present = 11;
+  // Watermark fingerprint (64-char hex SHA-256 of stamped bytes). Sourced
+  // from the result Asset row's provenance/metadata when the image gate
+  // landed; empty for audio gates.
+  string watermark_fingerprint = 12;
+  string watermark_algo = 13;
+  string watermark_position = 14;
+  string watermark_text = 15;
+  google.protobuf.Timestamp decided_at = 16;
+}
+
+// FullJobView is the GetJob response. Computed server-side from PK=JOB#<id>
+// + cross-table lookups; the client renders without further computation.
+message FullJobView {
+  JobSummary summary = 1;
+  // job carries every persisted attribute (decoded from the JOB row) for
+  // the header strip — prepared_prompt_hash, generation_parameters_hash,
+  // budget_micro_usd, etc.
+  google.protobuf.Struct job = 2;
+  // media is the joined Media row for the result asset; null if the row
+  // hasn't been written yet.
+  google.protobuf.Struct media = 3;
+  // result_asset is the joined Asset row that the workflow targets.
+  google.protobuf.Struct result_asset = 4;
+  // Spans rendered as the trace waterfall, sorted by start_at ascending.
+  repeated TraceSpan spans = 5;
+  optional GateDecision gate_decision = 6;
+  // Linked DDB row keys the trace header strip turns into deep-links.
+  repeated string related_keys = 7;
+  google.protobuf.Timestamp first_event_at = 8;
+  google.protobuf.Timestamp last_event_at = 9;
+  // Plaintext prompt the tenant submitted. Decrypted server-side from the
+  // encrypted_prompt blob on the JOB row via the same Sealer the worker
+  // uses. The console surfaces this on the trace header so operators can
+  // see what the customer asked for; the underlying KMS Decrypt call is
+  // logged in CloudTrail. Empty when the prompt has not been written yet
+  // (e.g. very early in the FSM) or when sealing was skipped.
+  string decrypted_prompt = 10;
+  // Plaintext prepared prompt — the post-policy normalised version the
+  // provider was actually called with. Useful for diffing against the
+  // original input.
+  string decrypted_prepared_prompt = 11;
+}
+
+message GetJobRequest {
+  string job_id = 1;
+}
+
+message GetJobResponse {
+  FullJobView view = 1;
+}
+
+// MediaRow is one row in the library table.
+message MediaRow {
+  string media_id = 1;
+  string tenant_id = 2;
+  string owner_user_id = 3;
+  string origin = 4;
+  string media_type = 5;
+  string lifecycle = 6;
+  optional string original_asset_id = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+  optional google.protobuf.Timestamp deleted_at = 10;
+  // job_id is populated for GENERATED media so the library row links into
+  // /trace/:jobId without a second lookup.
+  optional string job_id = 11;
+}
+
+message ListMediaRequest {
+  string tenant_id = 1;
+  string media_type = 2;
+  string origin = 3;
+  string lifecycle = 4;
+  bool include_deleted = 5;
+  int32 limit = 6;
+  string cursor = 7;
+}
+
+message ListMediaResponse {
+  repeated MediaRow items = 1;
+  string next_cursor = 2;
+}
+
+message FullMediaView {
+  MediaRow row = 1;
+  google.protobuf.Struct media = 2;
+  repeated google.protobuf.Struct assets = 3;
+  // job_id is populated for GENERATED media; the trace tab is the canonical
+  // surface for those rows.
+  optional string job_id = 4;
+}
+
+message GetMediaRequest {
+  string media_id = 1;
+}
+
+message GetMediaResponse {
+  FullMediaView view = 1;
+}
+
+// DdbRow is a raw item from the single table. The console renders this as
+// a KeyValueGrid plus a CodeBox for non-scalar attributes.
+message DdbRow {
+  string pk = 1;
+  string sk = 2;
+  string item_type = 3;
+  google.protobuf.Struct attributes = 4;
+}
+
+message ScanDdbRequest {
+  // prefix matches against PK with prefix semantics. Empty prefix returns
+  // the first page of every PK in the table.
+  string pk_prefix = 1;
+  // sk_prefix narrows within a single PK; valid only when pk_prefix is a
+  // complete partition key. Empty returns all rows under the PK.
+  string sk_prefix = 2;
+  int32 limit = 3;
+  string cursor = 4;
+}
+
+message ScanDdbResponse {
+  repeated DdbRow rows = 1;
+  string next_cursor = 2;
+}
+
+message GetDdbRowRequest {
+  string pk = 1;
+  string sk = 2;
+}
+
+message GetDdbRowResponse {
+  DdbRow row = 1;
+}
+
+// QueueStat is one row in the queues tab.
+message QueueStat {
+  string name = 1;
+  string url = 2;
+  int32 visible = 3;
+  int32 in_flight = 4;
+  int32 delayed = 5;
+  int32 visibility_timeout_seconds = 6;
+  int32 oldest_message_age_seconds = 7;
+  // dlq_name + dlq_count are populated for queues that name a DLQ via their
+  // RedrivePolicy. Operators want the depth of the destination DLQ visible
+  // on the same row as the source.
+  string dlq_name = 8;
+  int32 dlq_count = 9;
+  // tier_class is "<tier>/<class>" for generation queues; empty for the
+  // media / webhook / outbox queues. Surfaced for table grouping.
+  string tier_class = 10;
+}
+
+message QueueDepthsRequest {}
+
+message QueueDepthsResponse {
+  repeated QueueStat queues = 1;
+}
+
+// S3Node is one entry in the S3 tree. is_prefix=true means it's a directory
+// node and size/etag are unset.
+message S3Node {
+  string key = 1;
+  string name = 2;
+  bool is_prefix = 3;
+  int64 size_bytes = 4;
+  string etag = 5;
+  optional google.protobuf.Timestamp last_modified = 6;
+}
+
+message ListS3Request {
+  string prefix = 1;
+  // delimiter defaults to "/" so the listing collapses to a tree level. Pass
+  // "" to flatten.
+  string delimiter = 2;
+  int32 limit = 3;
+}
+
+message ListS3Response {
+  repeated S3Node nodes = 1;
+}
+
+message PresignDownloadRequest {
+  string key = 1;
+}
+
+message PresignDownloadResponse {
+  string url = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+message StreamLogsRequest {
+  // service filter: "msg-api", "msg-outbox-relay", "msg-generation-worker".
+  // Empty returns all services interleaved by timestamp.
+  string service = 1;
+  // job_id / media_id narrow to log lines tagged with the corresponding kv
+  // pair. Loki labels are queried directly.
+  string job_id = 2;
+  string media_id = 3;
+  // level filter: "INFO", "WARN", "ERROR", "DEBUG". Empty returns all.
+  string level = 4;
+  // free-form contains-substring filter against the log message body.
+  string contains = 5;
+  // tail_lines is the initial backfill (default 200, max 1000) before the
+  // stream switches to live tail.
+  int32 tail_lines = 6;
+  // lookback_seconds controls the non-tail initial range and the operator's
+  // requested search window. The server uses a larger minimum window for
+  // tail_lines so "tail 200" behaves like a real tail on idle systems.
+  int32 lookback_seconds = 7;
+}
+
+message LogLine {
+  google.protobuf.Timestamp ts = 1;
+  string service = 2;
+  string level = 3;
+  string body = 4;
+  // Loki-extracted structured labels (request_id, job_id, media_id, …).
+  map<string, string> labels = 5;
+}
+
+message StreamLogsResponse {
+  LogLine line = 1;
+}
+
+// MUTATIONS — phase 3. Every mutation writes an AUDIT#OPS#... row alongside
+// the state change so the audit trail is the source of truth for "who
+// changed what". Confirmation lives entirely on the client.
+
+message CancelJobRequest {
+  string job_id = 1;
+  string reason = 2;
+}
+message CancelJobResponse {}
+
+message RetryJobRequest {
+  string job_id = 1;
+}
+message RetryJobResponse {}
+
+message ForceFailJobRequest {
+  string job_id = 1;
+  string error_code = 2;
+  string error_message = 3;
+}
+message ForceFailJobResponse {}
+
+message ReplayOutboxRequest {
+  string job_id = 1;
+}
+message ReplayOutboxResponse {}
+
+message PurgeQueueRequest {
+  string queue_name = 1;
+}
+message PurgeQueueResponse {}
+
+message RedriveDlqRequest {
+  string dlq_name = 1;
+  // limit caps the number of messages moved per call so the operator can
+  // throttle a redrive that might re-poison the source.
+  int32 limit = 2;
+}
+message RedriveDlqResponse {
+  int32 moved = 1;
+  int32 failed = 2;
+}
+
+message PutDdbAttrRequest {
+  string pk = 1;
+  string sk = 2;
+  string attribute_name = 3;
+  // value is JSON-encoded so we can carry strings, numbers, bools, lists,
+  // and maps through one field. Decoded server-side via json.Unmarshal.
+  string value_json = 4;
+}
+message PutDdbAttrResponse {}
+
+message DeleteDdbRowRequest {
+  string pk = 1;
+  string sk = 2;
+}
+message DeleteDdbRowResponse {}
+
+message DeleteS3ObjectRequest {
+  string key = 1;
+}
+message DeleteS3ObjectResponse {}
+
+// GenerationProviderModels describes the active provider for one output type
+// and the model identifiers it accepts. The submit form renders a dropdown
+// when len(models) > 1, a fixed read-only value when len(models) == 1, and
+// uses default_model to prefill the local console form.
+message GenerationProviderModels {
+  string output_type = 1;          // "image" | "audio"
+  string provider = 2;             // "simulated" | "codex" | "notebooklm"
+  repeated string models = 3;      // selectable identifiers
+  string default_model = 4;        // local console default model
+}
+
+message ListGenerationModelsRequest {}
+message ListGenerationModelsResponse {
+  repeated GenerationProviderModels providers = 1;
+}
+
+// LOCAL_ONLY console identity. Returns the tenant + actor the API treats as
+// "current" — i.e. the LOCAL_TENANT_ID / LOCAL_USER_ID env values the
+// auth-stub assigns to ops mutations. The /me panel reads this on mount so
+// the tenant header is correct on an empty database.
+message GetLocalIdentityRequest {}
+message GetLocalIdentityResponse {
+  string tenant_id = 1;
+  string user_id = 2;
+}
+
+service OpsService {
+  // Reads — phase 1 & 2.
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse);
+  rpc GetJob(GetJobRequest) returns (GetJobResponse);
+  rpc ListMedia(ListMediaRequest) returns (ListMediaResponse);
+  rpc GetMedia(GetMediaRequest) returns (GetMediaResponse);
+  rpc ScanDdb(ScanDdbRequest) returns (ScanDdbResponse);
+  rpc GetDdbRow(GetDdbRowRequest) returns (GetDdbRowResponse);
+  rpc QueueDepths(QueueDepthsRequest) returns (QueueDepthsResponse);
+  rpc ListS3(ListS3Request) returns (ListS3Response);
+  rpc PresignDownload(PresignDownloadRequest) returns (PresignDownloadResponse);
+  rpc StreamLogs(StreamLogsRequest) returns (stream StreamLogsResponse);
+
+  // Mutations — phase 3. Every successful mutation writes an AUDIT#OPS#...
+  // row alongside the state change.
+  rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
+  rpc RetryJob(RetryJobRequest) returns (RetryJobResponse);
+  rpc ForceFailJob(ForceFailJobRequest) returns (ForceFailJobResponse);
+  rpc ReplayOutbox(ReplayOutboxRequest) returns (ReplayOutboxResponse);
+  rpc PurgeQueue(PurgeQueueRequest) returns (PurgeQueueResponse);
+  rpc RedriveDlq(RedriveDlqRequest) returns (RedriveDlqResponse);
+  rpc PutDdbAttr(PutDdbAttrRequest) returns (PutDdbAttrResponse);
+  rpc DeleteDdbRow(DeleteDdbRowRequest) returns (DeleteDdbRowResponse);
+  rpc DeleteS3Object(DeleteS3ObjectRequest) returns (DeleteS3ObjectResponse);
+
+  // Submit form metadata.
+  rpc ListGenerationModels(ListGenerationModelsRequest) returns (ListGenerationModelsResponse);
+
+  // Local console identity (LOCAL_TENANT_ID / LOCAL_USER_ID).
+  rpc GetLocalIdentity(GetLocalIdentityRequest) returns (GetLocalIdentityResponse);
+}

@@ -1,0 +1,274 @@
+syntax = "proto3";
+
+package mediaservice.media.v1;
+
+option go_package = "github.com/dtszwai/media-processing-service/backend/pkg/contracts/mediaservice/media/v1;mediav1";
+
+import "google/protobuf/timestamp.proto";
+import "mediaservice/common/v1/common.proto";
+
+enum MediaLifecycle {
+  MEDIA_LIFECYCLE_UNSPECIFIED = 0;
+  MEDIA_LIFECYCLE_PENDING = 1;
+  MEDIA_LIFECYCLE_RUNNING = 2;
+  MEDIA_LIFECYCLE_COMPLETE = 3;
+  MEDIA_LIFECYCLE_FAILED = 4;
+  MEDIA_LIFECYCLE_DELETED = 5;
+}
+
+enum AssetKind {
+  ASSET_KIND_UNSPECIFIED = 0;
+  ASSET_KIND_ORIGINAL = 1;
+  ASSET_KIND_DERIVED = 2;
+  ASSET_KIND_GENERATED = 3;
+}
+
+enum AssetRole {
+  ASSET_ROLE_UNSPECIFIED = 0;
+  ASSET_ROLE_ORIGINAL = 1;
+  ASSET_ROLE_THUMBNAIL = 2;
+  ASSET_ROLE_PREVIEW = 3;
+  ASSET_ROLE_DOWNLOAD = 4;
+  ASSET_ROLE_FINAL = 5;
+}
+
+enum AssetOperation {
+  ASSET_OPERATION_UNSPECIFIED = 0;
+  ASSET_OPERATION_IMAGE_RESIZE = 1;
+  ASSET_OPERATION_IMAGE_THUMBNAIL = 2;
+  ASSET_OPERATION_GENERATION_FINAL = 3;
+}
+
+enum AssetLifecycle {
+  ASSET_LIFECYCLE_UNSPECIFIED = 0;
+  ASSET_LIFECYCLE_PENDING_UPLOAD = 1;
+  ASSET_LIFECYCLE_PENDING = 2;
+  ASSET_LIFECYCLE_PROCESSING = 3;
+  ASSET_LIFECYCLE_COMPLETE = 4;
+  ASSET_LIFECYCLE_FAILED = 5;
+  ASSET_LIFECYCLE_DELETED = 6;
+}
+
+message Provenance {
+  string provider = 1;
+  string model = 2;
+  bool ai_generated = 3;
+  string disclosure = 4;
+  string watermark = 5;
+  string safety = 6;
+}
+
+message DesiredSpec {
+  string output_format = 1;
+  uint32 width = 2;
+  uint32 height = 3;
+  repeated string tags = 4;
+}
+
+message Media {
+  string media_id = 1;
+  string tenant_id = 2;
+  string owner_user_id = 3;
+  mediaservice.common.v1.Origin origin = 4;
+  mediaservice.common.v1.MediaType media_type = 5;
+  MediaLifecycle lifecycle = 6;
+  string original_asset_id = 7;
+  string webhook_url = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+  google.protobuf.Timestamp deleted_at = 11;
+  google.protobuf.Timestamp expires_at = 12;
+  Visibility visibility = 13;
+}
+
+message Asset {
+  string asset_id = 1;
+  string media_id = 2;
+  string tenant_id = 3;
+  AssetKind kind = 4;
+  AssetRole role = 5;
+  AssetOperation operation = 6;
+  AssetLifecycle lifecycle = 7;
+  string source_asset_id = 8;
+  string storage_key = 9;
+  string content_type = 10;
+  string extension = 11;
+  uint64 size_bytes = 12;
+  string sha256 = 13;
+  DesiredSpec desired_spec = 14;
+  Provenance provenance = 15;
+  uint32 attempts = 16;
+  string error_code = 17;
+  string error_message = 18;
+  google.protobuf.Timestamp created_at = 19;
+  google.protobuf.Timestamp updated_at = 20;
+}
+
+enum Visibility {
+  VISIBILITY_UNSPECIFIED = 0;
+  VISIBILITY_OWNER_PRIVATE = 1;
+  VISIBILITY_TENANT_SHARED = 2;
+}
+
+message ListMediaRequest {
+  string cursor = 1;
+  uint32 limit = 2;
+  mediaservice.common.v1.MediaType media_type = 3;
+  mediaservice.common.v1.Origin origin = 4;
+  bool include_deleted = 5;
+}
+
+message ListMediaResponse {
+  repeated Media items = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
+}
+
+message GetMediaRequest {
+  string media_id = 1;
+}
+
+message GetMediaResponse {
+  Media media = 1;
+}
+
+message DeleteMediaRequest {
+  string media_id = 1;
+}
+
+message DeleteMediaResponse {}
+
+message ListAssetsRequest {
+  string media_id = 1;
+}
+
+message ListAssetsResponse {
+  repeated Asset assets = 1;
+}
+
+message GetAssetRequest {
+  string media_id = 1;
+  string asset_id = 2;
+}
+
+message GetAssetResponse {
+  Asset asset = 1;
+}
+
+message CreateAssetsRequest {
+  string media_id = 1;
+  string idempotency_key = 2;
+  repeated AssetOperation operations = 3;
+}
+
+message AssetRef {
+  AssetOperation operation = 1;
+  string asset_id = 2;
+  AssetLifecycle lifecycle = 3;
+}
+
+message CreateAssetsResponse {
+  string media_id = 1;
+  repeated AssetRef assets = 2;
+  bool replay = 3;
+}
+
+message RetryAssetRequest {
+  string media_id = 1;
+  string asset_id = 2;
+}
+
+message RetryAssetResponse {
+  Asset asset = 1;
+}
+
+message InitPresignedUploadRequest {
+  string idempotency_key = 1;
+  string filename = 2;
+  string content_type = 3;
+  int64 size_bytes = 4;
+  string webhook_url = 5;
+  string owner_user_id = 6;
+}
+
+message InitPresignedUploadResponse {
+  string media_id = 1;
+  string asset_id = 2;
+  string storage_key = 3;
+  string upload_url = 4;
+  string method = 5;
+  map<string, string> headers = 6;
+  uint32 expires_in = 7;
+  google.protobuf.Timestamp expires_at = 8;
+}
+
+message RefreshPresignedUploadRequest {
+  string media_id = 1;
+}
+
+message RefreshPresignedUploadResponse {
+  string media_id = 1;
+  string asset_id = 2;
+  string storage_key = 3;
+  string upload_url = 4;
+  string method = 5;
+  map<string, string> headers = 6;
+  uint32 expires_in = 7;
+  google.protobuf.Timestamp expires_at = 8;
+}
+
+message CompletePresignedUploadRequest {
+  string media_id = 1;
+}
+
+message CompletePresignedUploadResponse {
+  string media_id = 1;
+  string asset_id = 2;
+  AssetLifecycle lifecycle = 3;
+  int64 size_bytes = 4;
+  string content_type = 5;
+  string etag = 6;
+}
+
+message PresignAssetDownloadRequest {
+  string media_id = 1;
+  string asset_id = 2;
+  uint32 ttl_seconds = 3;
+}
+
+message PresignAssetDownloadResponse {
+  string url = 1;
+  uint32 expires_in = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+// GetMediaRoleURLRequest resolves a role selector to the matching COMPLETE asset under a media id and returns a presigned GET URL.
+message GetMediaRoleURLRequest {
+  string media_id = 1;
+  AssetRole role = 2;
+  uint32 ttl_seconds = 3;
+}
+
+message GetMediaRoleURLResponse {
+  string asset_id = 1;
+  string url = 2;
+  google.protobuf.Timestamp expires_at = 3;
+  string content_type = 4;
+  uint64 size_bytes = 5;
+}
+
+// MediaService is the canonical Connect API for upload, media lookup, asset derivation, and URL presigning.
+service MediaService {
+  rpc ListMedia(ListMediaRequest) returns (ListMediaResponse);
+  rpc GetMedia(GetMediaRequest) returns (GetMediaResponse);
+  rpc DeleteMedia(DeleteMediaRequest) returns (DeleteMediaResponse);
+  rpc ListAssets(ListAssetsRequest) returns (ListAssetsResponse);
+  rpc GetAsset(GetAssetRequest) returns (GetAssetResponse);
+  rpc CreateAssets(CreateAssetsRequest) returns (CreateAssetsResponse);
+  rpc RetryAsset(RetryAssetRequest) returns (RetryAssetResponse);
+  rpc InitPresignedUpload(InitPresignedUploadRequest) returns (InitPresignedUploadResponse);
+  rpc RefreshPresignedUpload(RefreshPresignedUploadRequest) returns (RefreshPresignedUploadResponse);
+  rpc CompletePresignedUpload(CompletePresignedUploadRequest) returns (CompletePresignedUploadResponse);
+  rpc PresignAssetDownload(PresignAssetDownloadRequest) returns (PresignAssetDownloadResponse);
+  rpc GetMediaRoleURL(GetMediaRoleURLRequest) returns (GetMediaRoleURLResponse);
+}

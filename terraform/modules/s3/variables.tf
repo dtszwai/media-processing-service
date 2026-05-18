@@ -9,8 +9,7 @@ variable "media_s3_bucket_name" {
   type        = string
 }
 
-variable "is_local" {
-  description = "Whether running in LocalStack (enables force_destroy)"
-  type        = bool
-  default     = false
+variable "media_upload_events_queue_arn" {
+  description = "ARN of the SQS queue receiving S3 ObjectCreated notifications. The bucket's queue policy must allow the bucket as source (the sns-sqs module wires that)."
+  type        = string
 }

@@ -1,0 +1,47 @@
+# Build context is the repo root (set in compose) so we can COPY both
+# `backend/` (Go source) and `scripts/notebooklm/` (Python bridge) in one
+# image. The api image still builds from the backend context — only this
+# worker needs the cross-language payload.
+
+FROM golang:1.26-alpine AS gobuild
+WORKDIR /src
+RUN apk add --no-cache git
+COPY backend/go.mod backend/go.sum* ./
+RUN go mod download || true
+COPY backend/ .
+ARG BUILD_VERSION=dev
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.buildVersion=${BUILD_VERSION}" -o /out/generation-worker ./cmd/workers/generation
+
+# Linux-built Python venv with notebooklm-py — replaces the host's macOS venv
+# at ~/.notebooklm/venv, which can't execute inside a Linux container. Only
+# ~/.notebooklm/state.json (the captured Google session) needs to come from
+# the host at run time.
+FROM python:3.12-alpine AS pydeps
+WORKDIR /opt/notebooklm
+COPY scripts/notebooklm/requirements.txt ./requirements.txt
+RUN apk add --no-cache build-base libffi-dev && \
+    python -m venv /opt/notebooklm/venv && \
+    /opt/notebooklm/venv/bin/pip install --no-cache-dir -r requirements.txt
+
+FROM python:3.12-alpine
+ARG CODEX_CLI_VERSION=0.130.0
+RUN apk add --no-cache ca-certificates libffi nodejs npm && \
+    npm install -g "@openai/codex@${CODEX_CLI_VERSION}" && \
+    npm cache clean --force && \
+    mkdir -p /var/lib/codex-build-smoke && \
+    CODEX_HOME=/var/lib/codex-build-smoke codex --version && \
+    rm -rf /var/lib/codex-build-smoke && \
+    adduser -D -u 10001 app && \
+    mkdir -p /home/app/.codex && \
+    chown -R app:app /home/app/.codex
+COPY --from=gobuild /out/generation-worker /usr/local/bin/generation-worker
+COPY --from=pydeps /opt/notebooklm/venv /opt/notebooklm/venv
+COPY scripts/notebooklm /opt/notebooklm/scripts
+COPY --chmod=0755 deploy/compose/generation-worker-entrypoint.sh /usr/local/bin/generation-worker-entrypoint
+USER app
+ENV NOTEBOOKLM_PYTHON=/opt/notebooklm/venv/bin/python3 \
+    NOTEBOOKLM_SCRIPT_PATH=/opt/notebooklm/scripts/overview.py \
+    CODEX_HOME=/home/app/.codex \
+    CODEX_HOST_HOME=/mnt/host-codex
+ENTRYPOINT ["/usr/local/bin/generation-worker-entrypoint"]
+CMD ["/usr/local/bin/generation-worker"]

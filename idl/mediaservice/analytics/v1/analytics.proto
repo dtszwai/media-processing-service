@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package mediaservice.analytics.v1;
+
+option go_package = "github.com/dtszwai/media-processing-service/backend/pkg/contracts/mediaservice/analytics/v1;analyticsv1";
+
+message EntityViewCount {
+  string entity_type = 1;
+  string entity_id = 2;
+  string name = 3;
+  int32 view_count = 4;
+  int32 rank = 5;
+  optional bool deleted = 6;
+  optional string deleted_at = 7;
+}
+
+message ViewStats {
+  string entity_type = 1;
+  string entity_id = 2;
+  int32 total = 3;
+  int32 today = 4;
+  int32 this_week = 5;
+  int32 this_month = 6;
+  int32 this_year = 7;
+}
+
+message FormatUsageStats {
+  string period = 1;
+  map<string, int32> usage = 2;
+  int32 total = 3;
+}
+
+message DownloadStats {
+  string period = 1;
+  int32 total_downloads = 2;
+  map<string, int32> by_format = 3;
+  map<string, int32> by_day = 4;
+}
+
+message AnalyticsSummary {
+  int32 total_views = 1;
+  int32 total_downloads = 2;
+  int32 views_today = 3;
+  int32 downloads_today = 4;
+  repeated EntityViewCount top_media_today = 5;
+  // Bounded rolling top-media view so DDB scans never touch data older than one year.
+  repeated EntityViewCount top_media_rolling_12m = 6;
+  map<string, int32> format_usage = 7;
+}
+
+message GetTopMediaRequest {
+  string period = 1;
+  int32 limit = 2;
+}
+
+message GetTopMediaResponse {
+  repeated EntityViewCount items = 1;
+}
+
+message GetMediaViewsRequest {
+  string media_id = 1;
+}
+
+message GetMediaViewsResponse {
+  ViewStats stats = 1;
+}
+
+message GetFormatUsageRequest {
+  string period = 1;
+}
+
+message GetFormatUsageResponse {
+  FormatUsageStats stats = 1;
+}
+
+message GetDownloadStatsRequest {
+  string period = 1;
+}
+
+message GetDownloadStatsResponse {
+  DownloadStats stats = 1;
+}
+
+message GetAnalyticsSummaryRequest {}
+
+message GetAnalyticsSummaryResponse {
+  AnalyticsSummary summary = 1;
+}
+
+service AnalyticsService {
+  rpc GetTopMedia(GetTopMediaRequest) returns (GetTopMediaResponse);
+
+  rpc GetMediaViews(GetMediaViewsRequest) returns (GetMediaViewsResponse);
+
+  rpc GetFormatUsage(GetFormatUsageRequest) returns (GetFormatUsageResponse);
+
+  rpc GetDownloadStats(GetDownloadStatsRequest) returns (GetDownloadStatsResponse);
+
+  rpc GetAnalyticsSummary(GetAnalyticsSummaryRequest) returns (GetAnalyticsSummaryResponse);
+}

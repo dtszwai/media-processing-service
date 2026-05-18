@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package mediaservice.common.v1;
+
+option go_package = "github.com/dtszwai/media-processing-service/backend/pkg/contracts/common/v1;commonv1";
+
+message CheckRequest {}
+
+message CheckResponse {
+  string status = 1;
+  string version = 2;
+}
+
+service HealthService {
+  rpc Check(CheckRequest) returns (CheckResponse);
+}

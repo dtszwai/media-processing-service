@@ -1,0 +1,256 @@
+syntax = "proto3";
+
+package mediaservice.generation.v1;
+
+option go_package = "github.com/dtszwai/media-processing-service/backend/pkg/contracts/mediaservice/generation/v1;generationv1";
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// OutputType is the public projection of domain/generation.OutputType. The
+// IMAGE/AUDIO enum is reused across Generation, Output, and the request
+// surface — diverging the enums would force every projector to translate
+// between near-identical sets.
+enum OutputType {
+  OUTPUT_TYPE_UNSPECIFIED = 0;
+  OUTPUT_TYPE_IMAGE = 1;
+  OUTPUT_TYPE_AUDIO = 2;
+}
+
+// Mode mirrors domain/generation.GenerationMode. CREATE is a fresh request,
+// EDIT chains off a prior Variant/Output via Edit, and RERUN replays a prior
+// Generation with the same SpecSummary.
+enum Mode {
+  MODE_UNSPECIFIED = 0;
+  MODE_CREATE = 1;
+  MODE_EDIT = 2;
+  MODE_RERUN = 3;
+}
+
+// EditType mirrors domain/generation.EditType. PROMPT_DELTA replaces only the
+// prompt; INPAINT/OUTPAINT carry mask payloads; AUDIO_REVISE swaps narration;
+// STYLE_TRANSFER applies a reference style without prompt rewrite.
+enum EditType {
+  EDIT_TYPE_UNSPECIFIED = 0;
+  EDIT_TYPE_PROMPT_DELTA = 1;
+  EDIT_TYPE_INPAINT = 2;
+  EDIT_TYPE_OUTPAINT = 3;
+  EDIT_TYPE_AUDIO_REVISE = 4;
+  EDIT_TYPE_STYLE_TRANSFER = 5;
+}
+
+// Resolution is sent verbatim on requests so width/height stay structured and
+// independently validated rather than parsed out of a "1024x1024" string.
+message Resolution {
+  uint32 width = 1;
+  uint32 height = 2;
+}
+
+// SpecSummary is the redacted, non-secret projection of the generation
+// request. Safe to log and attach to audit rows; the raw spec (prompts,
+// masks, …) is held elsewhere encrypted.
+message SpecSummary {
+  OutputType output_type = 1;
+  string provider = 2;
+  string model = 3;
+  optional Resolution resolution = 4;
+  int64 duration_ms = 5;
+  string voice = 6;
+  string seed = 7;
+  int32 variant_count = 8;
+  string tier = 9;
+}
+
+// Generation is the user-facing aggregate that anchors a request. It is the
+// stable identity exposed in the API; Job remains the internal workflow state
+// machine, projected here as `status` + `active_job_id` so callers can poll
+// without a second round-trip.
+message Generation {
+  // job_id identifies the active workflow execution. generation_id identifies
+  // the user-facing aggregate; the create path currently derives both from the
+  // same suffix so callers can use either identity consistently.
+  string job_id = 1;
+  string media_id = 2;
+  string status = 3;
+  optional string stage = 4;
+  optional int32 estimated_wait_seconds = 5;
+  optional google.protobuf.Struct accepted_config = 6;
+  optional google.protobuf.Struct admission = 7;
+  optional string created_at = 8;
+  optional string updated_at = 9;
+  optional string error_code = 10;
+  optional string error_message = 11;
+  optional bool is_ai_generated = 12;
+
+  // Fully-qualified aggregate identity and policy metadata. Optional fields are
+  // omitted when a job has not reached the stage that can populate them.
+  optional string generation_id = 13;
+  optional string tenant_id = 14;
+  optional string created_by_user_id = 15;
+  optional string api_key_id = 16;
+  optional OutputType output_type = 17;
+  optional Mode mode = 18;
+  optional string active_job_id = 19;
+  optional string primary_output_id = 20;
+  optional string source_edit_id = 21;
+  optional string request_hash = 22;
+  optional SpecSummary spec_summary = 23;
+  optional string pricing_version = 24;
+  optional string safety_policy_version = 25;
+  optional google.protobuf.Timestamp completed_at = 26;
+}
+
+// Output is the per-attempt fanout container under a Generation. A single
+// Generation has at most one in-flight Output; RERUN creates a fresh Output
+// rather than mutating the previous one so that variant history stays
+// addressable.
+message Output {
+  string output_id = 1;
+  string tenant_id = 2;
+  string media_id = 3;
+  string generation_id = 4;
+  string job_id = 5;
+  OutputType type = 6;
+  string status = 7;
+  int32 variant_count_requested = 8;
+  int32 variant_count_completed = 9;
+  string default_variant_id = 10;
+  optional google.protobuf.Struct safety_summary = 11;
+  optional google.protobuf.Struct cost_summary = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp updated_at = 14;
+  optional google.protobuf.Timestamp completed_at = 15;
+  repeated Variant variants = 16;
+}
+
+// Variant is one alternative encoding of a generation result asset — e.g.
+// a thumbnail next to the full-resolution image, or an opus track next to
+// the canonical mp3. Distinct from GenerationResult.image_url, which is
+// the *primary* asset; variants are the derived family.
+message Variant {
+  string url = 1;
+  string mime = 2;
+  uint32 width = 3;
+  uint32 height = 4;
+  uint64 bytes = 5;
+
+  // Fully-qualified domain identity. Optional during the migration; populated
+  // once handlers thread the aggregate through.
+  optional string variant_id = 6;
+  optional string output_id = 7;
+  optional string generation_id = 8;
+  optional string tenant_id = 9;
+  optional string media_id = 10;
+  optional int32 index = 11;
+  optional string status = 12;
+  optional string final_asset_id = 13;
+  optional string staged_artifact_id = 14;
+  optional string provider = 15;
+  optional string model = 16;
+  optional string seed = 17;
+  optional string provider_request_id = 18;
+  optional string safety_case_id = 19;
+  optional google.protobuf.Struct watermark = 20;
+  optional string provenance_manifest_asset_id = 21;
+  optional double score = 22;
+  optional string error_code = 23;
+  optional string error_message = 24;
+  optional google.protobuf.Timestamp created_at = 25;
+  optional google.protobuf.Timestamp updated_at = 26;
+  optional google.protobuf.Timestamp completed_at = 27;
+}
+
+// Edit is a lineage edge, not an aggregate. It records the relationship
+// between a prior Variant/Output and the new Generation it spawned, plus the
+// billing class so downstream cost rollups can discount edits without
+// reverse-engineering provider receipts.
+message Edit {
+  string edit_id = 1;
+  string tenant_id = 2;
+  string source_media_id = 3;
+  string source_asset_id = 4;
+  string source_output_id = 5;
+  string source_variant_id = 6;
+  string target_media_id = 7;
+  string target_generation_id = 8;
+  EditType type = 9;
+  string prompt_delta_hash = 10;
+  string billing_class = 11;
+  google.protobuf.Timestamp created_at = 12;
+}
+
+message GenerationResult {
+  string job_id = 1;
+  string media_id = 2;
+  string status = 3;
+  optional string image_url = 4;
+  optional string audio_url = 5;
+  optional string expires_at = 6;
+  repeated Variant variants = 7;
+  optional bool is_ai_generated = 8;
+}
+
+message CreateGenerationRequest {
+  string prompt = 1;
+  optional string model = 2;
+  optional string resolution = 3;
+  optional string tier = 4;
+  optional int32 seed = 5;
+  // idempotency_key is required: the server rejects the request when empty.
+  // Replays with the same key return the originally-allocated job + media id.
+  string idempotency_key = 6;
+  optional OutputType output_type = 7;
+  string provider = 8;
+}
+
+message CreateGenerationResponse {
+  Generation generation = 1;
+  optional Output output = 2;
+}
+
+message CreateAudioOverviewRequest {
+  string topic = 1;
+  optional string tier = 2;
+  // idempotency_key is required.
+  string idempotency_key = 3;
+  optional string model = 4;
+  string provider = 5;
+}
+
+message CreateAudioOverviewResponse {
+  Generation generation = 1;
+}
+
+message GetGenerationRequest {
+  // job_id addresses the workflow directly. generation_id addresses the
+  // aggregate when the caller tracks the generation-level identity.
+  string job_id = 1;
+  optional string generation_id = 2;
+}
+
+message GetGenerationResponse {
+  Generation generation = 1;
+  // Output + Variant rollup is present once the generated output rows exist.
+  optional Output output = 2;
+  repeated Variant variants = 3;
+}
+
+message GetGenerationResultRequest {
+  string job_id = 1;
+  optional string generation_id = 2;
+  optional string variant_id = 3;
+}
+
+message GetGenerationResultResponse {
+  GenerationResult result = 1;
+}
+
+service GenerationService {
+  rpc CreateGeneration(CreateGenerationRequest) returns (CreateGenerationResponse);
+
+  rpc CreateAudioOverview(CreateAudioOverviewRequest) returns (CreateAudioOverviewResponse);
+
+  rpc GetGeneration(GetGenerationRequest) returns (GetGenerationResponse);
+
+  rpc GetGenerationResult(GetGenerationResultRequest) returns (GetGenerationResultResponse);
+}

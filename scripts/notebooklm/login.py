@@ -9,8 +9,7 @@ account in that window, complete any 2FA challenge, navigate to
 notebooklm.google.com, then return to this terminal and press Enter.
 The captured cookies are written to ``--out`` with mode 600 on Unix.
 
-The resulting file is what NOTEBOOKLM_STORAGE_STATE_PATH points at in the
-Java provider (NotebookLmAudioOverviewProvider).
+The resulting file is what NOTEBOOKLM_STORAGE_STATE_PATH points at in the provider (NotebookLmAudioOverviewProvider).
 """
 
 from __future__ import annotations
@@ -29,13 +28,21 @@ def _with_authuser(url: str, authuser: str | None) -> str:
     parts = urlsplit(url)
     query = dict(parse_qsl(parts.query, keep_blank_values=True))
     query["authuser"] = authuser
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+    return urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
+    )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--out", required=True, help="Output path for storage_state.json")
-    parser.add_argument("--url", default="https://notebooklm.google.com", help="URL to open after browser launch")
+    parser.add_argument(
+        "--out", required=True, help="Output path for storage_state.json"
+    )
+    parser.add_argument(
+        "--url",
+        default="https://notebooklm.google.com",
+        help="URL to open after browser launch",
+    )
     parser.add_argument(
         "--authuser",
         default=os.environ.get("NOTEBOOKLM_AUTHUSER", ""),

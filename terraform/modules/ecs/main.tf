@@ -1,7 +1,7 @@
 data "aws_region" "current" {}
 
 # =============================================================================
-# Load Balancer
+# ALB
 # =============================================================================
 
 resource "aws_vpc_security_group_ingress_rule" "alb_inbound" {
@@ -47,14 +47,15 @@ resource "aws_alb_target_group" "api" {
   vpc_id      = var.vpc_id
   target_type = "ip"
 
-  # Deregistration timeout: long enough for in-flight HTTP requests to complete, short enough
-  # that rolling deploys do not stall. Matches the container stopTimeout above (120s).
-  deregistration_delay = 120
+  # Deregistration timeout matches the container stopTimeout below so
+  # in-flight requests can drain during rolling deploys.
+  deregistration_delay = 30
 
+  # /healthz is the Go api's liveness endpoint (cmd/api/main.go).
   health_check {
     protocol            = "HTTP"
     port                = var.app_port
-    path                = "/v1/media/health"
+    path                = "/healthz"
     interval            = 10
     timeout             = 5
     healthy_threshold   = 2
@@ -84,7 +85,7 @@ resource "aws_alb_listener" "api" {
 }
 
 # =============================================================================
-# ECS Cluster
+# ECS cluster
 # =============================================================================
 
 resource "aws_ecs_cluster" "main" {
@@ -96,7 +97,7 @@ resource "aws_ecs_cluster" "main" {
 }
 
 # =============================================================================
-# Container Security
+# Container SG
 # =============================================================================
 
 resource "aws_vpc_security_group_ingress_rule" "container_inbound" {
@@ -124,12 +125,11 @@ resource "aws_vpc_security_group_egress_rule" "container_outbound" {
 }
 
 # =============================================================================
-# IAM Roles
+# IAM
 # =============================================================================
 
 data "aws_iam_policy_document" "ecs_assume_role" {
   statement {
-    sid     = "ECSAssumeRole"
     effect  = "Allow"
     actions = ["sts:AssumeRole"]
     principals {
@@ -142,7 +142,6 @@ data "aws_iam_policy_document" "ecs_assume_role" {
 resource "aws_iam_role" "task_role" {
   name               = "api-task-role"
   assume_role_policy = data.aws_iam_policy_document.ecs_assume_role.json
-  path               = "/"
 
   tags = merge(var.additional_tags, {
     Name = "api-task-role"
@@ -157,7 +156,7 @@ data "aws_iam_policy_document" "task_policy" {
       "ecr:BatchCheckLayerAvailability",
       "ecr:BatchGetImage",
       "ecr:GetAuthorizationToken",
-      "ecr:GetDownloadUrlForLayer"
+      "ecr:GetDownloadUrlForLayer",
     ]
     resources = [var.ecr_repository_arn]
   }
@@ -168,11 +167,13 @@ data "aws_iam_policy_document" "task_policy" {
     actions = [
       "s3:GetObject",
       "s3:PutObject",
-      "s3:ListBucket"
+      "s3:DeleteObject",
+      "s3:ListBucket",
+      "s3:AbortMultipartUpload",
     ]
     resources = [
       var.media_bucket_arn,
-      "${var.media_bucket_arn}/*"
+      "${var.media_bucket_arn}/*",
     ]
   }
 
@@ -180,41 +181,64 @@ data "aws_iam_policy_document" "task_policy" {
     sid    = "DynamoDB"
     effect = "Allow"
     actions = [
-      "dynamodb:BatchGetItem",
-      "dynamodb:BatchWriteItem",
-      "dynamodb:DeleteItem",
       "dynamodb:GetItem",
       "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:BatchGetItem",
+      "dynamodb:BatchWriteItem",
       "dynamodb:Query",
       "dynamodb:Scan",
       "dynamodb:TransactWriteItems",
-      "dynamodb:UpdateItem"
+      "dynamodb:DescribeTable",
     ]
-    # IAM does not grant GSI access via the table ARN alone — enumerate each index.
     resources = [
       var.dynamodb_table_arn,
-      "${var.dynamodb_table_arn}/index/SK-createdAt-index",
-      "${var.dynamodb_table_arn}/index/tenantId-createdAt-index",
-      "${var.dynamodb_table_arn}/index/email-index",
-      "${var.dynamodb_table_arn}/index/tenantId-index",
+      "${var.dynamodb_table_arn}/index/gsi_job",
+      "${var.dynamodb_table_arn}/index/gsi_tenant_media",
+      "${var.dynamodb_table_arn}/index/gsi_lease_expiry",
     ]
   }
 
   statement {
-    sid     = "SNS"
+    sid     = "SNSPublish"
     effect  = "Allow"
     actions = ["sns:Publish"]
     resources = [
-      var.media_management_topic_arn,
-      var.generation_topic_arn
+      var.media_topic_arn,
+      var.generation_topic_arn,
     ]
   }
 
+  # API enqueues stage messages directly when running the in-process poller
+  # path. Otherwise the queue ARNs are only inspected for backpressure.
   statement {
-    sid       = "GenerationSqsRead"
-    effect    = "Allow"
-    actions   = ["sqs:GetQueueAttributes"]
-    resources = [var.generation_queue_arn]
+    sid    = "SQSGenerationManage"
+    effect = "Allow"
+    actions = [
+      "sqs:SendMessage",
+      "sqs:ReceiveMessage",
+      "sqs:DeleteMessage",
+      "sqs:GetQueueAttributes",
+      "sqs:ChangeMessageVisibility",
+    ]
+    resources = concat(values(var.generation_queue_arns), [var.webhook_queue_arn, var.media_queue_arn])
+  }
+
+  # KMS data-key wrapping for prompt envelope encryption (AES-256-GCM, see
+  # internal/infra/sealer/impl/kms). LocalStack skips this — kms_prompt_key_arn
+  # is empty there and the statement is omitted.
+  dynamic "statement" {
+    for_each = length(var.kms_prompt_key_arn) > 0 ? [1] : []
+    content {
+      sid    = "KMSPromptEnvelope"
+      effect = "Allow"
+      actions = [
+        "kms:GenerateDataKey",
+        "kms:Decrypt",
+      ]
+      resources = [var.kms_prompt_key_arn]
+    }
   }
 }
 
@@ -239,7 +263,7 @@ resource "aws_iam_role_policy_attachment" "execution_role_policy" {
 }
 
 # =============================================================================
-# ECS Task Definition
+# Task definition
 # =============================================================================
 
 resource "aws_ecs_task_definition" "api" {
@@ -253,49 +277,72 @@ resource "aws_ecs_task_definition" "api" {
 
   container_definitions = jsonencode([
     {
-      name      = "api"
-      image     = var.api_image_uri
-      essential = true
-      # Allow Spring's graceful shutdown (timeout-per-shutdown-phase = 30s in application.yml)
-      # plus ALB deregistration to complete before SIGKILL. Fargate caps stop_timeout at 120s.
-      stopTimeout = 120
+      name        = "api"
+      image       = var.api_image_uri
+      essential   = true
+      stopTimeout = 30
+      # Container command — matches deploy/compose/Dockerfile.api ENTRYPOINT.
+      command = ["/usr/local/bin/api"]
+
       environment = [
-        { name = "APP_PORT", value = tostring(var.app_port) },
-        { name = "MEDIA_BUCKET_NAME", value = var.media_s3_bucket_name },
-        { name = "MEDIA_DYNAMODB_TABLE_NAME", value = var.dynamodb_table_name },
-        { name = "MEDIA_MANAGEMENT_TOPIC_ARN", value = var.media_management_topic_arn },
-        { name = "MEDIA_GENERATION_TOPIC_ARN", value = var.generation_topic_arn },
-        { name = "MEDIA_GENERATION_QUEUE_URL", value = var.generation_queue_url },
-        { name = "GENERATION_PROVIDER", value = "simulated" },
-        { name = "GENERATION_MODERATION_PROVIDER", value = "simulated" },
-        { name = "GENERATION_TTS_PROVIDER", value = "simulated" },
-        { name = "GENERATION_AUDIO_OVERVIEW_PROVIDER", value = "simulated" },
-        { name = "GENERATION_REGION", value = data.aws_region.current.name },
-        { name = "GENERATION_MODEL", value = "simulator-v1" },
-        { name = "GENERATION_BUDGET_DAILY_USD", value = "50" },
-        { name = "GENERATION_BUDGET_ALERT_PCT", value = var.generation_budget_alert_pct },
-        { name = "GENERATION_BACKPRESSURE_MAX_QUEUE_DEPTH", value = "500" },
-        { name = "GENERATION_BACKPRESSURE_DELAYED_THRESHOLD_PCT", value = "60" },
-        { name = "GENERATION_BACKPRESSURE_DEGRADED_THRESHOLD_PCT", value = "80" },
-        { name = "GENERATION_FREE_DAILY_LIMIT", value = "25" },
-        { name = "GENERATION_PAID_DAILY_LIMIT", value = "1000" },
-        { name = "GENERATION_FREE_MONTHLY_LIMIT", value = "250" },
-        { name = "GENERATION_PAID_MONTHLY_LIMIT", value = "30000" },
-        { name = "GENERATION_FREE_OUTSTANDING_LIMIT", value = "2" },
-        { name = "GENERATION_PAID_OUTSTANDING_LIMIT", value = "50" },
-        { name = "GENERATION_PROMPT_ENHANCEMENT_ENABLED", value = "true" },
-        { name = "GENERATION_STAGE_MAX_ATTEMPTS", value = "3" },
-        { name = "GENERATION_SIMULATOR_CHAOS_BUSINESS_HOURS_ENABLED", value = "false" },
+        # API listener.
+        { name = "API_HTTP_ADDR", value = ":${var.app_port}" },
+
+        # AWS / SDK.
+        { name = "AWS_REGION", value = data.aws_region.current.name },
+
+        # Bootstrap config. The ARN / URL set is all-or-none; partial managed
+        # topology fails closed at startup.
+        { name = "S3_BUCKET", value = var.media_s3_bucket_name },
+        { name = "DDB_TABLE", value = var.dynamodb_table_name },
+        { name = "SNS_MEDIA_TOPIC", value = var.media_topic_name },
+        { name = "SNS_MEDIA_TOPIC_ARN", value = var.media_topic_arn },
+        { name = "SNS_MEDIA_CLEANUP_TOPIC", value = var.media_cleanup_topic_name },
+        { name = "SNS_MEDIA_CLEANUP_TOPIC_ARN", value = var.media_cleanup_topic_arn },
+        { name = "SNS_GENERATION_TOPIC", value = var.generation_topic_name },
+        { name = "SNS_GENERATION_TOPIC_ARN", value = var.generation_topic_arn },
+        { name = "SNS_ANALYTICS_TOPIC", value = var.analytics_events_topic_name },
+        { name = "SNS_ANALYTICS_TOPIC_ARN", value = var.analytics_events_topic_arn },
+        { name = "KMS_PROMPT_KEY_ID", value = var.kms_prompt_key_id },
+        { name = "SQS_MEDIA_QUEUE", value = var.media_queue_name },
+        { name = "SQS_MEDIA_QUEUE_URL", value = var.media_queue_url },
+        { name = "SQS_MEDIA_CLEANUP_QUEUE", value = var.media_cleanup_queue_name },
+        { name = "SQS_MEDIA_CLEANUP_QUEUE_URL", value = var.media_cleanup_queue_url },
+        { name = "SQS_MEDIA_UPLOAD_EVENTS_QUEUE", value = var.media_upload_events_queue_name },
+        { name = "SQS_MEDIA_UPLOAD_EVENTS_QUEUE_URL", value = var.media_upload_events_queue_url },
+        { name = "SQS_WEBHOOK_QUEUE", value = var.webhook_queue_name },
+        { name = "SQS_WEBHOOK_QUEUE_URL", value = var.webhook_queue_url },
+        { name = "SQS_ANALYTICS_QUEUE", value = var.analytics_tracker_queue_name },
+        { name = "SQS_ANALYTICS_QUEUE_URL", value = var.analytics_tracker_queue_url },
+        { name = "SQS_GENERATION_QUEUE_URLS", value = jsonencode({ for key, url in var.generation_queue_urls : "generation-jobs-${key}" => url }) },
+
+        # Telemetry. OTel collector endpoint + service name stay in env;
+        # log level, sampler, env name now come from conf/app.
         { name = "OTEL_EXPORTER_OTLP_ENDPOINT", value = var.otel_exporter_endpoint },
-        { name = "OTEL_SERVICE_NAME", value = "media-service" }
+        { name = "OTEL_SERVICE_NAME", value = "media-service-api" },
+
+        # MSG_ENV selects the embedded YAML overlay.
+        { name = "MSG_ENV", value = var.application_environment },
+
+        # Webhook signing secret. Real prod values come from Secrets Manager;
+        # the var default is scoped to local development.
+        { name = "WEBHOOK_SECRET", value = var.webhook_secret },
       ]
-      portMappings = [
-        {
-          protocol      = "tcp"
-          containerPort = var.app_port
-          hostPort      = var.app_port
-        }
-      ]
+
+      portMappings = [{
+        protocol      = "tcp"
+        containerPort = var.app_port
+        hostPort      = var.app_port
+      }]
+
+      healthCheck = {
+        command     = ["CMD-SHELL", "wget -qO- http://127.0.0.1:${var.app_port}/healthz || exit 1"]
+        interval    = 15
+        timeout     = 5
+        retries     = 3
+        startPeriod = 30
+      }
+
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -313,7 +360,7 @@ resource "aws_ecs_task_definition" "api" {
 }
 
 # =============================================================================
-# ECS Service
+# Service
 # =============================================================================
 
 resource "aws_ecs_service" "api" {
@@ -338,7 +385,7 @@ resource "aws_ecs_service" "api" {
   depends_on = [
     aws_ecs_cluster.main,
     aws_ecs_task_definition.api,
-    aws_alb_target_group.api
+    aws_alb_target_group.api,
   ]
 
   tags = merge(var.additional_tags, {

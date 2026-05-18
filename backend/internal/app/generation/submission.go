@@ -1,0 +1,246 @@
+package generation
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/dtszwai/media-processing-service/backend/internal/app/idempotency"
+	"github.com/dtszwai/media-processing-service/backend/internal/domain/generation"
+	"github.com/dtszwai/media-processing-service/backend/internal/domain/media"
+)
+
+// JobSubmitter brackets the cross-table submit transaction. The DDB impl
+// stakes the idempotency claim, inserts Job + Media + result Asset rows, and
+// enqueues the first-stage outbox row in one TransactWrite. Implemented by
+// app/generation/ddb.JobRepo for production; tests provide an in-memory fake.
+type JobSubmitter interface {
+	Submit(ctx context.Context, in SubmitInput) error
+}
+
+// IdempotencyGetter reads a previously-stored claim result plus the persisted
+// input hash. The submission service uses this to replay a prior allocation
+// when the same idempotency_key carries identical inputs.
+type IdempotencyGetter interface {
+	GetResultWithHash(ctx context.Context, scope string) (ref string, inputHash string, status idempotency.Status, err error)
+}
+
+// Sentinel errors the transport maps to Connect codes. Keep this list small —
+// new categories should only appear when transport must distinguish them.
+var (
+	ErrIdempotencyKeyConflict  = errors.New("submission: idempotency_key reused with different input")
+	ErrSubmitInFlight          = errors.New("submission: already in flight")
+	ErrPriorSubmitFailed       = errors.New("submission: prior submit failed")
+	ErrSubmissionMalformed     = errors.New("submission: stored idempotency result malformed")
+	ErrSubmissionMisconfigured = errors.New("submission: misconfigured")
+)
+
+// SubmissionService creates a generation job: it allocates ids, stakes the
+// idempotency claim, builds the Job + Media + result Asset aggregates, marshals
+// the first-stage outbox body, and runs the JobSubmitter atomic transaction.
+// The transport hands it a principal-aware SubmitCommand; the service owns
+// every cross-aggregate step including replay-on-conflict.
+type SubmissionService struct {
+	Submitter   JobSubmitter
+	Idempotency IdempotencyGetter
+	Now         func() time.Time
+	NewID       func() string
+}
+
+// SubmitCommand is the principal-aware input the transport hands to the
+// service. Auth + proto-mapping live in transport; everything else here.
+type SubmitCommand struct {
+	TenantID        string
+	UserID          string
+	Prompt          string
+	Provider        string
+	Model           string
+	OutputType      generation.OutputType
+	Tier            generation.Tier
+	ResolutionLabel string
+	Seed            int64
+	IdempotencyKey  string
+}
+
+// SubmitResult is what the service returns. Replay is true when the call hit
+// a prior allocation under the same idempotency key with identical inputs.
+type SubmitResult struct {
+	Job    generation.Job
+	Replay bool
+}
+
+const submitVariantCount = 1
+
+// Create runs the submit pipeline in its load-bearing order: replay-check →
+// allocate ids → build aggregates → submit → replay-on-conflict. Idempotency
+// conflicts surface as typed errors the transport maps to Connect codes.
+func (s *SubmissionService) Create(ctx context.Context, cmd SubmitCommand) (SubmitResult, error) {
+	if s == nil || s.Submitter == nil {
+		return SubmitResult{}, fmt.Errorf("%w: no submitter configured", ErrSubmissionMisconfigured)
+	}
+	if s.NewID == nil {
+		return SubmitResult{}, fmt.Errorf("%w: no id generator configured", ErrSubmissionMisconfigured)
+	}
+	now := s.now().UTC()
+
+	scope := submitScope(cmd.TenantID, cmd.IdempotencyKey)
+	inputHash := submitInputHash(cmd)
+
+	if replayJob, replayed, err := s.replay(ctx, cmd, scope, inputHash, now); err != nil {
+		return SubmitResult{}, err
+	} else if replayed {
+		return SubmitResult{Job: replayJob, Replay: true}, nil
+	}
+
+	mediaID := "med_" + s.NewID()
+	jobID := "gen_" + s.NewID()
+	resultAssetID := "ast_" + s.NewID()
+
+	job := generation.Job{
+		ID:            jobID,
+		TenantID:      cmd.TenantID,
+		UserID:        cmd.UserID,
+		MediaID:       mediaID,
+		ResultAssetID: resultAssetID,
+		OutputType:    cmd.OutputType,
+		Tier:          cmd.Tier,
+		Status:        generation.StatusQueued,
+		CurrentStage:  generation.StageInputModeration,
+		StageVersion:  1,
+		Provider:      cmd.Provider,
+		Prompt:        cmd.Prompt,
+		Model:         cmd.Model,
+		Resolution:    cmd.ResolutionLabel,
+		Seed:          cmd.Seed,
+		VariantCount:  submitVariantCount,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	m := media.Media{
+		ID:              mediaID,
+		TenantID:        cmd.TenantID,
+		OwnerUserID:     cmd.UserID,
+		Visibility:      media.DefaultVisibility(cmd.UserID),
+		Origin:          media.OriginGenerated,
+		Type:            mediaTypeForOutput(cmd.OutputType),
+		Lifecycle:       media.LifecycleRunning,
+		OriginalAssetID: resultAssetID,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	a := media.Asset{
+		ID:        resultAssetID,
+		MediaID:   mediaID,
+		TenantID:  cmd.TenantID,
+		Kind:      media.AssetKindGenerated,
+		Role:      media.AssetRoleFinal,
+		Operation: media.AssetOperationGenerationFinal,
+		Lifecycle: media.AssetLifecyclePending,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	firstStageBody, ferr := MarshalStageMessage(cmd.TenantID, jobID, generation.StageInputModeration, 1, generation.ResourceFast, TraceparentFromContext(ctx))
+	if ferr != nil {
+		return SubmitResult{}, fmt.Errorf("submission: marshal first stage: %w", ferr)
+	}
+
+	if serr := s.Submitter.Submit(ctx, SubmitInput{
+		Job:              job,
+		Media:            m,
+		ResultAsset:      a,
+		IdempotencyScope: scope,
+		InputHash:        inputHash,
+		FirstStageBody:   firstStageBody,
+	}); serr != nil {
+		// A concurrent submitter may have won the claim race; re-check the
+		// idempotency store so a winning peer's allocation surfaces as a
+		// replay instead of a generic submit error.
+		if replayJob, replayed, rerr := s.replay(ctx, cmd, scope, inputHash, now); rerr != nil {
+			return SubmitResult{}, rerr
+		} else if replayed {
+			return SubmitResult{Job: replayJob, Replay: true}, nil
+		}
+		return SubmitResult{}, fmt.Errorf("submission: submit transaction: %w", serr)
+	}
+	return SubmitResult{Job: job}, nil
+}
+
+// replay reads the idempotency claim and either returns a replay job, signals
+// a typed conflict, or reports no prior claim.
+func (s *SubmissionService) replay(ctx context.Context, cmd SubmitCommand, scope, inputHash string, now time.Time) (generation.Job, bool, error) {
+	if s.Idempotency == nil {
+		return generation.Job{}, false, nil
+	}
+	ref, gotHash, st, err := s.Idempotency.GetResultWithHash(ctx, scope)
+	if err != nil {
+		// Storage transient errors fall through to the submit path; a real
+		// conflict will surface there via Submit's conditional write.
+		return generation.Job{}, false, nil
+	}
+	if gotHash != "" && gotHash != inputHash {
+		return generation.Job{}, false, ErrIdempotencyKeyConflict
+	}
+	switch st {
+	case idempotency.StatusCompleted:
+		parts := strings.SplitN(ref, ":", 2)
+		if len(parts) != 2 {
+			return generation.Job{}, false, ErrSubmissionMalformed
+		}
+		return generation.Job{
+			ID:           parts[0],
+			TenantID:     cmd.TenantID,
+			MediaID:      parts[1],
+			OutputType:   cmd.OutputType,
+			Tier:         cmd.Tier,
+			Status:       generation.StatusQueued,
+			CurrentStage: generation.StageInputModeration,
+			StageVersion: 1,
+			CreatedAt:    now,
+			UpdatedAt:    now,
+		}, true, nil
+	case idempotency.StatusClaimed:
+		return generation.Job{}, false, ErrSubmitInFlight
+	case idempotency.StatusFailed:
+		return generation.Job{}, false, ErrPriorSubmitFailed
+	}
+	return generation.Job{}, false, nil
+}
+
+func (s *SubmissionService) now() time.Time {
+	if s.Now == nil {
+		return time.Now().UTC()
+	}
+	return s.Now()
+}
+
+func submitScope(tenantID, idempotencyKey string) string {
+	return "SUBMIT#" + tenantID + "#" + idempotencyKey
+}
+
+func submitInputHash(cmd SubmitCommand) string {
+	return idempotency.HashInputs(
+		cmd.TenantID,
+		cmd.Prompt,
+		cmd.Model,
+		string(cmd.OutputType),
+		cmd.Provider,
+		string(cmd.Tier),
+		cmd.ResolutionLabel,
+		strconv.FormatInt(cmd.Seed, 10),
+		strconv.Itoa(submitVariantCount),
+	)
+}
+
+func mediaTypeForOutput(o generation.OutputType) media.Type {
+	switch o {
+	case generation.OutputImage:
+		return media.TypeImage
+	case generation.OutputAudio:
+		return media.TypeAudio
+	}
+	return ""
+}

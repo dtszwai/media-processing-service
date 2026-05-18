@@ -1,52 +1,101 @@
-data "aws_region" "current" {}
+# =============================================================================
+# Go Lambdas on provided.al2023, arm64, bootstrap zip.
+#
+# local.functions below is the source of truth for the artifact set. Each zip
+# is built externally by `make tf-up`; terraform reads the bootstrap binary
+# from backend/dist/lambda/<name>/bootstrap.
+# =============================================================================
 
+terraform {
+  required_providers {
+    aws     = { source = "hashicorp/aws", version = ">= 5.0, < 6.0" }
+    archive = { source = "hashicorp/archive", version = ">= 2.4" }
+  }
+}
+
+data "aws_region" "current" {}
 data "aws_caller_identity" "current" {}
 
-data "aws_iam_policy_document" "assume_role" {
-  statement {
-    effect = "Allow"
+locals {
+  lambda_bin_root = "${path.module}/../../../backend/dist/lambda"
 
+  functions = {
+    "generation-worker" = {
+      timeout = 300
+      memory  = 2048
+    }
+    "media-worker" = {
+      timeout = 120
+      memory  = 1024
+    }
+    "webhook-worker" = {
+      timeout = 60
+      memory  = 512
+    }
+    "analytics-rollup" = {
+      timeout = 300
+      memory  = 1024
+    }
+    "analytics-worker" = {
+      timeout = 30
+      memory  = 256
+    }
+    "lease-reaper" = {
+      timeout = 60
+      memory  = 256
+    }
+    "cleanup-worker" = {
+      timeout = 60
+      memory  = 512
+    }
+    # S3 ObjectCreated → upload-completion failsafe. See cmd/workers/upload-events.
+    "upload-events-worker" = {
+      timeout = 60
+      memory  = 512
+    }
+    # Scheduler-driven; one Step() pass per shard per stream, then exits.
+    # Decoupled from the API process so stream draining survives API outages.
+    "outbox-relay" = {
+      timeout = 120
+      memory  = 512
+    }
+  }
+}
+
+# =============================================================================
+# IAM — shared assume-role policy + per-function least-privilege policies.
+# =============================================================================
+
+data "aws_iam_policy_document" "lambda_assume" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
     principals {
       type        = "Service"
       identifiers = ["lambda.amazonaws.com"]
     }
-
-    actions = ["sts:AssumeRole"]
   }
 }
 
-# Shared policy for manage_media + analytics_rollup ONLY.
-# Generation-specific permissions (Secrets, KMS, EventBridge, generation SNS/SQS)
-# now live in a dedicated policy attached to the generation_worker role.
-data "aws_iam_policy_document" "lambda_iam_policy_document" {
+data "aws_iam_policy_document" "common" {
   statement {
-    sid    = "EC2Networking"
-    effect = "Allow"
-    actions = [
-      "ec2:AssignPrivateIpAddresses",
-      "ec2:UnassignPrivateIpAddresses",
-      "ec2:AttachNetworkInterface",
-      "ec2:CreateNetworkInterface",
-      "ec2:CreateNetworkInterfacePermission",
-      "ec2:DeleteNetworkInterface",
-      "ec2:DeleteNetworkInterfacePermission",
-      "ec2:Describe*",
-      "ec2:DetachNetworkInterface",
-      "ec2:GetSecurityGroupsForVpc"
-    ]
-    resources = ["*"]
+    sid       = "CloudWatchLogs"
+    effect    = "Allow"
+    actions   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = ["arn:aws:logs:*:*:*"]
   }
 
   statement {
-    sid    = "CloudWatchLogs"
+    sid    = "ENI"
     effect = "Allow"
     actions = [
-      "logs:CreateLogGroup",
-      "logs:CreateLogStream",
-      "logs:PutLogEvents",
+      "ec2:CreateNetworkInterface",
+      "ec2:DescribeNetworkInterfaces",
+      "ec2:DeleteNetworkInterface",
+      "ec2:AssignPrivateIpAddresses",
+      "ec2:UnassignPrivateIpAddresses",
     ]
-
-    resources = ["arn:aws:logs:*:*:*"]
+    resources = ["*"]
   }
 
   statement {
@@ -55,742 +104,353 @@ data "aws_iam_policy_document" "lambda_iam_policy_document" {
     actions = [
       "s3:GetObject",
       "s3:PutObject",
-      "s3:ListBucket",
       "s3:DeleteObject",
-      "s3:AbortMultipartUpload"
+      "s3:ListBucket",
+      "s3:AbortMultipartUpload",
     ]
     resources = [
       var.media_bucket_arn,
-      "${var.media_bucket_arn}/*"
+      "${var.media_bucket_arn}/*",
     ]
   }
 
+  # DynamoDB on the media table + every GSI. IAM does not grant GSI access
+  # via the table ARN alone — enumerate each.
   statement {
     sid    = "DynamoDB"
     effect = "Allow"
     actions = [
-      "dynamodb:BatchGetItem",
-      "dynamodb:BatchWriteItem",
-      "dynamodb:DeleteItem",
       "dynamodb:GetItem",
       "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:BatchGetItem",
+      "dynamodb:BatchWriteItem",
       "dynamodb:Query",
       "dynamodb:Scan",
       "dynamodb:TransactWriteItems",
-      "dynamodb:UpdateItem"
+      "dynamodb:DescribeTable",
     ]
     resources = [
       var.dynamodb_table_arn,
-      "${var.dynamodb_table_arn}/index/*"
+      "${var.dynamodb_table_arn}/index/gsi_job",
+      "${var.dynamodb_table_arn}/index/gsi_tenant_media",
+      "${var.dynamodb_table_arn}/index/gsi_lease_expiry",
+      "${var.dynamodb_table_arn}/index/gsi_lifecycle",
+      "${var.dynamodb_table_arn}/index/gsi_audit_entity",
+      "${var.dynamodb_table_arn}/index/gsi_audit_actor",
+      "${var.dynamodb_table_arn}/index/gsi_asset_role",
     ]
   }
 
   statement {
-    sid    = "SQS"
-    effect = "Allow"
-    actions = [
-      "sqs:ReceiveMessage",
-      "sqs:DeleteMessage",
-      "sqs:GetQueueAttributes",
-      "sqs:ChangeMessageVisibility"
-    ]
-    resources = [
-      var.media_management_sqs_queue_arn
-    ]
-  }
-}
-
-resource "aws_iam_policy" "lambda_iam_policy" {
-  name        = "media-service-lambda-policy"
-  path        = "/"
-  description = "IAM policy for Media Service lambda functions"
-  policy      = data.aws_iam_policy_document.lambda_iam_policy_document.json
-
-  tags = merge(
-    var.additional_tags,
-    {
-      Name = "media-service-lambda-policy"
-    }
-  )
-}
-
-# =============================================================================
-# Generation worker IAM (separate role + policy)
-# =============================================================================
-#
-# Isolation rationale: keeps Secrets Manager / KMS / EventBridge / SNS-Publish-on-
-# generation-topic / SQS-on-generation-queue out of the shared role used by the
-# media handler and analytics rollup. Least-privilege per worker.
-
-data "aws_iam_policy_document" "generation_worker_policy_document" {
-  statement {
-    sid    = "EC2Networking"
-    effect = "Allow"
-    actions = [
-      "ec2:AssignPrivateIpAddresses",
-      "ec2:UnassignPrivateIpAddresses",
-      "ec2:AttachNetworkInterface",
-      "ec2:CreateNetworkInterface",
-      "ec2:CreateNetworkInterfacePermission",
-      "ec2:DeleteNetworkInterface",
-      "ec2:DeleteNetworkInterfacePermission",
-      "ec2:Describe*",
-      "ec2:DetachNetworkInterface",
-      "ec2:GetSecurityGroupsForVpc"
-    ]
-    resources = ["*"]
-  }
-
-  statement {
-    sid    = "CloudWatchLogs"
-    effect = "Allow"
-    actions = [
-      "logs:CreateLogGroup",
-      "logs:CreateLogStream",
-      "logs:PutLogEvents",
-    ]
-    resources = ["arn:aws:logs:*:*:*"]
-  }
-
-  statement {
-    sid    = "S3"
-    effect = "Allow"
-    actions = [
-      "s3:GetObject",
-      "s3:PutObject",
-      "s3:ListBucket",
-      "s3:DeleteObject",
-      "s3:AbortMultipartUpload"
-    ]
-    resources = [
-      var.media_bucket_arn,
-      "${var.media_bucket_arn}/*"
-    ]
-  }
-
-  statement {
-    sid    = "DynamoDB"
-    effect = "Allow"
-    actions = [
-      "dynamodb:BatchGetItem",
-      "dynamodb:BatchWriteItem",
-      "dynamodb:DeleteItem",
-      "dynamodb:GetItem",
-      "dynamodb:PutItem",
-      "dynamodb:Query",
-      "dynamodb:TransactWriteItems",
-      "dynamodb:UpdateItem"
-    ]
-    # IAM does not grant GSI access via the table ARN alone — enumerate each index.
-    resources = [
-      var.dynamodb_table_arn,
-      "${var.dynamodb_table_arn}/index/SK-createdAt-index",
-      "${var.dynamodb_table_arn}/index/tenantId-createdAt-index",
-      "${var.dynamodb_table_arn}/index/email-index",
-      "${var.dynamodb_table_arn}/index/tenantId-index",
-    ]
-  }
-
-  statement {
-    sid    = "GenerationSQS"
-    effect = "Allow"
-    actions = [
-      "sqs:ReceiveMessage",
-      "sqs:DeleteMessage",
-      "sqs:GetQueueAttributes",
-      "sqs:ChangeMessageVisibility"
-    ]
-    resources = [var.generation_sqs_queue_arn, var.generation_paid_sqs_queue_arn]
-  }
-
-  statement {
-    sid       = "GenerationSNS"
+    sid       = "SNSPublish"
     effect    = "Allow"
     actions   = ["sns:Publish"]
-    resources = [var.generation_topic_arn]
+    resources = [var.media_topic_arn, var.media_cleanup_topic_arn, var.generation_topic_arn, var.analytics_events_topic_arn]
   }
 
   statement {
-    sid       = "GenerationSecrets"
+    sid       = "SQSSendWebhook"
     effect    = "Allow"
-    actions   = ["secretsmanager:GetSecretValue"]
-    resources = [var.generation_openai_api_key_secret_arn]
+    actions   = ["sqs:SendMessage", "sqs:GetQueueAttributes"]
+    resources = [var.webhook_queue_arn]
   }
 
-  # KMS scoped to the table CMK and the secret CMK. compact() drops nulls so
-  # the policy stays valid when CMKs are not configured (e.g. LocalStack).
-  dynamic "statement" {
-    for_each = length(compact([var.media_table_cmk_arn, var.generation_secret_cmk_arn])) > 0 ? [1] : []
-    content {
-      sid    = "GenerationKMS"
-      effect = "Allow"
-      actions = [
-        "kms:Decrypt",
-        "kms:GenerateDataKey"
-      ]
-      resources = compact([var.media_table_cmk_arn, var.generation_secret_cmk_arn])
-    }
-  }
-
-  # EventBridge Scheduler scoped to rules with the `generation-` prefix used
-  # by long-delay async polls.
+  # KMS data-key wrapping for prompt envelope encryption (AES-256-GCM, see
+  # internal/infra/sealer/impl/kms).
   statement {
-    sid    = "GenerationScheduler"
+    sid    = "KMSPromptEnvelope"
     effect = "Allow"
     actions = [
-      "events:PutRule",
-      "events:PutTargets",
-      "events:DeleteRule",
-      "events:RemoveTargets"
+      "kms:GenerateDataKey",
+      "kms:Decrypt",
     ]
-    resources = [
-      "arn:aws:events:${var.region}:${data.aws_caller_identity.current.account_id}:rule/generation-*"
-    ]
+    resources = [var.kms_prompt_key_arn]
   }
 }
 
-resource "aws_iam_role" "generation_worker_role" {
-  name               = "media-service-generation-worker-role"
-  assume_role_policy = data.aws_iam_policy_document.assume_role.json
+data "aws_iam_policy_document" "sqs_consume" {
+  for_each = local.functions
 
-  tags = merge(var.additional_tags, {
-    Name = "media-service-generation-worker-role"
-  })
-}
-
-resource "aws_iam_policy" "generation_worker_policy" {
-  name        = "media-service-generation-worker-policy"
-  path        = "/"
-  description = "Least-privilege policy for the generation worker Lambda"
-  policy      = data.aws_iam_policy_document.generation_worker_policy_document.json
-
-  tags = merge(var.additional_tags, {
-    Name = "media-service-generation-worker-policy"
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "generation_worker_policy_attachment" {
-  role       = aws_iam_role.generation_worker_role.name
-  policy_arn = aws_iam_policy.generation_worker_policy.arn
-}
-
-#######################
-# Build Java Lambda JAR #
-#######################
-locals {
-  java_src_files = fileset(var.lambdas_src_path, "src/**/*.java")
-  pom_hash       = filesha256("${var.lambdas_src_path}/pom.xml")
-  java_file_hashes = {
-    for file in local.java_src_files :
-    file => filesha256("${var.lambdas_src_path}/${file}")
-  }
-  combined_hash_input   = join("", concat(values(local.java_file_hashes), [local.pom_hash]))
-  source_directory_hash = sha256(local.combined_hash_input)
-  lambda_jar_file       = "${var.lambdas_src_path}/target/media-service-lambdas.jar"
-  otel_exporter         = var.is_local ? "none" : "otlp"
-}
-
-resource "null_resource" "build_lambda_jar" {
-  # Skip rebuild for LocalStack - JAR built via Makefile
-  count = var.is_local ? 0 : 1
-
-  provisioner "local-exec" {
-    command     = "mvn clean package -DskipTests -q"
-    working_dir = var.lambdas_src_path
-  }
-
-  triggers = {
-    should_trigger_resource = local.source_directory_hash
-  }
-}
-
-########################
-# Manage Media Lambda #
-########################
-resource "aws_vpc_security_group_egress_rule" "allow_lambda_outbound_traffic" {
-  count             = var.is_local ? 0 : 1
-  security_group_id = var.lambda_sg
-  description       = "Allow all outbound traffic"
-  cidr_ipv4         = "0.0.0.0/0"
-  ip_protocol       = "-1"
-
-  tags = merge(var.additional_tags, {
-    Name = "media-service-allow-outbound-traffic-lambda"
-  })
-}
-
-resource "aws_iam_role" "lambda_iam_role" {
-  name               = "media-service-lambda-iam-role"
-  assume_role_policy = data.aws_iam_policy_document.assume_role.json
-
-  tags = merge(
-    var.additional_tags,
-    {
-      Name = "media-service-lambda-iam-role"
-    }
-  )
-}
-
-resource "aws_lambda_function" "manage_media" {
-  dynamic "vpc_config" {
-    for_each = var.is_local ? [] : [1]
+  # SQS receive/delete on the queue(s) this function consumes. The set
+  # depends on the function — generation-worker reads from the generation queues,
+  # media-worker from media-jobs, webhook-worker from webhook-delivery.
+  dynamic "statement" {
+    for_each = length(local.function_source_arns[each.key]) > 0 ? [1] : []
     content {
-      security_group_ids = [var.lambda_sg]
-      subnet_ids         = var.private_subnet_ids
+      sid       = "SQSConsume"
+      effect    = "Allow"
+      actions   = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes", "sqs:ChangeMessageVisibility"]
+      resources = local.function_source_arns[each.key]
     }
   }
-
-  filename         = local.lambda_jar_file
-  function_name    = "media-service-manage-media-handler"
-  role             = aws_iam_role.lambda_iam_role.arn
-  handler          = "com.mediaservice.lambda.ManageMediaHandler::handleRequest"
-  source_code_hash = filebase64sha256(local.lambda_jar_file)
-  runtime          = "java21"
-  architectures    = [var.lambda_architecture]
-  timeout          = 120
-  memory_size      = 10240 # 10GB max for large image processing
-  publish          = var.is_local ? false : var.enable_snapstart
-
-  ephemeral_storage {
-    size = 2048 # 2GB for large file processing
-  }
-
-  dynamic "snap_start" {
-    for_each = var.is_local ? [] : (var.enable_snapstart ? [1] : [])
-    content {
-      apply_on = "PublishedVersions"
-    }
-  }
-
-  environment {
-    variables = merge(
-      {
-        MEDIA_BUCKET_NAME           = var.media_s3_bucket_name
-        MEDIA_DYNAMODB_TABLE_NAME   = var.dynamodb_table_name
-        OTEL_EXPORTER_OTLP_ENDPOINT = var.otel_exporter_endpoint
-        OTEL_SERVICE_NAME           = "media-service-lambda"
-        OTEL_TRACES_EXPORTER        = local.otel_exporter
-        OTEL_METRICS_EXPORTER       = local.otel_exporter
-        OTEL_LOGS_EXPORTER          = local.otel_exporter
-        OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf"
-        WEBHOOK_SECRET              = var.webhook_secret
-      },
-      var.is_local ? {
-        AWS_S3_ENDPOINT       = var.localstack_endpoint
-        AWS_DYNAMODB_ENDPOINT = var.localstack_endpoint
-      } : {}
-    )
-  }
-
-  tags = merge(
-    var.additional_tags,
-    {
-      Name = "media-service-manage-media-handler"
-    }
-  )
-}
-
-resource "aws_cloudwatch_log_group" "lambda_log_group" {
-  count             = var.is_local ? 0 : 1
-  depends_on        = [aws_lambda_function.manage_media]
-  name              = "/aws/lambda/${aws_lambda_function.manage_media.function_name}"
-  retention_in_days = 7
-
-  tags = merge(
-    var.additional_tags,
-    {
-      Name = "media-service-lambda-log-group"
-    }
-  )
-}
-
-resource "aws_iam_role_policy_attachment" "lambda_iam_policy_attachment" {
-  role       = aws_iam_role.lambda_iam_role.name
-  policy_arn = aws_iam_policy.lambda_iam_policy.arn
-}
-
-resource "aws_lambda_event_source_mapping" "sqs_event_source_mapping" {
-  event_source_arn = var.media_management_sqs_queue_arn
-  function_name    = aws_lambda_function.manage_media.arn
-
-  tags = merge(
-    var.additional_tags,
-    {
-      Name = "media-service-sqs-event-source-mapping"
-    }
-  )
 }
 
 locals {
-  generation_worker_name      = "media-service-generation-worker"
-  generation_worker_use_image = length(trimspace(var.generation_worker_image_uri)) > 0
-  generation_worker_handler   = "com.mediaservice.lambda.GenerationWorkerHandler::handleRequest"
+  function_source_arns = {
+    "generation-worker"    = concat(values(var.generation_queue_arns), values(var.generation_dlq_arns))
+    "media-worker"         = [var.media_queue_arn]
+    "webhook-worker"       = [var.webhook_queue_arn]
+    "analytics-rollup"     = []
+    "analytics-worker"     = [var.analytics_tracker_queue_arn]
+    "lease-reaper"         = []
+    "cleanup-worker"       = [var.media_cleanup_queue_arn]
+    "upload-events-worker" = [var.media_upload_events_queue_arn]
+    "outbox-relay"         = []
+  }
 }
 
-resource "aws_lambda_function" "generation_worker" {
-  dynamic "vpc_config" {
-    for_each = var.is_local ? [] : [1]
-    content {
-      security_group_ids = [var.lambda_sg]
-      subnet_ids         = var.private_subnet_ids
-    }
-  }
+resource "aws_iam_role" "function" {
+  for_each = local.functions
 
-  package_type     = local.generation_worker_use_image ? "Image" : "Zip"
-  image_uri        = local.generation_worker_use_image ? var.generation_worker_image_uri : null
-  filename         = local.generation_worker_use_image ? null : local.lambda_jar_file
-  source_code_hash = local.generation_worker_use_image ? null : filebase64sha256(local.lambda_jar_file)
-  handler          = local.generation_worker_use_image ? null : local.generation_worker_handler
-  runtime          = local.generation_worker_use_image ? null : "java21"
+  name               = "${var.name_prefix}-${each.key}"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
 
-  dynamic "image_config" {
-    for_each = local.generation_worker_use_image ? [1] : []
-    content {
-      command = [local.generation_worker_handler]
-    }
-  }
+  tags = merge(var.additional_tags, {
+    Name = "${var.name_prefix}-${each.key}"
+  })
+}
 
-  function_name = local.generation_worker_name
-  role          = aws_iam_role.generation_worker_role.arn
-  architectures = [var.lambda_architecture]
-  timeout       = 300
-  memory_size   = 2048
-  # SnapStart is only available for the zip-JAR managed runtime.
-  publish = (var.is_local || local.generation_worker_use_image) ? false : var.enable_snapstart
+resource "aws_iam_role_policy" "common" {
+  for_each = local.functions
 
-  dynamic "snap_start" {
-    for_each = (var.is_local || local.generation_worker_use_image) ? [] : (var.enable_snapstart ? [1] : [])
-    content {
-      apply_on = "PublishedVersions"
-    }
-  }
+  name   = "common"
+  role   = aws_iam_role.function[each.key].id
+  policy = data.aws_iam_policy_document.common.json
+}
+
+resource "aws_iam_role_policy" "sqs_consume" {
+  for_each = { for k, v in local.functions : k => v if length(local.function_source_arns[k]) > 0 }
+
+  name   = "sqs-consume"
+  role   = aws_iam_role.function[each.key].id
+  policy = data.aws_iam_policy_document.sqs_consume[each.key].json
+}
+
+# =============================================================================
+# Bootstrap zips. The binaries are produced by `make tf-up` before
+# every `terraform apply`. archive_file is a data source so it resolves at
+# plan time; if the binary is missing, plan fails — that's intentional.
+# =============================================================================
+
+data "archive_file" "bootstrap" {
+  for_each = local.functions
+
+  type        = "zip"
+  source_file = "${local.lambda_bin_root}/${each.key}/bootstrap"
+  output_path = "${local.lambda_bin_root}/${each.key}/bootstrap.zip"
+}
+
+# =============================================================================
+# Lambda functions.
+# =============================================================================
+
+resource "aws_lambda_function" "fn" {
+  for_each = local.functions
+
+  function_name    = "${var.name_prefix}-${each.key}"
+  role             = aws_iam_role.function[each.key].arn
+  runtime          = "provided.al2023"
+  architectures    = ["arm64"]
+  handler          = "bootstrap"
+  filename         = data.archive_file.bootstrap[each.key].output_path
+  source_code_hash = data.archive_file.bootstrap[each.key].output_base64sha256
+  timeout          = each.value.timeout
+  memory_size      = each.value.memory
 
   environment {
-    variables = merge(
-      {
-        MEDIA_BUCKET_NAME                                 = var.media_s3_bucket_name
-        MEDIA_DYNAMODB_TABLE_NAME                         = var.dynamodb_table_name
-        MEDIA_GENERATION_TOPIC_ARN                        = var.generation_topic_arn
-        GENERATION_PROVIDER                               = "simulated"
-        GENERATION_MODERATION_PROVIDER                    = "simulated"
-        GENERATION_TTS_PROVIDER                           = "simulated"
-        GENERATION_AUDIO_OVERVIEW_PROVIDER                = "simulated"
-        GENERATION_REGION                                 = data.aws_region.current.name
-        GENERATION_MODEL                                  = "simulator-v1"
-        GENERATION_BUDGET_DAILY_USD                       = "50"
-        GENERATION_BUDGET_ALERT_PCT                       = var.generation_budget_alert_pct
-        GENERATION_OPENAI_API_KEY_SECRET_ARN              = var.generation_openai_api_key_secret_arn
-        GENERATION_PROVIDER_TIMEOUT_MS                    = "30000"
-        GENERATION_PROMPT_ENHANCEMENT_ENABLED             = "true"
-        GENERATION_STAGE_MAX_ATTEMPTS                     = "3"
-        GENERATION_SIMULATOR_CHAOS_BUSINESS_HOURS_ENABLED = "false"
-        # Chaos failure injection only enabled for local development.
-        GENERATION_SIMULATOR_CHAOS_FAILURE_RATE = var.is_local ? "0.05" : "0.0"
-        OTEL_EXPORTER_OTLP_ENDPOINT             = var.otel_exporter_endpoint
-        OTEL_SERVICE_NAME                       = "media-service-generation-worker"
-        OTEL_TRACES_EXPORTER                    = local.otel_exporter
-        OTEL_METRICS_EXPORTER                   = local.otel_exporter
-        OTEL_LOGS_EXPORTER                      = local.otel_exporter
-        OTEL_EXPORTER_OTLP_PROTOCOL             = "http/protobuf"
-        WEBHOOK_SECRET                          = var.webhook_secret
-      },
-      var.is_local ? {
-        AWS_S3_ENDPOINT             = var.localstack_endpoint
-        AWS_DYNAMODB_ENDPOINT       = var.localstack_endpoint
-        AWS_SNS_ENDPOINT            = var.localstack_endpoint
-        AWS_SECRETSMANAGER_ENDPOINT = var.localstack_endpoint
-      } : {}
-    )
-  }
-
-  # Reject deploying with an unconfigured OpenAI key secret outside LocalStack.
-  lifecycle {
-    precondition {
-      condition     = var.is_local || length(var.generation_openai_api_key_secret_arn) > 0
-      error_message = "generation_openai_api_key_secret_arn must be set when is_local = false. Provision the Secrets Manager entry and pass its ARN."
+    variables = {
+      AWS_REGION                        = var.aws_region
+      AWS_ENDPOINT_URL                  = var.localstack_endpoint
+      S3_BUCKET                         = var.media_s3_bucket_name
+      DDB_TABLE                         = var.media_dynamodb_table_name
+      SNS_MEDIA_TOPIC                   = var.media_topic_name
+      SNS_MEDIA_TOPIC_ARN               = var.media_topic_arn
+      SNS_MEDIA_CLEANUP_TOPIC           = var.media_cleanup_topic_name
+      SNS_MEDIA_CLEANUP_TOPIC_ARN       = var.media_cleanup_topic_arn
+      SNS_GENERATION_TOPIC              = var.generation_topic_name
+      SNS_GENERATION_TOPIC_ARN          = var.generation_topic_arn
+      SNS_ANALYTICS_TOPIC               = var.analytics_events_topic_name
+      SNS_ANALYTICS_TOPIC_ARN           = var.analytics_events_topic_arn
+      SQS_MEDIA_QUEUE                   = var.media_queue_name
+      SQS_MEDIA_QUEUE_URL               = var.media_queue_url
+      SQS_WEBHOOK_QUEUE                 = var.webhook_queue_name
+      SQS_WEBHOOK_QUEUE_URL             = var.webhook_queue_url
+      SQS_MEDIA_CLEANUP_QUEUE           = var.media_cleanup_queue_name
+      SQS_MEDIA_CLEANUP_QUEUE_URL       = var.media_cleanup_queue_url
+      SQS_MEDIA_UPLOAD_EVENTS_QUEUE     = var.media_upload_events_queue_name
+      SQS_MEDIA_UPLOAD_EVENTS_QUEUE_URL = var.media_upload_events_queue_url
+      SQS_GENERATION_QUEUE_URLS         = jsonencode({ for key, url in var.generation_queue_urls : "generation-jobs-${key}" => url })
+      SQS_ANALYTICS_QUEUE               = var.analytics_tracker_queue_name
+      SQS_ANALYTICS_QUEUE_URL           = var.analytics_tracker_queue_url
+      KMS_PROMPT_KEY_ID                 = var.kms_prompt_key_id
+      OTEL_EXPORTER_OTLP_ENDPOINT       = var.otel_exporter_endpoint
+      OTEL_SERVICE_NAME                 = "${var.name_prefix}-${each.key}"
+      WEBHOOK_SECRET                    = var.webhook_secret
+      # Selects the embedded YAML overlay shipped inside the binary.
+      MSG_ENV              = "localstack"
+      LEASE_REAPER_TENANTS = var.lease_reaper_tenants
     }
   }
 
-  tags = merge(
-    var.additional_tags,
-    {
-      Name = local.generation_worker_name
-    }
-  )
+  tags = merge(var.additional_tags, {
+    Name = "${var.name_prefix}-${each.key}"
+  })
+
+  depends_on = [aws_cloudwatch_log_group.fn]
 }
 
-resource "aws_cloudwatch_log_group" "generation_worker_log_group" {
-  count             = var.is_local ? 0 : 1
-  depends_on        = [aws_lambda_function.generation_worker]
-  name              = "/aws/lambda/${local.generation_worker_name}"
+resource "aws_cloudwatch_log_group" "fn" {
+  for_each = local.functions
+
+  name              = "/aws/lambda/${var.name_prefix}-${each.key}"
   retention_in_days = 7
 
   tags = merge(var.additional_tags, {
-    Name = "media-service-generation-worker-log-group"
+    Name = "/aws/lambda/${var.name_prefix}-${each.key}"
   })
 }
 
-resource "aws_lambda_event_source_mapping" "generation_sqs_event_source_mapping" {
-  count            = var.local_stage_poller_enabled ? 0 : 1
-  event_source_arn = var.generation_sqs_queue_arn
-  function_name    = aws_lambda_function.generation_worker.arn
-  batch_size       = 1
+# =============================================================================
+# Event source mappings: SQS → Lambda.
+# =============================================================================
 
-  tags = merge(
-    var.additional_tags,
-    {
-      Name = "generation-sqs-event-source-mapping"
-    }
-  )
+# for_each = {}: LocalStack Community's SQS event-source pump lags badly for
+# the generation queues, which starves the FSM. The compose
+# generation-worker drains them directly by long polling; cmd/api has an
+# opt-in fallback for solo-api local setups. To exercise the AWS-shape ESM path
+# against real AWS or LocalStack Pro, replace `{}` with
+# `var.generation_queue_arns`.
+resource "aws_lambda_event_source_mapping" "generation" {
+  for_each = {}
+
+  event_source_arn                   = each.value
+  function_name                      = aws_lambda_function.fn["generation-worker"].arn
+  batch_size                         = 1
+  function_response_types            = ["ReportBatchItemFailures"]
+  maximum_batching_window_in_seconds = 0
 }
 
-# Per-tier priority queue: paid jobs route through their own SQS queue so head-of-line blocking
-# by free traffic cannot starve paid SLAs (build-guide §5.3). Same Lambda processes both — the
-# isolation lives in the queue, not the consumer.
-resource "aws_lambda_event_source_mapping" "generation_paid_sqs_event_source_mapping" {
-  count            = var.local_stage_poller_enabled ? 0 : 1
-  event_source_arn = var.generation_paid_sqs_queue_arn
-  function_name    = aws_lambda_function.generation_worker.arn
-  batch_size       = 1
-
-  tags = merge(
-    var.additional_tags,
-    {
-      Name = "generation-paid-sqs-event-source-mapping"
-    }
-  )
+resource "aws_lambda_event_source_mapping" "media" {
+  event_source_arn        = var.media_queue_arn
+  function_name           = aws_lambda_function.fn["media-worker"].arn
+  batch_size              = 5
+  function_response_types = ["ReportBatchItemFailures"]
 }
 
-resource "aws_cloudwatch_metric_alarm" "generation_worker_errors" {
-  count = var.is_local ? 0 : 1
+resource "aws_lambda_event_source_mapping" "webhook" {
+  event_source_arn        = var.webhook_queue_arn
+  function_name           = aws_lambda_function.fn["webhook-worker"].arn
+  batch_size              = 5
+  function_response_types = ["ReportBatchItemFailures"]
+}
 
-  alarm_name          = "generation-worker-errors"
-  comparison_operator = "GreaterThanOrEqualToThreshold"
-  evaluation_periods  = 1
-  metric_name         = "Errors"
-  namespace           = "AWS/Lambda"
-  period              = 60
-  statistic           = "Sum"
-  threshold           = 1
-  alarm_description   = "Alarm when the generation worker reports Lambda errors"
-  treat_missing_data  = "notBreaching"
+resource "aws_lambda_event_source_mapping" "cleanup" {
+  event_source_arn        = var.media_cleanup_queue_arn
+  function_name           = aws_lambda_function.fn["cleanup-worker"].arn
+  batch_size              = 5
+  function_response_types = ["ReportBatchItemFailures"]
+}
 
-  dimensions = {
-    FunctionName = aws_lambda_function.generation_worker.function_name
-  }
+resource "aws_lambda_event_source_mapping" "upload_events" {
+  event_source_arn        = var.media_upload_events_queue_arn
+  function_name           = aws_lambda_function.fn["upload-events-worker"].arn
+  batch_size              = 5
+  function_response_types = ["ReportBatchItemFailures"]
+}
+
+resource "aws_lambda_event_source_mapping" "analytics_tracker" {
+  event_source_arn        = var.analytics_tracker_queue_arn
+  function_name           = aws_lambda_function.fn["analytics-worker"].arn
+  batch_size              = 10
+  function_response_types = ["ReportBatchItemFailures"]
+}
+
+# =============================================================================
+# Cron triggers via EventBridge Scheduler. LocalStack Community supports
+# Scheduler, so the rules are live — analytics-rollup is harmless out of UTC
+# business hours, and lease-reaper does nothing while LEASE_REAPER_TENANTS is
+# empty (the default).
+# =============================================================================
+
+resource "aws_iam_role" "scheduler" {
+  name = "${var.name_prefix}-scheduler-invoker"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "scheduler.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
 
   tags = merge(var.additional_tags, {
-    Name = "generation-worker-errors-alarm"
+    Name = "${var.name_prefix}-scheduler-invoker"
   })
 }
 
-resource "aws_cloudwatch_metric_alarm" "generation_worker_throttles" {
-  count = var.is_local ? 0 : 1
-
-  alarm_name          = "generation-worker-throttles"
-  comparison_operator = "GreaterThanOrEqualToThreshold"
-  evaluation_periods  = 1
-  metric_name         = "Throttles"
-  namespace           = "AWS/Lambda"
-  period              = 60
-  statistic           = "Sum"
-  threshold           = 1
-  alarm_description   = "Alarm when the generation worker is throttled"
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    FunctionName = aws_lambda_function.generation_worker.function_name
-  }
-
-  tags = merge(var.additional_tags, {
-    Name = "generation-worker-throttles-alarm"
+resource "aws_iam_role_policy" "scheduler_invoke" {
+  name = "invoke-lambda"
+  role = aws_iam_role.scheduler.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = "lambda:InvokeFunction"
+      Resource = [
+        aws_lambda_function.fn["analytics-rollup"].arn,
+        aws_lambda_function.fn["lease-reaper"].arn,
+        aws_lambda_function.fn["outbox-relay"].arn,
+      ]
+    }]
   })
 }
 
-# =============================================================================
-# Analytics Rollup Lambda (Roll-Up Pattern)
-# =============================================================================
-#
-# This Lambda handles:
-# - Daily archive to S3 (every day at 2:00 AM)
-# - Monthly aggregation (1st of month at 3:00 AM)
-# - Monthly archive to S3 (1st of month at 5:00 AM)
-#
-# Daily persistence is handled by API write-behind (every 5 min).
-# Weekly/yearly data is calculated at read-time from DynamoDB.
-
-resource "aws_lambda_function" "analytics_rollup" {
-  dynamic "vpc_config" {
-    for_each = var.is_local ? [] : [1]
-    content {
-      security_group_ids = [var.lambda_sg]
-      subnet_ids         = var.private_subnet_ids
-    }
-  }
-
-  filename         = local.lambda_jar_file
-  function_name    = "media-service-analytics-rollup-handler"
-  role             = aws_iam_role.lambda_iam_role.arn
-  handler          = "com.mediaservice.lambda.AnalyticsRollupHandler::handleRequest"
-  source_code_hash = filebase64sha256(local.lambda_jar_file)
-  runtime          = "java21"
-  architectures    = [var.lambda_architecture]
-  timeout          = 60 # Longer timeout for batch operations
-  memory_size      = 1024
-  publish          = var.is_local ? false : var.enable_snapstart
-
-  dynamic "snap_start" {
-    for_each = var.is_local ? [] : (var.enable_snapstart ? [1] : [])
-    content {
-      apply_on = "PublishedVersions"
-    }
-  }
-
-  environment {
-    variables = merge(
-      {
-        MEDIA_BUCKET_NAME           = var.media_s3_bucket_name
-        MEDIA_DYNAMODB_TABLE_NAME   = var.dynamodb_table_name
-        OTEL_EXPORTER_OTLP_ENDPOINT = var.otel_exporter_endpoint
-        OTEL_SERVICE_NAME           = "media-service-analytics-lambda"
-        OTEL_TRACES_EXPORTER        = local.otel_exporter
-        OTEL_METRICS_EXPORTER       = local.otel_exporter
-        OTEL_LOGS_EXPORTER          = local.otel_exporter
-        OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf"
-        JAVA_TOOL_OPTIONS           = "-XX:+TieredCompilation -XX:TieredStopAtLevel=1"
-      },
-      var.is_local ? {
-        AWS_S3_ENDPOINT       = var.localstack_endpoint
-        AWS_DYNAMODB_ENDPOINT = var.localstack_endpoint
-      } : {}
-    )
-  }
-
-  tags = merge(
-    var.additional_tags,
-    {
-      Name = "media-service-analytics-rollup-handler"
-    }
-  )
-}
-
-resource "aws_cloudwatch_log_group" "analytics_lambda_log_group" {
-  count             = var.is_local ? 0 : 1
-  depends_on        = [aws_lambda_function.analytics_rollup]
-  name              = "/aws/lambda/${aws_lambda_function.analytics_rollup.function_name}"
-  retention_in_days = 7
-
-  tags = merge(
-    var.additional_tags,
-    {
-      Name = "media-service-analytics-lambda-log-group"
-    }
-  )
-}
-
-# Analytics DLQ for failed events
-resource "aws_sqs_queue" "analytics_dlq" {
-  name                      = "analytics-rollup-dlq"
-  message_retention_seconds = 1209600 # 14 days
-
-  tags = merge(
-    var.additional_tags,
-    {
-      Name = "media-service-analytics-dlq"
-    }
-  )
-}
-
-# =============================================================================
-# EventBridge Rules for Analytics (Scheduled Triggers)
-# =============================================================================
-
-# Daily archive at 2:00 AM UTC every day
-# Archives yesterday's daily data to S3 for long-term storage
-resource "aws_cloudwatch_event_rule" "analytics_daily_archive" {
-  name                = "analytics-daily-archive"
-  description         = "Archive daily analytics to S3 at 2:00 AM UTC"
+resource "aws_scheduler_schedule" "analytics_daily" {
+  name                = "${var.name_prefix}-analytics-daily"
   schedule_expression = "cron(0 2 * * ? *)"
 
-  tags = merge(
-    var.additional_tags,
-    {
-      Name = "media-service-analytics-daily-archive"
-    }
-  )
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = aws_lambda_function.fn["analytics-rollup"].arn
+    role_arn = aws_iam_role.scheduler.arn
+    input    = jsonencode({ type = "analytics.v1.rollup.daily" })
+  }
 }
 
-resource "aws_cloudwatch_event_target" "analytics_daily_archive_target" {
-  rule      = aws_cloudwatch_event_rule.analytics_daily_archive.name
-  target_id = "analytics-daily-archive-lambda"
-  arn       = aws_lambda_function.analytics_rollup.arn
-  input     = jsonencode({ type = "analytics.v1.archive.daily" })
+resource "aws_scheduler_schedule" "lease_reaper" {
+  name                = "${var.name_prefix}-lease-reaper"
+  schedule_expression = "rate(5 minutes)"
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = aws_lambda_function.fn["lease-reaper"].arn
+    role_arn = aws_iam_role.scheduler.arn
+  }
 }
 
-resource "aws_lambda_permission" "allow_eventbridge_daily_archive" {
-  statement_id  = "AllowEventBridgeDailyArchive"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.analytics_rollup.function_name
-  principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.analytics_daily_archive.arn
+# Outbox relay fires every minute so pending rows publish within a bounded
+# horizon. The relay itself is shard-leased; running it more frequently than
+# the lease churn just sees no-ops on quiet shards.
+resource "aws_scheduler_schedule" "outbox_relay" {
+  name                = "${var.name_prefix}-outbox-relay"
+  schedule_expression = "rate(1 minute)"
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = aws_lambda_function.fn["outbox-relay"].arn
+    role_arn = aws_iam_role.scheduler.arn
+  }
 }
 
-# Monthly rollup at 3:00 AM UTC on 1st of month
-# Aggregates daily snapshots into a monthly summary for faster queries
-resource "aws_cloudwatch_event_rule" "analytics_monthly_rollup" {
-  name                = "analytics-monthly-rollup"
-  description         = "Aggregate monthly analytics on 1st at 3:00 AM UTC"
-  schedule_expression = "cron(0 3 1 * ? *)"
-
-  tags = merge(
-    var.additional_tags,
-    {
-      Name = "media-service-analytics-monthly-rollup"
-    }
-  )
-}
-
-resource "aws_cloudwatch_event_target" "analytics_monthly_rollup_target" {
-  rule      = aws_cloudwatch_event_rule.analytics_monthly_rollup.name
-  target_id = "analytics-monthly-rollup-lambda"
-  arn       = aws_lambda_function.analytics_rollup.arn
-  input     = jsonencode({ type = "analytics.v1.rollup.monthly" })
-}
-
-resource "aws_lambda_permission" "allow_eventbridge_monthly" {
-  statement_id  = "AllowEventBridgeMonthly"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.analytics_rollup.function_name
-  principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.analytics_monthly_rollup.arn
-}
-
-# Monthly archive at 5:00 AM UTC on 1st of month
-# Archives monthly data to S3 for long-term storage
-resource "aws_cloudwatch_event_rule" "analytics_monthly_archive" {
-  name                = "analytics-monthly-archive"
-  description         = "Archive monthly analytics to S3 on 1st at 5:00 AM UTC"
-  schedule_expression = "cron(0 5 1 * ? *)"
-
-  tags = merge(
-    var.additional_tags,
-    {
-      Name = "media-service-analytics-monthly-archive"
-    }
-  )
-}
-
-resource "aws_cloudwatch_event_target" "analytics_monthly_archive_target" {
-  rule      = aws_cloudwatch_event_rule.analytics_monthly_archive.name
-  target_id = "analytics-monthly-archive-lambda"
-  arn       = aws_lambda_function.analytics_rollup.arn
-  input     = jsonencode({ type = "analytics.v1.archive.monthly" })
-}
-
-resource "aws_lambda_permission" "allow_eventbridge_archive" {
-  statement_id  = "AllowEventBridgeArchive"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.analytics_rollup.function_name
-  principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.analytics_monthly_archive.arn
-}

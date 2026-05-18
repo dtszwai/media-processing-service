@@ -1,0 +1,169 @@
+name: media-service-go
+
+services:
+  localstack:
+    image: localstack/localstack:3.7
+    container_name: msg-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: s3,dynamodb,sns,sqs,kms,iam,sts,events,scheduler,secretsmanager,cloudwatch,logs,lambda,ec2
+      DEBUG: "0"
+      DEFAULT_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      PERSISTENCE: "1"
+      LOCALSTACK_HOST: localstack
+      # Lambda runtime uses Docker-in-Docker. LAMBDA_RUNTIME_EXECUTOR=docker is the
+      # default; LAMBDA_DOCKER_NETWORK joins the user-defined network so SQS event
+      # source mappings can reach the LocalStack container.
+      LAMBDA_DOCKER_NETWORK: media-service-go_default
+    volumes:
+      - "./../../.local/volume/localstack:/var/lib/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: msg-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # All-in-one LGTM stack (Loki + Grafana + Tempo + Mimir + OTel collector).
+  # Dashboards in data/grafana/dashboards are auto-provisioned via the bind
+  # mount to /otel-lgtm/dashboards (path referenced by the provisioning yml).
+  grafana:
+    image: grafana/otel-lgtm:0.8.6
+    container_name: msg-grafana
+    ports:
+      - "3000:3000"   # Grafana UI
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    volumes:
+      # Mount only the dashboards bundle + the dashboards-provisioning yaml.
+      # The image ships its own datasources yaml (Prometheus/Tempo/Loki); a full
+      # provisioning-dir mount would mask it and leave Grafana with zero
+      # datasources, breaking every panel.
+      - "./../../data/grafana/dashboards:/otel-lgtm/dashboards:ro"
+      - "./../../data/grafana/provisioning/dashboards:/otel-lgtm/grafana/conf/provisioning/dashboards:ro"
+    healthcheck:
+      # /tmp/ready is touched by the otel-lgtm bootstrap script once Tempo,
+      # the OTel collector, and Grafana have all come up. Cheaper + more
+      # reliable than polling Grafana's HTTP endpoint while the bundled
+      # services are still spinning up.
+      test: ["CMD", "test", "-f", "/tmp/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 45s
+
+  api:
+    build:
+      context: ../../backend
+      dockerfile: ../deploy/compose/Dockerfile.api
+    image: media-service-go/api:local
+    container_name: msg-api
+    depends_on:
+      localstack:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      grafana:
+        condition: service_healthy
+    ports:
+      - "9000:9000"
+    environment:
+      API_HTTP_ADDR: ":9000"
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_PUBLIC_ENDPOINT_URL: http://localhost:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      REDIS_ADDR: redis:6379
+      LOG_LEVEL: info
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://grafana:4317
+      OTEL_SERVICE_NAME: media-service-api
+      MSG_ENV: local
+      # Operator console (frontend/apps/web). Mounts the OpsService Connect
+      # handler — production deploys MUST leave this unset.
+      LOCAL_ONLY: "true"
+      LOKI_URL: "http://grafana:3100"
+      LOCAL_TENANT_ID: tenant_local
+      LOCAL_USER_ID: user_local
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9000/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  outbox-relay:
+    build:
+      context: ../..
+      dockerfile: deploy/compose/Dockerfile.outbox-relay
+    image: media-service-go/outbox-relay:local
+    container_name: msg-outbox-relay
+    restart: unless-stopped
+    depends_on:
+      localstack:
+        condition: service_healthy
+      grafana:
+        condition: service_healthy
+    environment:
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_PUBLIC_ENDPOINT_URL: http://localhost:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      LOG_LEVEL: info
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://grafana:4317
+      OTEL_SERVICE_NAME: outbox-relay
+      MSG_ENV: local
+
+  generation-worker:
+    build:
+      # Repo root so the Dockerfile can COPY both `backend/` (Go source) and
+      # `scripts/notebooklm/` (the Python bridge) in one image.
+      context: ../..
+      dockerfile: deploy/compose/Dockerfile.generation-worker
+    image: media-service-go/generation-worker:local
+    container_name: msg-generation-worker
+    restart: unless-stopped
+    depends_on:
+      localstack:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      grafana:
+        condition: service_healthy
+    environment:
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_PUBLIC_ENDPOINT_URL: http://localhost:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      LOG_LEVEL: info
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://grafana:4317
+      OTEL_SERVICE_NAME: generation-worker
+      MSG_ENV: local
+      # The image provides the Codex CLI; the entrypoint copies local auth/config from CODEX_HOST_HOME.
+      HOME: /home/app
+      CODEX_HOME: /home/app/.codex
+      CODEX_HOST_HOME: /mnt/host-codex
+      # NOTEBOOKLM_PYTHON, NOTEBOOKLM_SCRIPT_PATH are defaulted by the image.
+      NOTEBOOKLM_STORAGE_STATE_PATH: /home/app/.notebooklm/state.json
+      NOTEBOOKLM_STORAGE_STATE_DISPLAY_PATH: ${HOME}/.notebooklm/state.json
+    volumes:
+      # Host Codex auth/config source. The worker uses a writable in-container CODEX_HOME.
+      - "${HOME}/.codex:/mnt/host-codex:ro"
+      # Only the captured Google session needs to come from the host.
+      # The Python venv is baked into the image — the host's macOS venv
+      # would not execute inside a Linux container.
+      - "${HOME}/.notebooklm:/home/app/.notebooklm:ro"
