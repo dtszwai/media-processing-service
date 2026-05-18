@@ -86,8 +86,8 @@ func goodAsyncArtifact() generation.Artifact {
 }
 
 // TestStageProviderSubmit_AsyncPath_SubmitsAndTransitionsToPoll verifies that when
-// InlineBytes=false, stageInference calls SubmitAsync and transitions the job
-// to StageProviderWait with the returned ProviderJobID persisted.
+// InlineBytes=false, stageInference calls SubmitAsync and emits the async-submit
+// outcome with the returned ProviderJobID persisted.
 func TestStageProviderSubmit_AsyncPath_SubmitsAndTransitionsToPoll(t *testing.T) {
 	repo := gen.NewMemRepo()
 	prov := &asyncProvider{submitID: "ext-job-42"}
@@ -105,8 +105,8 @@ func TestStageProviderSubmit_AsyncPath_SubmitsAndTransitionsToPoll(t *testing.T)
 	if err != nil {
 		t.Fatalf("RunStage: %v", err)
 	}
-	if result.NextStage != generation.StageProviderWait {
-		t.Fatalf("NextStage = %s, want PROVIDER_WAIT", result.NextStage)
+	if result.Outcome != gen.OutcomeProviderSubmittedAsync {
+		t.Fatalf("Outcome = %s, want PROVIDER_SUBMITTED_ASYNC", result.Outcome)
 	}
 	if result.ProviderJobID != "ext-job-42" {
 		t.Fatalf("ProviderJobID = %q, want ext-job-42", result.ProviderJobID)
@@ -146,8 +146,8 @@ func TestStageProviderSubmit_AsyncPath_CrashReplayDoesNotResubmit(t *testing.T) 
 	if err != nil {
 		t.Fatalf("RunStage replay: %v", err)
 	}
-	if result.NextStage != generation.StageProviderWait {
-		t.Fatalf("replay NextStage = %s, want PROVIDER_WAIT", result.NextStage)
+	if result.Outcome != gen.OutcomeProviderSubmittedAsync {
+		t.Fatalf("replay Outcome = %s, want PROVIDER_SUBMITTED_ASYNC", result.Outcome)
 	}
 	if result.ProviderJobID != "ext-job-replay" {
 		t.Fatalf("replay ProviderJobID = %q, want cached ext-job-replay", result.ProviderJobID)
@@ -212,8 +212,8 @@ func TestStageProviderWait_Pending_ReEnqueues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunStage: %v", err)
 	}
-	if result.NextStage != generation.StageProviderWait {
-		t.Fatalf("NextStage = %s, want PROVIDER_WAIT", result.NextStage)
+	if result.Outcome != gen.OutcomePollPending {
+		t.Fatalf("Outcome = %s, want POLL_PENDING", result.Outcome)
 	}
 	if len(sink.Stored) != 0 {
 		t.Fatalf("sink should not be called on Pending; got %d", len(sink.Stored))
@@ -246,8 +246,8 @@ func TestStageProviderWait_Ready_StagesAndAdvances(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunStage: %v", err)
 	}
-	if result.NextStage != generation.StageOutputModeration {
-		t.Fatalf("NextStage = %s, want OUTPUT_MODERATION", result.NextStage)
+	if result.Outcome != gen.OutcomeArtifactStaged {
+		t.Fatalf("Outcome = %s, want ARTIFACT_STAGED", result.Outcome)
 	}
 	// Final asset id is set by DISCLOSURE_POSTPROCESS, not INFER. INFER only stages.
 	if result.ResultAssetID != "" {
@@ -282,16 +282,16 @@ func TestStageProviderWait_Ready_CrashReplayDoesNotFetchOrRestage(t *testing.T) 
 	if err != nil {
 		t.Fatalf("RunStage first: %v", err)
 	}
-	if result.NextStage != generation.StageOutputModeration {
-		t.Fatalf("first NextStage = %s, want OUTPUT_MODERATION", result.NextStage)
+	if result.Outcome != gen.OutcomeArtifactStaged {
+		t.Fatalf("first Outcome = %s, want ARTIFACT_STAGED", result.Outcome)
 	}
 
 	result, err = wf.RunStage(ctx, &job)
 	if err != nil {
 		t.Fatalf("RunStage replay: %v", err)
 	}
-	if result.NextStage != generation.StageOutputModeration {
-		t.Fatalf("replay NextStage = %s, want OUTPUT_MODERATION", result.NextStage)
+	if result.Outcome != gen.OutcomeArtifactStaged {
+		t.Fatalf("replay Outcome = %s, want ARTIFACT_STAGED", result.Outcome)
 	}
 	if prov.fetchCalls != 1 {
 		t.Fatalf("FetchAsync calls after replay = %d, want 1", prov.fetchCalls)
@@ -333,8 +333,8 @@ func TestStageProviderWait_Ready_TransientFetchRetry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retry RunStage: %v", err)
 	}
-	if result.NextStage != generation.StageOutputModeration {
-		t.Fatalf("NextStage = %s, want OUTPUT_MODERATION", result.NextStage)
+	if result.Outcome != gen.OutcomeArtifactStaged {
+		t.Fatalf("Outcome = %s, want ARTIFACT_STAGED", result.Outcome)
 	}
 	if prov.fetchCalls != 2 {
 		t.Fatalf("FetchAsync calls = %d, want 2", prov.fetchCalls)
@@ -345,7 +345,7 @@ func TestStageProviderWait_Ready_TransientFetchRetry(t *testing.T) {
 }
 
 // TestStageProviderWait_Failed_TerminatesJob verifies that PollFailed
-// produces a terminal result.
+// produces the terminal-failure outcome.
 func TestStageProviderWait_Failed_TerminatesJob(t *testing.T) {
 	repo := gen.NewMemRepo()
 	prov := &asyncProvider{
@@ -367,11 +367,8 @@ func TestStageProviderWait_Failed_TerminatesJob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunStage should not return an error for PollFailed; got %v", err)
 	}
-	if result.NextStage != gen.StageTerminal {
-		t.Fatalf("NextStage = %s, want TERMINAL", result.NextStage)
-	}
-	if result.TerminalError == nil || result.TerminalError.Code != "PROVIDER_JOB_FAILED" {
-		t.Fatalf("TerminalError = %v, want code PROVIDER_JOB_FAILED", result.TerminalError)
+	if result.Outcome != gen.OutcomeProviderJobFailed {
+		t.Fatalf("Outcome = %s, want PROVIDER_JOB_FAILED", result.Outcome)
 	}
 	if len(sink.Stored) != 0 {
 		t.Fatalf("sink should not be called on PollFailed; got %d", len(sink.Stored))

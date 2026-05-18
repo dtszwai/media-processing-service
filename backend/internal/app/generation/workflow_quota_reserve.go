@@ -40,12 +40,9 @@ func (w *Workflow) stageQuotaReserve(ctx context.Context, job *generation.Job) (
 			}
 		}
 	}
-	result := w.nextStageResult(ctx, job, generation.StagePromptPrepare, generation.ResourceFast)
-	result.BudgetDate = period
-	result.BudgetMicroUSD = cost
-	if w.QuotaLedger != nil {
-		op := w.QuotaLedger.LedgerPutReserved(job.TenantID, job.ID, period, cost, job.Attempts+1)
-		result.LedgerOp = &op
-	}
-	return result, nil
+	return StageResult{
+		Outcome:        OutcomeBudgetReserved,
+		BudgetDate:     period,
+		BudgetMicroUSD: cost,
+	}, nil
 }

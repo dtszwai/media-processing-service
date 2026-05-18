@@ -44,11 +44,22 @@ func (w *Workflow) Run(ctx context.Context, jobID string) error {
 				return exhausted
 			}
 			result = w.transientRetryResult(ctx, job, classified)
+			result, err = w.resolveTransition(ctx, job, result)
+			if err != nil {
+				return fmt.Errorf("workflow: resolve transient retry: %w", err)
+			}
 			if err := w.Repo.AdvanceStageAndEnqueue(ctx, job, result); err != nil {
 				return fmt.Errorf("workflow: persist transient retry: %w", err)
 			}
 			applyMutations(job, result)
 			return runErr
+		}
+		result, err = w.resolveTransition(ctx, job, result)
+		if err != nil {
+			if handled, handleErr := w.handleResolutionTerminalError(ctx, job, err, outputType); handled {
+				return handleErr
+			}
+			return fmt.Errorf("workflow: resolve transition: %w", err)
 		}
 		if err := w.Repo.AdvanceStageAndEnqueue(ctx, job, result); err != nil {
 			if handled, handleErr := w.handleAdvanceTerminalError(ctx, job, err, outputType); handled {
@@ -85,6 +96,7 @@ func (w *Workflow) Run(ctx context.Context, jobID string) error {
 // the same stage_version.
 func (w *Workflow) AdvanceOneStage(ctx context.Context, job *generation.Job) error {
 	outputType := string(job.OutputType)
+	var err error
 	result, runErr := w.RunStage(ctx, job)
 	if runErr != nil {
 		classified := generation.AsError(runErr)
@@ -100,6 +112,10 @@ func (w *Workflow) AdvanceOneStage(ctx context.Context, job *generation.Job) err
 			return err
 		}
 		result = w.transientRetryResult(ctx, job, classified)
+		result, err = w.resolveTransition(ctx, job, result)
+		if err != nil {
+			return fmt.Errorf("workflow: resolve transient retry: %w", err)
+		}
 		if err := w.Repo.AdvanceStageAndEnqueue(ctx, job, result); err != nil {
 			return err
 		}
@@ -111,6 +127,13 @@ func (w *Workflow) AdvanceOneStage(ctx context.Context, job *generation.Job) err
 			"error_code", classified.Code,
 		)
 		return nil
+	}
+	result, err = w.resolveTransition(ctx, job, result)
+	if err != nil {
+		if handled, handleErr := w.handleResolutionTerminalError(ctx, job, err, outputType); handled {
+			return handleErr
+		}
+		return err
 	}
 	if err := w.Repo.AdvanceStageAndEnqueue(ctx, job, result); err != nil {
 		if handled, handleErr := w.handleAdvanceTerminalError(ctx, job, err, outputType); handled {
@@ -155,12 +178,8 @@ func (w *Workflow) terminalFailResultFromError(ctx context.Context, job *generat
 }
 
 func (w *Workflow) transientRetryResult(ctx context.Context, job *generation.Job, err *generation.Error) StageResult {
-	class := stageWorkClass(job)
-	body, _ := MarshalStageMessage(job.TenantID, job.ID, job.CurrentStage, job.StageVersion+1, class, TraceparentFromContext(ctx))
 	return StageResult{
-		NextStage:      job.CurrentStage,
-		OutboxBody:     body,
-		ResourceClass:  class,
+		Outcome:        OutcomeTransientRetry,
 		AttemptsDelta:  1,
 		TransientError: err,
 	}
@@ -197,6 +216,18 @@ func (w *Workflow) handleAdvanceTerminalError(ctx context.Context, job *generati
 	w.emitCostReserve(ctx, "budget_exhausted", job)
 	w.emitTerminal(ctx, generation.StatusFailed, classified.Code, outputType)
 	return true, nil
+}
+
+func (w *Workflow) handleResolutionTerminalError(ctx context.Context, job *generation.Job, err error, outputType string) (bool, error) {
+	classified := generation.AsError(err)
+	if classified == nil || !classified.Terminal {
+		return false, nil
+	}
+	if commitErr := w.Repo.AdvanceStageAndEnqueue(ctx, job, w.terminalFailResult(ctx, job, classified)); commitErr != nil {
+		return true, fmt.Errorf("workflow: persist terminal %s after transition resolution: %w", classified.Code, commitErr)
+	}
+	w.emitTerminal(ctx, generation.StatusFailed, classified.Code, outputType)
+	return true, classified
 }
 
 func (w *Workflow) emitAdvanceSuccess(ctx context.Context, job *generation.Job, result StageResult) {

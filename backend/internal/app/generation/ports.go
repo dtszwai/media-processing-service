@@ -60,10 +60,11 @@ type ArtifactSink interface {
 	StoreFinalArtifact(ctx context.Context, j generation.Job, art generation.Artifact) (assetID string, err error)
 }
 
-// StageResult is what a stage handler returns. It carries the next stage plus
-// every persisted mutation so AdvanceStageAndEnqueue can apply them in one
-// TransactWriteItems together with the outbox row.
+// StageResult is what a stage handler returns. Stage handlers set Outcome plus
+// stage-produced mutations; the workflow transition resolver fills the durable
+// routing fields before handing the result to the repository.
 type StageResult struct {
+	Outcome       StageOutcome
 	NextStage     generation.Stage
 	OutboxBody    []byte
 	ResourceClass generation.ResourceClass

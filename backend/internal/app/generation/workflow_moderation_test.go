@@ -97,8 +97,8 @@ func newModerationJob(id string) generation.Job {
 
 // TestStageInputModeration_Pass_AdvancesToBudgetReserve walks the entry
 // stage on a clean prompt: the moderator returns PASS, the audit row is
-// emitted, and the FSM advances to COST_RESERVE — the next stage's outbox
-// row is what the worker pool consumes.
+// emitted, and the stage returns the pass outcome consumed by the workflow
+// transition resolver.
 func TestStageInputModeration_Pass_AdvancesToBudgetReserve(t *testing.T) {
 	repo := gen.NewMemRepo()
 	wf := newTestWorkflow(t, repo, simulated.New(), gen.NewMemIdempotency(), gen.NewMemSink())
@@ -118,8 +118,8 @@ func TestStageInputModeration_Pass_AdvancesToBudgetReserve(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunStage: %v", err)
 	}
-	if result.NextStage != generation.StageCostReserve {
-		t.Fatalf("NextStage = %s, want COST_RESERVE", result.NextStage)
+	if result.Outcome != gen.OutcomeModerationPassed {
+		t.Fatalf("Outcome = %s, want MODERATION_PASSED", result.Outcome)
 	}
 	if mod.calls != 1 {
 		t.Fatalf("moderator calls = %d, want 1", mod.calls)
@@ -325,8 +325,8 @@ func TestStageInputModeration_NoModerator_PermissiveDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunStage: %v", err)
 	}
-	if result.NextStage != generation.StageCostReserve {
-		t.Fatalf("NextStage = %s, want COST_RESERVE", result.NextStage)
+	if result.Outcome != gen.OutcomeModerationPassed {
+		t.Fatalf("Outcome = %s, want MODERATION_PASSED", result.Outcome)
 	}
 }
 

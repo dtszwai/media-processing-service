@@ -29,7 +29,7 @@ func (w *Workflow) stageOutputModeration(ctx context.Context, job *generation.Jo
 		return StageResult{}, err
 	}
 	if claim.replayed {
-		return w.nextStageResult(ctx, job, generation.StageDisclosurePostprocess, resourceClassForPostprocess(job)), nil
+		return StageResult{Outcome: OutcomeModerationPassed}, nil
 	}
 	token := claim.token
 
@@ -70,7 +70,7 @@ func (w *Workflow) stageOutputModeration(ctx context.Context, job *generation.Jo
 		if cerr := w.claimComplete(ctx, scope, token, "PASS"); cerr != nil {
 			return StageResult{}, cerr
 		}
-		return w.nextStageResult(ctx, job, generation.StageDisclosurePostprocess, resourceClassForPostprocess(job)), nil
+		return StageResult{Outcome: OutcomeModerationPassed}, nil
 
 	case safety.DecisionFail:
 		w.claimFail(ctx, scope, token, "SAFETY_BLOCKED")

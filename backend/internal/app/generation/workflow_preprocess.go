@@ -98,7 +98,7 @@ func (w *Workflow) stagePreprocess(ctx context.Context, job *generation.Job) (St
 			return StageResult{}, fmt.Errorf("prompt prepare: seal: %w", err)
 		}
 	}
-	result := w.nextStageResult(ctx, job, generation.StageProviderSubmit, generation.ResourceProvider)
+	result := StageResult{Outcome: OutcomePromptPrepared}
 	result.PreparedPrompt = prepared
 	result.EncryptedPreparedPrompt = sealed
 	result.PreparedPromptHash = preparedHash

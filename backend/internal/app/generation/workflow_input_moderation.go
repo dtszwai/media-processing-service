@@ -37,7 +37,7 @@ func (w *Workflow) stageInputModeration(ctx context.Context, job *generation.Job
 		// BudgetReserve. Re-emitting BudgetReserve is correct: AdvanceStage
 		// is conditional on CurrentStage = StageInputModeration, so the txn
 		// is a no-op when the job has already moved on.
-		return w.nextStageResult(ctx, job, generation.StageCostReserve, generation.ResourceFast), nil
+		return StageResult{Outcome: OutcomeModerationPassed}, nil
 	}
 	token := claim.token
 
@@ -67,7 +67,7 @@ func (w *Workflow) stageInputModeration(ctx context.Context, job *generation.Job
 		if cerr := w.claimComplete(ctx, scope, token, "PASS"); cerr != nil {
 			return StageResult{}, cerr
 		}
-		return w.nextStageResult(ctx, job, generation.StageCostReserve, generation.ResourceFast), nil
+		return StageResult{Outcome: OutcomeModerationPassed}, nil
 
 	case safety.DecisionFail:
 		// SAFETY_BLOCKED is terminal — surface through the workflow's

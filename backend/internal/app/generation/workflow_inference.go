@@ -117,7 +117,7 @@ func (w *Workflow) stageInferenceAsync(ctx context.Context, job *generation.Job)
 		return StageResult{}, err
 	}
 	if claim.replayed {
-		result := w.nextStageResult(ctx, job, generation.StageProviderWait, generation.ResourcePoll)
+		result := StageResult{Outcome: OutcomeProviderSubmittedAsync}
 		result.ProviderJobID = claim.replayResult
 		return result, nil
 	}
@@ -153,7 +153,7 @@ func (w *Workflow) stageInferenceAsync(ctx context.Context, job *generation.Job)
 	if err := w.claimComplete(ctx, scope, token, providerJobID); err != nil {
 		return StageResult{}, fmt.Errorf("workflow: complete async submit claim: %w", err)
 	}
-	result := w.nextStageResult(ctx, job, generation.StageProviderWait, generation.ResourcePoll)
+	result := StageResult{Outcome: OutcomeProviderSubmittedAsync}
 	result.ProviderJobID = providerJobID
 	result.ProviderRequestID = req.ID
 	return result, nil
@@ -196,7 +196,7 @@ func (w *Workflow) stageInferencePoll(ctx context.Context, job *generation.Job) 
 	case generation.PollPending:
 		// Re-enqueue to the same stage; SQS visibility-timeout back-off
 		// handles the delay.
-		return w.nextStageResult(ctx, job, generation.StageProviderWait, generation.ResourcePoll), nil
+		return StageResult{Outcome: OutcomePollPending}, nil
 
 	case generation.PollReady:
 		providerInputHash := hashProviderInput(job, pname)
@@ -233,16 +233,7 @@ func (w *Workflow) stageInferencePoll(ctx context.Context, job *generation.Job) 
 		return result, err
 
 	case generation.PollFailed:
-		result := StageResult{NextStage: StageTerminal, TerminalError: &generation.Error{
-			Code:     "PROVIDER_JOB_FAILED",
-			Message:  "async provider reported job failure",
-			Terminal: true,
-		}}
-		if w.QuotaLedger != nil && job.BudgetDate != "" {
-			op := w.QuotaLedger.LedgerUpdateReleased(job.TenantID, job.ID, job.BudgetDate, job.BudgetMicroUSD)
-			result.LedgerOp = &op
-		}
-		return result, nil
+		return StageResult{Outcome: OutcomeProviderJobFailed}, nil
 
 	default:
 		return StageResult{}, generation.Terminal("UNKNOWN_POLL_STATUS", string(status))
@@ -322,13 +313,7 @@ func (w *Workflow) completedStagedWriteResult(ctx context.Context, job *generati
 }
 
 func (w *Workflow) providerSuccessResult(ctx context.Context, job *generation.Job) (StageResult, error) {
-	result := w.nextStageResult(ctx, job, generation.StageOutputModeration, generation.ResourceFast)
-	if w.QuotaLedger != nil {
-		op := w.QuotaLedger.LedgerUpdateCommitted(job.TenantID, job.ID, job.BudgetDate, job.BudgetMicroUSD)
-		result.LedgerOp = &op
-		return result, nil
-	}
-	if w.QuotaReserver != nil {
+	if w.QuotaLedger == nil && w.QuotaReserver != nil {
 		cost := job.BudgetMicroUSD
 		if cost == 0 {
 			cost = RequiredBudgetMicroUSD(BudgetEstimateFromJob(*job))
@@ -337,7 +322,7 @@ func (w *Workflow) providerSuccessResult(ctx context.Context, job *generation.Jo
 			return StageResult{}, generation.Terminal("BUDGET_COMMIT_FAILED", cerr.Error())
 		}
 	}
-	return result, nil
+	return StageResult{Outcome: OutcomeArtifactStaged}, nil
 }
 
 func vendorRequestID(job *generation.Job, provider string) string {

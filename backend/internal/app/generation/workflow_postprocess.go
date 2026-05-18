@@ -43,7 +43,7 @@ func (w *Workflow) stagePostprocess(ctx context.Context, job *generation.Job) (S
 		return StageResult{}, err
 	}
 	if claim.replayed {
-		result := w.nextStageResult(ctx, job, generation.StagePublish, generation.ResourceFast)
+		result := StageResult{Outcome: OutcomeDisclosureComplete}
 		result.ResultAssetID = claim.replayResult
 		return result, nil
 	}
@@ -111,7 +111,7 @@ func (w *Workflow) stagePostprocess(ctx context.Context, job *generation.Job) (S
 	// GC if this fails.
 	_ = w.Stager.DeleteStaged(ctx, ref)
 
-	result := w.nextStageResult(ctx, job, generation.StagePublish, generation.ResourceFast)
+	result := StageResult{Outcome: OutcomeDisclosureComplete}
 	result.ResultAssetID = assetID
 	result.GateDecision = &decision
 	return result, nil

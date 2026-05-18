@@ -109,8 +109,8 @@ func classifyStageOutcome(err error) (string, string) {
 }
 
 // stageWorkClass maps the persisted CurrentStage to the work_class label
-// the dashboards filter on. Mirrors the resource-class selection in
-// nextStageResult so the label space is consistent across emit sites.
+// the dashboards filter on. It mirrors transition routing so metric labels
+// and queue classes stay in the same closed set.
 func stageWorkClass(job *generation.Job) generation.ResourceClass {
 	switch job.CurrentStage {
 	case generation.StageInputModeration, generation.StageOutputModeration,

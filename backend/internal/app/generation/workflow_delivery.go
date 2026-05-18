@@ -16,7 +16,7 @@ func (w *Workflow) stageDelivery(_ context.Context, job *generation.Job) (StageR
 	}
 	now := w.now()
 	return StageResult{
-		NextStage:   StageTerminal,
+		Outcome:     OutcomePublished,
 		CompletedAt: &now,
 	}, nil
 }

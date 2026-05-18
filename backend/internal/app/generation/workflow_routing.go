@@ -43,15 +43,6 @@ func (w *Workflow) attachLedgerRelease(ctx context.Context, job *generation.Job,
 	}
 }
 
-func (w *Workflow) nextStageResult(ctx context.Context, job *generation.Job, next generation.Stage, class generation.ResourceClass) StageResult {
-	body, _ := MarshalStageMessage(job.TenantID, job.ID, next, job.StageVersion+1, class, TraceparentFromContext(ctx))
-	return StageResult{
-		NextStage:     next,
-		OutboxBody:    body,
-		ResourceClass: class,
-	}
-}
-
 func resourceClassForPostprocess(job *generation.Job) generation.ResourceClass {
 	switch job.OutputType {
 	case generation.OutputImage:
