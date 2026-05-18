@@ -266,6 +266,31 @@ func NewWorkflowJobCancelled(actorType audit.ActorType, actorID, tenantID, jobID
 	}
 }
 
+// NewWorkflowPromptEnhancementApplied records the PROMPT_PREPARE stage's
+// enhancement outcome. Raw prompts never appear in Summary; hashes and refs
+// are internal correlation handles only.
+func NewWorkflowPromptEnhancementApplied(tenantID, jobID string, applied bool, ref, policyVersion, provider, model, outputType string, tokensIn, tokensOut int64) audit.Event {
+	return audit.Event{
+		ID:        "prompt-enhancement#" + jobID + "#" + ref,
+		TenantID:  tenantID,
+		EventType: audit.EventWorkflowPromptEnhancementApplied,
+		ActorType: audit.ActorSystem,
+		ActorID:   provider,
+		Entity:    audit.EntityRef{Type: "GENERATION_JOB", ID: jobID},
+		Decision:  audit.DecisionAllow,
+		Summary: map[string]any{
+			"applied":        applied,
+			"ref":            ref,
+			"policy_version": policyVersion,
+			"provider":       provider,
+			"model":          model,
+			"output_type":    outputType,
+			"tokens_in":      tokensIn,
+			"tokens_out":     tokensOut,
+		},
+	}
+}
+
 // NewIdempotencyClaimReset records an operator-initiated reset of an
 // idempotency claim that is otherwise terminal-for-14-days. Old/new
 // generations are int because the claim-scope versioning scheme uses a

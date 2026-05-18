@@ -31,20 +31,21 @@ type ProviderResolver interface {
 // path. Workflows are lazily constructed per OutputType and cached so per-
 // message processing is allocation-free aside from the FSM step itself.
 type StageRunner struct {
-	Repo          JobRepository
-	Idem          idempotency.Store
-	Sink          ArtifactSink
-	Stager        StagedArtifactStore
-	ImageStamper  *postprocess.Stamper
-	LeaseRunner   *LeaseScopedRunner
-	Quota         QuotaReserver
-	Ledger        QuotaLedger
-	Sealer        PromptSealer
-	Pickers       ProviderResolver
-	Moderator     safetyapp.Moderator
-	AuditRecorder auditapp.Recorder
-	UsageMeter    UsageMeter
-	Instruments   *obs.Instruments
+	Repo           JobRepository
+	Idem           idempotency.Store
+	Sink           ArtifactSink
+	Stager         StagedArtifactStore
+	ImageStamper   *postprocess.Stamper
+	LeaseRunner    *LeaseScopedRunner
+	Quota          QuotaReserver
+	Ledger         QuotaLedger
+	Sealer         PromptSealer
+	Pickers        ProviderResolver
+	Moderator      safetyapp.Moderator
+	PromptEnhancer PromptEnhancer
+	AuditRecorder  auditapp.Recorder
+	UsageMeter     UsageMeter
+	Instruments    *obs.Instruments
 
 	workflows sync.Map // workflowCacheKey -> *Workflow
 }
@@ -130,20 +131,21 @@ func (r *StageRunner) workflowFor(outputType generation.OutputType, requestedPro
 		return w.(*Workflow), nil
 	}
 	wf, err := NewWorkflow(Workflow{
-		Repo:          r.Repo,
-		Provider:      provider,
-		Idempotency:   r.Idem,
-		ArtifactSink:  r.Sink,
-		Stager:        r.Stager,
-		QuotaReserver: r.Quota,
-		QuotaLedger:   r.Ledger,
-		PromptSealer:  r.Sealer,
-		ImageStamper:  r.ImageStamper,
-		LeaseRunner:   r.LeaseRunner,
-		Moderator:     r.Moderator,
-		AuditRecorder: r.AuditRecorder,
-		UsageMeter:    r.UsageMeter,
-		Instruments:   r.Instruments,
+		Repo:           r.Repo,
+		Provider:       provider,
+		Idempotency:    r.Idem,
+		ArtifactSink:   r.Sink,
+		Stager:         r.Stager,
+		QuotaReserver:  r.Quota,
+		QuotaLedger:    r.Ledger,
+		PromptSealer:   r.Sealer,
+		ImageStamper:   r.ImageStamper,
+		LeaseRunner:    r.LeaseRunner,
+		Moderator:      r.Moderator,
+		PromptEnhancer: r.PromptEnhancer,
+		AuditRecorder:  r.AuditRecorder,
+		UsageMeter:     r.UsageMeter,
+		Instruments:    r.Instruments,
 	})
 	if err != nil {
 		return nil, err

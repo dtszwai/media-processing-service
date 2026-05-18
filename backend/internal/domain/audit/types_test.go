@@ -56,6 +56,7 @@ func TestEventTypeNamespace(t *testing.T) {
 		audit.EventSafetyDisclosureGateDecided,
 		audit.EventQuotaCapChanged,
 		audit.EventWorkflowJobCancelled,
+		audit.EventWorkflowPromptEnhancementApplied,
 		audit.EventIdempotencyClaimReset,
 		audit.EventOutboxDLQReplayed,
 		audit.EventOutboxDLQAbandoned,

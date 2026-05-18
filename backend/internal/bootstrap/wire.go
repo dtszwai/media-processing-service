@@ -198,6 +198,11 @@ type AWS struct {
 	// a different safetyapp.Moderator to this field.
 	Moderator safetyapp.Moderator
 
+	// PromptEnhancer is the PROMPT_PREPARE port. The default is the
+	// side-effect-free passthrough enhancer; provider-backed implementations
+	// use the same field once configured.
+	PromptEnhancer genapp.PromptEnhancer
+
 	// Instruments is the process-wide OTEL counter / histogram / observable
 	// gauge bundle the workflow, provider adapters, outbox relay, and
 	// safety stages emit to. Constructed once at bootstrap so every
@@ -340,7 +345,14 @@ func Wire(ctx context.Context, cfg app.Config) (*AWS, error) {
 	// SimulatedModerator is the default in-process classifier — see the
 	// app/safety package doc. Production replaces it with a remote
 	// moderation provider; the wiring point is identical.
-	out.Moderator = safetyapp.NewSimulatedModerator()
+	out.Moderator, err = constructModerator(cfg.Safety, out.QuotaMeter)
+	if err != nil {
+		return nil, err
+	}
+	out.PromptEnhancer, err = constructPromptEnhancer(cfg.Generation, out.JobRepo, out.Idempotency, out.Sealer, out.QuotaMeter)
+	if err != nil {
+		return nil, err
+	}
 
 	// One Meter / one Instruments per process. The Meter is sourced from
 	// the global MeterProvider that telemetry.Init wired, so when no OTLP

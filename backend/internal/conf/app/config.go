@@ -29,6 +29,7 @@ type Config struct {
 	AWS         AWSConfig         `mapstructure:"aws"`
 	API         APIConfig         `mapstructure:"api"`
 	Generation  GenerationConfig  `mapstructure:"generation"`
+	Safety      SafetyConfig      `mapstructure:"safety"`
 	Quota       QuotaConfig       `mapstructure:"quota"`
 	LeaseReaper LeaseReaperConfig `mapstructure:"lease_reaper"`
 	Telemetry   TelemetryConfig   `mapstructure:"telemetry"`
@@ -77,7 +78,17 @@ type APIConfig struct {
 // default; the consumer (genprovider_registry) fills in $HOME-relative
 // fallbacks since YAML can't express ~ portably.
 type GenerationConfig struct {
-	NotebookLM NotebookLMConfig `mapstructure:"notebooklm"`
+	NotebookLM     NotebookLMConfig     `mapstructure:"notebooklm"`
+	PromptEnhancer PromptEnhancerConfig `mapstructure:"prompt_enhancer"`
+}
+
+type PromptEnhancerConfig struct {
+	Provider      string `mapstructure:"provider"`
+	PolicyVersion string `mapstructure:"policy_version"`
+	// TTLDays is the lifetime of a stored prompt-enhancement row, in days.
+	// Zero leaves the LLMEnhancer default in place (30 days). The row is a
+	// replay cache, not an audit row, so the value can stay short.
+	TTLDays int `mapstructure:"ttl_days"`
 }
 
 type NotebookLMConfig struct {
@@ -85,6 +96,15 @@ type NotebookLMConfig struct {
 	StatePath        string `mapstructure:"state_path"`
 	StateDisplayPath string `mapstructure:"state_display_path"`
 	PythonBin        string `mapstructure:"python_bin"`
+}
+
+type SafetyConfig struct {
+	Moderator ModeratorConfig `mapstructure:"moderator"`
+}
+
+type ModeratorConfig struct {
+	Provider      string `mapstructure:"provider"`
+	PolicyVersion string `mapstructure:"policy_version"`
 }
 
 // QuotaConfig holds the cap values seeded into the tenant cost Reservoir on
@@ -185,10 +205,16 @@ func bindEnvAliases(v *viper.Viper) {
 		"api.cors_origins":     "CORS_ALLOWED_ORIGINS",
 		"api.auth_enforcement": "AUTH_ENFORCEMENT_ENABLED",
 
-		"generation.notebooklm.script_path":        "NOTEBOOKLM_SCRIPT_PATH",
-		"generation.notebooklm.state_path":         "NOTEBOOKLM_STORAGE_STATE_PATH",
-		"generation.notebooklm.state_display_path": "NOTEBOOKLM_STORAGE_STATE_DISPLAY_PATH",
-		"generation.notebooklm.python_bin":         "NOTEBOOKLM_PYTHON",
+		"generation.notebooklm.script_path":         "NOTEBOOKLM_SCRIPT_PATH",
+		"generation.notebooklm.state_path":          "NOTEBOOKLM_STORAGE_STATE_PATH",
+		"generation.notebooklm.state_display_path":  "NOTEBOOKLM_STORAGE_STATE_DISPLAY_PATH",
+		"generation.notebooklm.python_bin":          "NOTEBOOKLM_PYTHON",
+		"generation.prompt_enhancer.provider":       "PROMPT_ENHANCER_PROVIDER",
+		"generation.prompt_enhancer.policy_version": "PROMPT_ENHANCER_POLICY_VERSION",
+		"generation.prompt_enhancer.ttl_days":       "PROMPT_ENHANCER_TTL_DAYS",
+
+		"safety.moderator.provider":       "SAFETY_MODERATOR_PROVIDER",
+		"safety.moderator.policy_version": "SAFETY_MODERATOR_POLICY_VERSION",
 
 		"quota.tenant_cost_cap_micro_usd": "QUOTA_TENANT_COST_CAP_MICRO_USD",
 

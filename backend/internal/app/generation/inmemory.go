@@ -8,24 +8,27 @@ import (
 
 	"github.com/dtszwai/media-processing-service/backend/internal/app/idempotency"
 	"github.com/dtszwai/media-processing-service/backend/internal/domain/generation"
+	"github.com/dtszwai/media-processing-service/backend/internal/infra/kv"
 	"github.com/dtszwai/media-processing-service/backend/internal/util/randid"
 )
 
 // MemRepo is an in-memory JobRepository used by tests and the in-process
 // stage poller. Production replaces it with the DDB JobRepository.
 type MemRepo struct {
-	mu               sync.Mutex
-	jobs             map[string]*generation.Job
-	attempts         map[string][]StageAttempt
-	providerRequests map[string]ProviderRequest
-	OutboxObserver   func(stage generation.Stage, body []byte)
+	mu                 sync.Mutex
+	jobs               map[string]*generation.Job
+	attempts           map[string][]StageAttempt
+	providerRequests   map[string]ProviderRequest
+	promptEnhancements map[string]PromptEnhancementRecord
+	OutboxObserver     func(stage generation.Stage, body []byte)
 }
 
 func NewMemRepo() *MemRepo {
 	return &MemRepo{
-		jobs:             map[string]*generation.Job{},
-		attempts:         map[string][]StageAttempt{},
-		providerRequests: map[string]ProviderRequest{},
+		jobs:               map[string]*generation.Job{},
+		attempts:           map[string][]StageAttempt{},
+		providerRequests:   map[string]ProviderRequest{},
+		promptEnhancements: map[string]PromptEnhancementRecord{},
 	}
 }
 
@@ -89,6 +92,12 @@ func (r *MemRepo) AdvanceStageAndEnqueue(_ context.Context, job *generation.Job,
 		persisted.PreparedPromptHash = result.PreparedPromptHash
 		persisted.PromptSpecVersion = result.PromptSpecVersion
 		persisted.GenerationParamsHash = result.GenerationParamsHash
+	}
+	if result.PromptEnhancementApplied != nil {
+		persisted.PromptEnhancementApplied = *result.PromptEnhancementApplied
+	}
+	if result.PromptEnhancementRef != "" {
+		persisted.PromptEnhancementRef = result.PromptEnhancementRef
 	}
 	if result.ProviderRequestID != "" {
 		persisted.ProviderRequestID = result.ProviderRequestID
@@ -206,6 +215,33 @@ func (r *MemRepo) UpdateProviderRequest(_ context.Context, _, jobID, requestID s
 	}
 	r.providerRequests[key] = req
 	return nil
+}
+
+func (r *MemRepo) PutPromptEnhancement(_ context.Context, rec PromptEnhancementRecord) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	key := rec.JobID + "#" + rec.Ref
+	if existing, ok := r.promptEnhancements[key]; ok {
+		if existing.RawPromptHash != rec.RawPromptHash {
+			return errors.New("memrepo: prompt enhancement ref collision")
+		}
+		return nil
+	}
+	c := rec
+	c.EncryptedPrompt = append([]byte(nil), rec.EncryptedPrompt...)
+	r.promptEnhancements[key] = c
+	return nil
+}
+
+func (r *MemRepo) GetPromptEnhancement(_ context.Context, tenantID, jobID, ref string) (PromptEnhancementRecord, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rec, ok := r.promptEnhancements[jobID+"#"+ref]
+	if !ok || (tenantID != "" && rec.TenantID != tenantID) {
+		return PromptEnhancementRecord{}, kv.ErrNotFound
+	}
+	rec.EncryptedPrompt = append([]byte(nil), rec.EncryptedPrompt...)
+	return rec, nil
 }
 
 // MemIdempotency is the in-memory idempotency.Store that honours the token +

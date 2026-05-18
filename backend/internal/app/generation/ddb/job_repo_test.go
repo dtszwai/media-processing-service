@@ -17,41 +17,43 @@ import (
 )
 
 type expectedJobRow struct {
-	PK                      string                `dynamodbav:"PK"`
-	SK                      string                `dynamodbav:"SK"`
-	ItemType                string                `dynamodbav:"item_type"`
-	GSIJobPK                string                `dynamodbav:"gsi_job_pk"`
-	GSIJobSK                string                `dynamodbav:"gsi_job_sk"`
-	ID                      string                `dynamodbav:"id"`
-	TenantID                string                `dynamodbav:"tenant_id"`
-	UserID                  string                `dynamodbav:"user_id,omitempty"`
-	MediaID                 string                `dynamodbav:"media_id,omitempty"`
-	ResultAssetID           string                `dynamodbav:"result_asset_id,omitempty"`
-	OutputType              generation.OutputType `dynamodbav:"output_type"`
-	Tier                    generation.Tier       `dynamodbav:"tier"`
-	Status                  generation.Status     `dynamodbav:"status"`
-	CurrentStage            generation.Stage      `dynamodbav:"current_stage"`
-	StageVersion            uint64                `dynamodbav:"stage_version"`
-	Provider                string                `dynamodbav:"provider,omitempty"`
-	Model                   string                `dynamodbav:"model,omitempty"`
-	Resolution              string                `dynamodbav:"resolution,omitempty"`
-	Seed                    int64                 `dynamodbav:"seed,omitempty"`
-	VariantCount            int                   `dynamodbav:"variant_count,omitempty"`
-	PreparedPromptHash      string                `dynamodbav:"prepared_prompt_hash,omitempty"`
-	PromptSpecVersion       string                `dynamodbav:"prompt_spec_version,omitempty"`
-	GenerationParamsHash    string                `dynamodbav:"generation_parameters_hash,omitempty"`
-	Attempts                int                   `dynamodbav:"attempts,omitempty"`
-	ProviderJobID           string                `dynamodbav:"provider_job_id,omitempty"`
-	ProviderRequestID       string                `dynamodbav:"provider_request_id,omitempty"`
-	BudgetDate              string                `dynamodbav:"budget_date,omitempty"`
-	BudgetMicroUSD          int64                 `dynamodbav:"budget_micro_usd,omitempty"`
-	CreatedAt               time.Time             `dynamodbav:"created_at"`
-	UpdatedAt               time.Time             `dynamodbav:"updated_at"`
-	CompletedAt             *time.Time            `dynamodbav:"completed_at,omitempty"`
-	EncryptedPrompt         []byte                `dynamodbav:"encrypted_prompt,omitempty"`
-	EncryptedPreparedPrompt []byte                `dynamodbav:"encrypted_prepared_prompt,omitempty"`
-	ErrorCode               string                `dynamodbav:"error_code,omitempty"`
-	ErrorMessage            string                `dynamodbav:"error_message,omitempty"`
+	PK                       string                `dynamodbav:"PK"`
+	SK                       string                `dynamodbav:"SK"`
+	ItemType                 string                `dynamodbav:"item_type"`
+	GSIJobPK                 string                `dynamodbav:"gsi_job_pk"`
+	GSIJobSK                 string                `dynamodbav:"gsi_job_sk"`
+	ID                       string                `dynamodbav:"id"`
+	TenantID                 string                `dynamodbav:"tenant_id"`
+	UserID                   string                `dynamodbav:"user_id,omitempty"`
+	MediaID                  string                `dynamodbav:"media_id,omitempty"`
+	ResultAssetID            string                `dynamodbav:"result_asset_id,omitempty"`
+	OutputType               generation.OutputType `dynamodbav:"output_type"`
+	Tier                     generation.Tier       `dynamodbav:"tier"`
+	Status                   generation.Status     `dynamodbav:"status"`
+	CurrentStage             generation.Stage      `dynamodbav:"current_stage"`
+	StageVersion             uint64                `dynamodbav:"stage_version"`
+	Provider                 string                `dynamodbav:"provider,omitempty"`
+	Model                    string                `dynamodbav:"model,omitempty"`
+	Resolution               string                `dynamodbav:"resolution,omitempty"`
+	Seed                     int64                 `dynamodbav:"seed,omitempty"`
+	VariantCount             int                   `dynamodbav:"variant_count,omitempty"`
+	PreparedPromptHash       string                `dynamodbav:"prepared_prompt_hash,omitempty"`
+	PromptSpecVersion        string                `dynamodbav:"prompt_spec_version,omitempty"`
+	PromptEnhancementApplied bool                  `dynamodbav:"prompt_enhancement_applied,omitempty"`
+	PromptEnhancementRef     string                `dynamodbav:"prompt_enhancement_ref,omitempty"`
+	GenerationParamsHash     string                `dynamodbav:"generation_parameters_hash,omitempty"`
+	Attempts                 int                   `dynamodbav:"attempts,omitempty"`
+	ProviderJobID            string                `dynamodbav:"provider_job_id,omitempty"`
+	ProviderRequestID        string                `dynamodbav:"provider_request_id,omitempty"`
+	BudgetDate               string                `dynamodbav:"budget_date,omitempty"`
+	BudgetMicroUSD           int64                 `dynamodbav:"budget_micro_usd,omitempty"`
+	CreatedAt                time.Time             `dynamodbav:"created_at"`
+	UpdatedAt                time.Time             `dynamodbav:"updated_at"`
+	CompletedAt              *time.Time            `dynamodbav:"completed_at,omitempty"`
+	EncryptedPrompt          []byte                `dynamodbav:"encrypted_prompt,omitempty"`
+	EncryptedPreparedPrompt  []byte                `dynamodbav:"encrypted_prepared_prompt,omitempty"`
+	ErrorCode                string                `dynamodbav:"error_code,omitempty"`
+	ErrorMessage             string                `dynamodbav:"error_message,omitempty"`
 }
 
 func TestJobRowSealsPromptsAndPreservesDynamoDBShape(t *testing.T) {
@@ -60,35 +62,37 @@ func TestJobRowSealsPromptsAndPreservesDynamoDBShape(t *testing.T) {
 	updated := created.Add(time.Minute)
 	completed := created.Add(10 * time.Minute)
 	job := generation.Job{
-		ID:                   "job_1",
-		TenantID:             "tenant_1",
-		UserID:               "user_1",
-		MediaID:              "media_1",
-		ResultAssetID:        "asset_1",
-		OutputType:           generation.OutputImage,
-		Tier:                 generation.TierPaid,
-		Status:               generation.StatusRunning,
-		CurrentStage:         generation.StageProviderSubmit,
-		StageVersion:         7,
-		Provider:             "codex",
-		Model:                "image-1",
-		Resolution:           "1024x768",
-		Seed:                 12345,
-		VariantCount:         3,
-		Prompt:               "raw prompt",
-		PreparedPrompt:       "prepared prompt",
-		PreparedPromptHash:   "prepared-hash",
-		PromptSpecVersion:    "prompt-v1",
-		GenerationParamsHash: "params-hash",
-		Attempts:             2,
-		ProviderJobID:        "provider-job-1",
-		ProviderRequestID:    "provider-request-1",
-		BudgetDate:           "20260517",
-		BudgetMicroUSD:       25000,
-		Error:                &generation.Error{Code: "IGNORED", Message: "domain error is not a job-row field", Terminal: true},
-		CreatedAt:            created,
-		UpdatedAt:            updated,
-		CompletedAt:          &completed,
+		ID:                       "job_1",
+		TenantID:                 "tenant_1",
+		UserID:                   "user_1",
+		MediaID:                  "media_1",
+		ResultAssetID:            "asset_1",
+		OutputType:               generation.OutputImage,
+		Tier:                     generation.TierPaid,
+		Status:                   generation.StatusRunning,
+		CurrentStage:             generation.StageProviderSubmit,
+		StageVersion:             7,
+		Provider:                 "codex",
+		Model:                    "image-1",
+		Resolution:               "1024x768",
+		Seed:                     12345,
+		VariantCount:             3,
+		Prompt:                   "raw prompt",
+		PreparedPrompt:           "prepared prompt",
+		PreparedPromptHash:       "prepared-hash",
+		PromptSpecVersion:        "prompt-v1",
+		PromptEnhancementApplied: true,
+		PromptEnhancementRef:     "enh_abc",
+		GenerationParamsHash:     "params-hash",
+		Attempts:                 2,
+		ProviderJobID:            "provider-job-1",
+		ProviderRequestID:        "provider-request-1",
+		BudgetDate:               "20260517",
+		BudgetMicroUSD:           25000,
+		Error:                    &generation.Error{Code: "IGNORED", Message: "domain error is not a job-row field", Terminal: true},
+		CreatedAt:                created,
+		UpdatedAt:                updated,
+		CompletedAt:              &completed,
 	}
 	repo := NewJobRepo(nil, prefixSealer{})
 	row, err := repo.row(ctx, job)
@@ -97,39 +101,41 @@ func TestJobRowSealsPromptsAndPreservesDynamoDBShape(t *testing.T) {
 	}
 
 	want := expectedJobRow{
-		PK:                      JobPK(job.ID),
-		SK:                      JobSK,
-		ItemType:                "GEN",
-		GSIJobPK:                "TENANT#" + job.TenantID + "#STATUS#" + string(job.Status),
-		GSIJobSK:                job.CreatedAt.UTC().Format(time.RFC3339Nano) + "#" + job.ID,
-		ID:                      job.ID,
-		TenantID:                job.TenantID,
-		UserID:                  job.UserID,
-		MediaID:                 job.MediaID,
-		ResultAssetID:           job.ResultAssetID,
-		OutputType:              job.OutputType,
-		Tier:                    job.Tier,
-		Status:                  job.Status,
-		CurrentStage:            job.CurrentStage,
-		StageVersion:            job.StageVersion,
-		Provider:                job.Provider,
-		Model:                   job.Model,
-		Resolution:              job.Resolution,
-		Seed:                    job.Seed,
-		VariantCount:            job.VariantCount,
-		PreparedPromptHash:      job.PreparedPromptHash,
-		PromptSpecVersion:       job.PromptSpecVersion,
-		GenerationParamsHash:    job.GenerationParamsHash,
-		Attempts:                job.Attempts,
-		ProviderJobID:           job.ProviderJobID,
-		ProviderRequestID:       job.ProviderRequestID,
-		BudgetDate:              job.BudgetDate,
-		BudgetMicroUSD:          job.BudgetMicroUSD,
-		CreatedAt:               job.CreatedAt,
-		UpdatedAt:               job.UpdatedAt,
-		CompletedAt:             job.CompletedAt,
-		EncryptedPrompt:         []byte("sealed:raw prompt"),
-		EncryptedPreparedPrompt: []byte("sealed:prepared prompt"),
+		PK:                       JobPK(job.ID),
+		SK:                       JobSK,
+		ItemType:                 "GEN",
+		GSIJobPK:                 "TENANT#" + job.TenantID + "#STATUS#" + string(job.Status),
+		GSIJobSK:                 job.CreatedAt.UTC().Format(time.RFC3339Nano) + "#" + job.ID,
+		ID:                       job.ID,
+		TenantID:                 job.TenantID,
+		UserID:                   job.UserID,
+		MediaID:                  job.MediaID,
+		ResultAssetID:            job.ResultAssetID,
+		OutputType:               job.OutputType,
+		Tier:                     job.Tier,
+		Status:                   job.Status,
+		CurrentStage:             job.CurrentStage,
+		StageVersion:             job.StageVersion,
+		Provider:                 job.Provider,
+		Model:                    job.Model,
+		Resolution:               job.Resolution,
+		Seed:                     job.Seed,
+		VariantCount:             job.VariantCount,
+		PreparedPromptHash:       job.PreparedPromptHash,
+		PromptSpecVersion:        job.PromptSpecVersion,
+		PromptEnhancementApplied: job.PromptEnhancementApplied,
+		PromptEnhancementRef:     job.PromptEnhancementRef,
+		GenerationParamsHash:     job.GenerationParamsHash,
+		Attempts:                 job.Attempts,
+		ProviderJobID:            job.ProviderJobID,
+		ProviderRequestID:        job.ProviderRequestID,
+		BudgetDate:               job.BudgetDate,
+		BudgetMicroUSD:           job.BudgetMicroUSD,
+		CreatedAt:                job.CreatedAt,
+		UpdatedAt:                job.UpdatedAt,
+		CompletedAt:              job.CompletedAt,
+		EncryptedPrompt:          []byte("sealed:raw prompt"),
+		EncryptedPreparedPrompt:  []byte("sealed:prepared prompt"),
 	}
 	assertSameJobDynamoDBShape(t, row, want)
 

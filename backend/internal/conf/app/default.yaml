@@ -42,6 +42,17 @@ generation:
     state_path: ""
     state_display_path: ""
     python_bin: ""
+  prompt_enhancer:
+    provider: passthrough
+    policy_version: ""
+    # 0 = LLMEnhancer's built-in 30-day default. Stored enhancement rows are
+    # a replay cache; set higher only if you need a longer replay window.
+    ttl_days: 0
+
+safety:
+  moderator:
+    provider: simulated
+    policy_version: ""
 
 quota:
   # 5 USD / day cap on the tenant cost reservoir, in micro-USD. The

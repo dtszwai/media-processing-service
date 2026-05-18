@@ -26,6 +26,7 @@ func TestNewInstruments_RegistersWithNoopMeter(t *testing.T) {
 	if inst.WorkflowStageStarted == nil ||
 		inst.WorkflowStageCompleted == nil ||
 		inst.WorkflowTerminal == nil ||
+		inst.PromptEnhancementAttempts == nil ||
 		inst.WorkflowStageLatency == nil ||
 		inst.ProviderRequests == nil ||
 		inst.ProviderRequestLatency == nil ||
@@ -61,5 +62,6 @@ func TestNoop_NonNil(t *testing.T) {
 	// are not observable through the noop pipeline, so we only confirm the
 	// call paths execute without error.
 	inst.WorkflowStageStarted.Add(t.Context(), 1)
+	inst.PromptEnhancementAttempts.Add(t.Context(), 1)
 	inst.WorkflowStageLatency.Record(t.Context(), 1.0)
 }

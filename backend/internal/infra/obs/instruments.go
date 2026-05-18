@@ -32,9 +32,10 @@ const MeterName = "media-service-go"
 // instrument is itself safe for concurrent use, per the OTEL API contract.
 type Instruments struct {
 	// Workflow counters.
-	WorkflowStageStarted   metric.Int64Counter
-	WorkflowStageCompleted metric.Int64Counter
-	WorkflowTerminal       metric.Int64Counter
+	WorkflowStageStarted      metric.Int64Counter
+	WorkflowStageCompleted    metric.Int64Counter
+	WorkflowTerminal          metric.Int64Counter
+	PromptEnhancementAttempts metric.Int64Counter
 
 	// Workflow latency. ms keeps the unit cardinality across providers/work
 	// classes consistent — a histogram of seconds would lose resolution on
@@ -123,6 +124,14 @@ func NewInstruments(meter metric.Meter) (*Instruments, error) {
 		metric.WithUnit("1"),
 	); err != nil {
 		return nil, fmt.Errorf("obs: workflow.terminal_total: %w", err)
+	}
+
+	if i.PromptEnhancementAttempts, err = meter.Int64Counter(
+		"workflow.prompt_enhancement_attempts_total",
+		metric.WithDescription("Prompt enhancement attempts by outcome, output type, and enhancement policy version."),
+		metric.WithUnit("1"),
+	); err != nil {
+		return nil, fmt.Errorf("obs: workflow.prompt_enhancement_attempts_total: %w", err)
 	}
 
 	// Int64 latency captures `time.Since(...).Milliseconds()` cleanly without

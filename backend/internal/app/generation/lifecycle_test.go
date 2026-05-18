@@ -117,18 +117,19 @@ func TestSimulatedLifecycle_SubmitQueueRunnerStoresGatedAssetAndChargesOnce(t *t
 			}
 
 			runner := gen.StageRunner{
-				Repo:          repo,
-				Idem:          gen.NewMemIdempotency(),
-				Sink:          sink,
-				Stager:        gen.NewMemStaging(),
-				LeaseRunner:   gen.NewLeaseScopedRunner(nil),
-				Quota:         quota,
-				Ledger:        ledger,
-				Sealer:        lifecyclePromptSealer{},
-				Pickers:       lifecycleProviderResolver{provider: provider},
-				Moderator:     safetyapp.NewSimulatedModerator(),
-				AuditRecorder: auditapp.NoopRecorder{},
-				UsageMeter:    usage,
+				Repo:           repo,
+				Idem:           gen.NewMemIdempotency(),
+				Sink:           sink,
+				Stager:         gen.NewMemStaging(),
+				LeaseRunner:    gen.NewLeaseScopedRunner(nil),
+				Quota:          quota,
+				Ledger:         ledger,
+				Sealer:         lifecyclePromptSealer{},
+				Pickers:        lifecycleProviderResolver{provider: provider},
+				Moderator:      safetyapp.NewSimulatedModerator(),
+				PromptEnhancer: &gen.PassthroughEnhancer{},
+				AuditRecorder:  auditapp.NoopRecorder{},
+				UsageMeter:     usage,
 			}
 
 			processed, providerSubmitBody := drainLifecycleQueue(t, ctx, &runner, queue, result.Job)
@@ -387,7 +388,7 @@ func (u *recordingLifecycleUsage) RecordVendorCost(_ context.Context, _ string, 
 	return nil
 }
 
-func (u *recordingLifecycleUsage) RecordServiceCost(_ context.Context, _ string, microUSD int64) error {
+func (u *recordingLifecycleUsage) RecordServiceCost(_ context.Context, _, _, _ string, microUSD int64) error {
 	u.serviceCost.Add(microUSD)
 	return nil
 }

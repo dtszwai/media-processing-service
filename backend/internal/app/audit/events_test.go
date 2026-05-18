@@ -37,6 +37,13 @@ func TestEventConstructors(t *testing.T) {
 			entityID:  "job-99",
 		},
 		{
+			name:      "WorkflowPromptEnhancementApplied",
+			ev:        auditapp.NewWorkflowPromptEnhancementApplied("tenant-1", "job-99", true, "enh_1", "policy-v1", "openai", "gpt-test", "IMAGE", 10, 20),
+			eventType: audit.EventWorkflowPromptEnhancementApplied,
+			actor:     audit.ActorSystem,
+			entityID:  "job-99",
+		},
+		{
 			name:      "IdempotencyClaimReset",
 			ev:        auditapp.NewIdempotencyClaimReset("op-1", "GEN#tenant-1#hash-abc", 1, 2, "STUCK_CLAIM_OPERATOR_OVERRIDE", "req-7"),
 			eventType: audit.EventIdempotencyClaimReset,

@@ -49,6 +49,7 @@ func (w *Workflow) stageOutputModeration(ctx context.Context, job *generation.Jo
 		TenantID:   job.TenantID,
 		JobID:      job.ID,
 		OutputType: job.OutputType,
+		Model:      job.Model,
 		Artifact:   &art,
 	})
 	if mErr != nil {

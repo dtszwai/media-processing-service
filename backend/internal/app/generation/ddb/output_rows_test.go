@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	auditapp "github.com/dtszwai/media-processing-service/backend/internal/app/audit"
 	genapp "github.com/dtszwai/media-processing-service/backend/internal/app/generation"
+	"github.com/dtszwai/media-processing-service/backend/internal/domain/audit"
 	"github.com/dtszwai/media-processing-service/backend/internal/domain/generation"
 	"github.com/dtszwai/media-processing-service/backend/internal/infra/kv"
 )
@@ -128,6 +130,40 @@ func TestAdvanceStageAndEnqueueWritesGateAuditEventWithStageTransaction(t *testi
 	}
 	if !containsPutItem(rec.ops, "decision", "PASS") {
 		t.Fatalf("missing PASS gate decision row in %d ops", len(rec.ops))
+	}
+}
+
+func TestAdvanceStageAndEnqueueWritesWorkflowAuditEvents(t *testing.T) {
+	rec := &recordingKV{}
+	repo := NewJobRepo(rec, nil)
+	job := &generation.Job{
+		ID:           "gen_prompt_audit",
+		TenantID:     "tenant-test",
+		MediaID:      "media-test",
+		Status:       generation.StatusRunning,
+		CurrentStage: generation.StagePromptPrepare,
+		StageVersion: 1,
+		OutputType:   generation.OutputImage,
+	}
+	applied := true
+	err := repo.AdvanceStageAndEnqueue(context.Background(), job, genapp.StageResult{
+		NextStage:                generation.StageProviderSubmit,
+		ResourceClass:            generation.ResourceProvider,
+		PromptEnhancementApplied: &applied,
+		PromptEnhancementRef:     "enh_123",
+		AuditEvents: []audit.Event{auditapp.NewWorkflowPromptEnhancementApplied(
+			job.TenantID, job.ID, true, "enh_123", "policy-v1", "openai", "gpt-test", "IMAGE", 1, 2,
+		)},
+	})
+	if err != nil {
+		t.Fatalf("AdvanceStageAndEnqueue: %v", err)
+	}
+	if !containsPutItem(rec.ops, "event_type", audit.EventWorkflowPromptEnhancementApplied) {
+		t.Fatalf("missing prompt enhancement audit event in %d ops", len(rec.ops))
+	}
+	update := rec.ops[0].Update
+	if update == nil || update.ExpressionAttributeValues[":pea"] != true || update.ExpressionAttributeValues[":per"] != "enh_123" {
+		t.Fatalf("job update missing prompt enhancement fields: %#v", update)
 	}
 }
 

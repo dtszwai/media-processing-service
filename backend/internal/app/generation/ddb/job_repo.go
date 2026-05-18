@@ -26,41 +26,43 @@ func NewJobRepo(k kv.KV, sealer genapp.PromptSealer) *JobRepo {
 }
 
 type jobRow struct {
-	PK                      string                `dynamodbav:"PK"`
-	SK                      string                `dynamodbav:"SK"`
-	ItemType                string                `dynamodbav:"item_type"`
-	GSIJobPK                string                `dynamodbav:"gsi_job_pk"`
-	GSIJobSK                string                `dynamodbav:"gsi_job_sk"`
-	ID                      string                `dynamodbav:"id"`
-	TenantID                string                `dynamodbav:"tenant_id"`
-	UserID                  string                `dynamodbav:"user_id,omitempty"`
-	MediaID                 string                `dynamodbav:"media_id,omitempty"`
-	ResultAssetID           string                `dynamodbav:"result_asset_id,omitempty"`
-	OutputType              generation.OutputType `dynamodbav:"output_type"`
-	Tier                    generation.Tier       `dynamodbav:"tier"`
-	Status                  generation.Status     `dynamodbav:"status"`
-	CurrentStage            generation.Stage      `dynamodbav:"current_stage"`
-	StageVersion            uint64                `dynamodbav:"stage_version"`
-	Provider                string                `dynamodbav:"provider,omitempty"`
-	Model                   string                `dynamodbav:"model,omitempty"`
-	Resolution              string                `dynamodbav:"resolution,omitempty"`
-	Seed                    int64                 `dynamodbav:"seed,omitempty"`
-	VariantCount            int                   `dynamodbav:"variant_count,omitempty"`
-	PreparedPromptHash      string                `dynamodbav:"prepared_prompt_hash,omitempty"`
-	PromptSpecVersion       string                `dynamodbav:"prompt_spec_version,omitempty"`
-	GenerationParamsHash    string                `dynamodbav:"generation_parameters_hash,omitempty"`
-	Attempts                int                   `dynamodbav:"attempts,omitempty"`
-	ProviderJobID           string                `dynamodbav:"provider_job_id,omitempty"`
-	ProviderRequestID       string                `dynamodbav:"provider_request_id,omitempty"`
-	BudgetDate              string                `dynamodbav:"budget_date,omitempty"`
-	BudgetMicroUSD          int64                 `dynamodbav:"budget_micro_usd,omitempty"`
-	CreatedAt               time.Time             `dynamodbav:"created_at"`
-	UpdatedAt               time.Time             `dynamodbav:"updated_at"`
-	CompletedAt             *time.Time            `dynamodbav:"completed_at,omitempty"`
-	EncryptedPrompt         []byte                `dynamodbav:"encrypted_prompt,omitempty"`
-	EncryptedPreparedPrompt []byte                `dynamodbav:"encrypted_prepared_prompt,omitempty"`
-	ErrorCode               string                `dynamodbav:"error_code,omitempty"`
-	ErrorMessage            string                `dynamodbav:"error_message,omitempty"`
+	PK                       string                `dynamodbav:"PK"`
+	SK                       string                `dynamodbav:"SK"`
+	ItemType                 string                `dynamodbav:"item_type"`
+	GSIJobPK                 string                `dynamodbav:"gsi_job_pk"`
+	GSIJobSK                 string                `dynamodbav:"gsi_job_sk"`
+	ID                       string                `dynamodbav:"id"`
+	TenantID                 string                `dynamodbav:"tenant_id"`
+	UserID                   string                `dynamodbav:"user_id,omitempty"`
+	MediaID                  string                `dynamodbav:"media_id,omitempty"`
+	ResultAssetID            string                `dynamodbav:"result_asset_id,omitempty"`
+	OutputType               generation.OutputType `dynamodbav:"output_type"`
+	Tier                     generation.Tier       `dynamodbav:"tier"`
+	Status                   generation.Status     `dynamodbav:"status"`
+	CurrentStage             generation.Stage      `dynamodbav:"current_stage"`
+	StageVersion             uint64                `dynamodbav:"stage_version"`
+	Provider                 string                `dynamodbav:"provider,omitempty"`
+	Model                    string                `dynamodbav:"model,omitempty"`
+	Resolution               string                `dynamodbav:"resolution,omitempty"`
+	Seed                     int64                 `dynamodbav:"seed,omitempty"`
+	VariantCount             int                   `dynamodbav:"variant_count,omitempty"`
+	PreparedPromptHash       string                `dynamodbav:"prepared_prompt_hash,omitempty"`
+	PromptSpecVersion        string                `dynamodbav:"prompt_spec_version,omitempty"`
+	PromptEnhancementApplied bool                  `dynamodbav:"prompt_enhancement_applied,omitempty"`
+	PromptEnhancementRef     string                `dynamodbav:"prompt_enhancement_ref,omitempty"`
+	GenerationParamsHash     string                `dynamodbav:"generation_parameters_hash,omitempty"`
+	Attempts                 int                   `dynamodbav:"attempts,omitempty"`
+	ProviderJobID            string                `dynamodbav:"provider_job_id,omitempty"`
+	ProviderRequestID        string                `dynamodbav:"provider_request_id,omitempty"`
+	BudgetDate               string                `dynamodbav:"budget_date,omitempty"`
+	BudgetMicroUSD           int64                 `dynamodbav:"budget_micro_usd,omitempty"`
+	CreatedAt                time.Time             `dynamodbav:"created_at"`
+	UpdatedAt                time.Time             `dynamodbav:"updated_at"`
+	CompletedAt              *time.Time            `dynamodbav:"completed_at,omitempty"`
+	EncryptedPrompt          []byte                `dynamodbav:"encrypted_prompt,omitempty"`
+	EncryptedPreparedPrompt  []byte                `dynamodbav:"encrypted_prepared_prompt,omitempty"`
+	ErrorCode                string                `dynamodbav:"error_code,omitempty"`
+	ErrorMessage             string                `dynamodbav:"error_message,omitempty"`
 }
 
 func (r *JobRepo) CreateJob(ctx context.Context, j generation.Job) error {
@@ -124,68 +126,72 @@ func jobRowFromDomain(j generation.Job) jobRow {
 		j.StageVersion = 1
 	}
 	return jobRow{
-		PK:                   JobPK(j.ID),
-		SK:                   JobSK,
-		ItemType:             "GEN",
-		GSIJobPK:             "TENANT#" + j.TenantID + "#STATUS#" + string(j.Status),
-		GSIJobSK:             j.CreatedAt.UTC().Format(time.RFC3339Nano) + "#" + j.ID,
-		ID:                   j.ID,
-		TenantID:             j.TenantID,
-		UserID:               j.UserID,
-		MediaID:              j.MediaID,
-		ResultAssetID:        j.ResultAssetID,
-		OutputType:           j.OutputType,
-		Tier:                 j.Tier,
-		Status:               j.Status,
-		CurrentStage:         j.CurrentStage,
-		StageVersion:         j.StageVersion,
-		Provider:             j.Provider,
-		Model:                j.Model,
-		Resolution:           j.Resolution,
-		Seed:                 j.Seed,
-		VariantCount:         j.VariantCount,
-		PreparedPromptHash:   j.PreparedPromptHash,
-		PromptSpecVersion:    j.PromptSpecVersion,
-		GenerationParamsHash: j.GenerationParamsHash,
-		Attempts:             j.Attempts,
-		ProviderJobID:        j.ProviderJobID,
-		ProviderRequestID:    j.ProviderRequestID,
-		BudgetDate:           j.BudgetDate,
-		BudgetMicroUSD:       j.BudgetMicroUSD,
-		CreatedAt:            j.CreatedAt,
-		UpdatedAt:            j.UpdatedAt,
-		CompletedAt:          j.CompletedAt,
+		PK:                       JobPK(j.ID),
+		SK:                       JobSK,
+		ItemType:                 "GEN",
+		GSIJobPK:                 "TENANT#" + j.TenantID + "#STATUS#" + string(j.Status),
+		GSIJobSK:                 j.CreatedAt.UTC().Format(time.RFC3339Nano) + "#" + j.ID,
+		ID:                       j.ID,
+		TenantID:                 j.TenantID,
+		UserID:                   j.UserID,
+		MediaID:                  j.MediaID,
+		ResultAssetID:            j.ResultAssetID,
+		OutputType:               j.OutputType,
+		Tier:                     j.Tier,
+		Status:                   j.Status,
+		CurrentStage:             j.CurrentStage,
+		StageVersion:             j.StageVersion,
+		Provider:                 j.Provider,
+		Model:                    j.Model,
+		Resolution:               j.Resolution,
+		Seed:                     j.Seed,
+		VariantCount:             j.VariantCount,
+		PreparedPromptHash:       j.PreparedPromptHash,
+		PromptSpecVersion:        j.PromptSpecVersion,
+		PromptEnhancementApplied: j.PromptEnhancementApplied,
+		PromptEnhancementRef:     j.PromptEnhancementRef,
+		GenerationParamsHash:     j.GenerationParamsHash,
+		Attempts:                 j.Attempts,
+		ProviderJobID:            j.ProviderJobID,
+		ProviderRequestID:        j.ProviderRequestID,
+		BudgetDate:               j.BudgetDate,
+		BudgetMicroUSD:           j.BudgetMicroUSD,
+		CreatedAt:                j.CreatedAt,
+		UpdatedAt:                j.UpdatedAt,
+		CompletedAt:              j.CompletedAt,
 	}
 }
 
 func (r jobRow) toDomain() generation.Job {
 	return generation.Job{
-		ID:                   r.ID,
-		TenantID:             r.TenantID,
-		UserID:               r.UserID,
-		MediaID:              r.MediaID,
-		ResultAssetID:        r.ResultAssetID,
-		OutputType:           r.OutputType,
-		Tier:                 r.Tier,
-		Status:               r.Status,
-		CurrentStage:         r.CurrentStage,
-		StageVersion:         r.StageVersion,
-		Provider:             r.Provider,
-		Model:                r.Model,
-		Resolution:           r.Resolution,
-		Seed:                 r.Seed,
-		VariantCount:         r.VariantCount,
-		PreparedPromptHash:   r.PreparedPromptHash,
-		PromptSpecVersion:    r.PromptSpecVersion,
-		GenerationParamsHash: r.GenerationParamsHash,
-		Attempts:             r.Attempts,
-		ProviderJobID:        r.ProviderJobID,
-		ProviderRequestID:    r.ProviderRequestID,
-		BudgetDate:           r.BudgetDate,
-		BudgetMicroUSD:       r.BudgetMicroUSD,
-		CreatedAt:            r.CreatedAt,
-		UpdatedAt:            r.UpdatedAt,
-		CompletedAt:          r.CompletedAt,
+		ID:                       r.ID,
+		TenantID:                 r.TenantID,
+		UserID:                   r.UserID,
+		MediaID:                  r.MediaID,
+		ResultAssetID:            r.ResultAssetID,
+		OutputType:               r.OutputType,
+		Tier:                     r.Tier,
+		Status:                   r.Status,
+		CurrentStage:             r.CurrentStage,
+		StageVersion:             r.StageVersion,
+		Provider:                 r.Provider,
+		Model:                    r.Model,
+		Resolution:               r.Resolution,
+		Seed:                     r.Seed,
+		VariantCount:             r.VariantCount,
+		PreparedPromptHash:       r.PreparedPromptHash,
+		PromptSpecVersion:        r.PromptSpecVersion,
+		PromptEnhancementApplied: r.PromptEnhancementApplied,
+		PromptEnhancementRef:     r.PromptEnhancementRef,
+		GenerationParamsHash:     r.GenerationParamsHash,
+		Attempts:                 r.Attempts,
+		ProviderJobID:            r.ProviderJobID,
+		ProviderRequestID:        r.ProviderRequestID,
+		BudgetDate:               r.BudgetDate,
+		BudgetMicroUSD:           r.BudgetMicroUSD,
+		CreatedAt:                r.CreatedAt,
+		UpdatedAt:                r.UpdatedAt,
+		CompletedAt:              r.CompletedAt,
 	}
 }
 

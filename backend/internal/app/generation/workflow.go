@@ -42,6 +42,7 @@ type Workflow struct {
 	QuotaLedger      QuotaLedger
 	ProviderRequests ProviderRequestRepository
 	PromptSealer     PromptSealer
+	PromptEnhancer   PromptEnhancer
 	MaxRetries       int
 	Clock            func() time.Time
 	StageLease       time.Duration
@@ -83,8 +84,13 @@ type Workflow struct {
 type UsageMeter interface {
 	RecordGeneratedOutput(ctx context.Context, tenantID, jobID, assetID string) error
 	RecordVendorCost(ctx context.Context, vendor, jobID string, microUSD int64) error
-	RecordServiceCost(ctx context.Context, jobID string, microUSD int64) error
+	RecordServiceCost(ctx context.Context, jobID, source, requestID string, microUSD int64) error
 }
+
+const (
+	ServiceCostSourceProviderSubmit = "provider-submit"
+	ServiceCostSourcePromptEnhance  = "prompt-enhance"
+)
 
 // QuotaReserver gates the COST_RESERVE stage and exposes commit/release
 // for the terminal transition. Reserve must NOT contact the provider — it is
@@ -190,6 +196,9 @@ func (w *Workflow) ValidateProduction(outputType generation.OutputType) error {
 	}
 	if w.Moderator == nil {
 		missing = append(missing, "Moderator")
+	}
+	if w.PromptEnhancer == nil {
+		missing = append(missing, "PromptEnhancer")
 	}
 	if w.AuditRecorder == nil {
 		missing = append(missing, "AuditRecorder")

@@ -45,6 +45,7 @@ func (w *Workflow) stageInputModeration(ctx context.Context, job *generation.Job
 		TenantID:   job.TenantID,
 		JobID:      job.ID,
 		OutputType: job.OutputType,
+		Model:      job.Model,
 		Prompt:     job.Prompt,
 	})
 	if mErr != nil {

@@ -94,7 +94,7 @@ func (w *Workflow) stageInference(ctx context.Context, job *generation.Job) (Sta
 	}
 	_ = w.updateProviderRequest(ctx, job, req.ID, ProviderRequestSucceeded, "", nil)
 
-	result, err := w.stageArtifactAndCommit(ctx, job, art, token, scope)
+	result, err := w.stageArtifactAndCommit(ctx, job, art, token, scope, req.ID)
 	if err == nil {
 		result.ProviderRequestID = req.ID
 	}
@@ -226,7 +226,7 @@ func (w *Workflow) stageInferencePoll(ctx context.Context, job *generation.Job) 
 			return StageResult{}, terr
 		}
 		_ = w.updateProviderRequest(ctx, job, fetchReq.ID, ProviderRequestSucceeded, job.ProviderJobID, nil)
-		result, err := w.stageArtifactAndCommit(ctx, job, art, token, scope)
+		result, err := w.stageArtifactAndCommit(ctx, job, art, token, scope, fetchReq.ID)
 		if err == nil {
 			result.ProviderRequestID = fetchReq.ID
 		}
@@ -258,7 +258,7 @@ func (w *Workflow) stageInferencePoll(ctx context.Context, job *generation.Job) 
 //
 // token and scope identify the staged-write idempotency claim for sync
 // inference and async fetch. Pass empty strings only for unguarded tests.
-func (w *Workflow) stageArtifactAndCommit(ctx context.Context, job *generation.Job, art generation.Artifact, token, scope string) (StageResult, error) {
+func (w *Workflow) stageArtifactAndCommit(ctx context.Context, job *generation.Job, art generation.Artifact, token, scope, serviceRequestID string) (StageResult, error) {
 	if w.Stager == nil {
 		return StageResult{}, errors.New("workflow: no staged artifact store")
 	}
@@ -293,7 +293,7 @@ func (w *Workflow) stageArtifactAndCommit(ctx context.Context, job *generation.J
 			cost = DefaultCostMicroUSD(job.OutputType)
 		}
 		_ = w.UsageMeter.RecordVendorCost(ctx, providerName(w.Provider), job.ID, cost)
-		_ = w.UsageMeter.RecordServiceCost(ctx, job.ID, cost)
+		_ = w.UsageMeter.RecordServiceCost(ctx, job.ID, ServiceCostSourceProviderSubmit, serviceRequestID, cost)
 	}
 	return result, nil
 }
@@ -371,4 +371,3 @@ func (w *Workflow) updateProviderRequest(ctx context.Context, job *generation.Jo
 	}
 	return w.ProviderRequests.UpdateProviderRequest(ctx, job.TenantID, job.ID, requestID, status, providerJobID, err)
 }
-

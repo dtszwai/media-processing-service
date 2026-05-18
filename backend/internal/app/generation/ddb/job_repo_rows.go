@@ -3,7 +3,9 @@ package ddb
 import (
 	"time"
 
+	auditapp "github.com/dtszwai/media-processing-service/backend/internal/app/audit"
 	genapp "github.com/dtszwai/media-processing-service/backend/internal/app/generation"
+	"github.com/dtszwai/media-processing-service/backend/internal/domain/audit"
 	"github.com/dtszwai/media-processing-service/backend/internal/domain/generation"
 )
 
@@ -113,4 +115,23 @@ func buildAuditItem(job *generation.Job, d genapp.GateDecision, now time.Time) m
 		d.GateVersion = "v1"
 	}
 	return BuildGateAuditRow(d, now)
+}
+
+func buildWorkflowAuditEventRow(job *generation.Job, ev audit.Event, now time.Time) map[string]any {
+	if ev.TenantID == "" {
+		ev.TenantID = job.TenantID
+	}
+	if ev.Entity.Type == "" {
+		ev.Entity.Type = "GENERATION_JOB"
+	}
+	if ev.Entity.ID == "" {
+		ev.Entity.ID = job.ID
+	}
+	if ev.CreatedAt.IsZero() {
+		ev.CreatedAt = now
+	}
+	if ev.ID == "" {
+		ev.ID = ev.EventType + "#" + job.ID
+	}
+	return auditapp.BuildEventRow(ev)
 }

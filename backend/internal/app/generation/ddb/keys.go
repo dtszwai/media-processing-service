@@ -25,6 +25,8 @@ func StageAttemptSK(stage string, version uint64, attempt int) string {
 
 func ProviderRequestSK(requestID string) string { return "PROVIDER_REQUEST#" + requestID }
 
+func PromptEnhancementSK(ref string) string { return "PROMPT_ENHANCEMENT#" + ref }
+
 func GenerationSK() string { return "GENERATION" }
 
 func identitySuffix(jobID string) string {

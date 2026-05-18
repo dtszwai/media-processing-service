@@ -26,9 +26,9 @@ const SimulatedReviewSentinel = "__moderation_review__"
 // PASS. The sentinel-based design makes the fail path observable in tests
 // without coupling the test surface to a probabilistic classifier.
 //
-// The impl lives in app/safety (not infra/moderation) because it makes no
-// outbound calls — adding an HTTP/SDK-backed Moderator later would move the
-// impl into infra and leave this one for tests only.
+// The impl lives in app/safety because moderation policy is an app concern.
+// A remote model-backed path should keep moderation interpretation here and
+// use infra only for low-level provider transport.
 type SimulatedModerator struct {
 	// Now sources the Verdict.CreatedAt timestamp. Left as a function so
 	// tests can pin it without monkey-patching time.Now.

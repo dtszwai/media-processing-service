@@ -55,29 +55,31 @@ const (
 
 // Job is the generation aggregate.
 type Job struct {
-	ID                   string
-	TenantID             string
-	UserID               string
-	MediaID              string
-	ResultAssetID        string
-	OutputType           OutputType
-	Tier                 Tier
-	Status               Status
-	CurrentStage         Stage
-	StageVersion         uint64
-	Provider             string
-	Model                string
-	Resolution           string
-	Seed                 int64
-	VariantCount         int
-	Prompt               string
-	PreparedPrompt       string
-	PreparedPromptHash   string
-	PromptSpecVersion    string
-	GenerationParamsHash string
-	Attempts             int
-	ProviderJobID        string
-	ProviderRequestID    string
+	ID                       string
+	TenantID                 string
+	UserID                   string
+	MediaID                  string
+	ResultAssetID            string
+	OutputType               OutputType
+	Tier                     Tier
+	Status                   Status
+	CurrentStage             Stage
+	StageVersion             uint64
+	Provider                 string
+	Model                    string
+	Resolution               string
+	Seed                     int64
+	VariantCount             int
+	Prompt                   string
+	PreparedPrompt           string
+	PreparedPromptHash       string
+	PromptSpecVersion        string
+	PromptEnhancementApplied bool
+	PromptEnhancementRef     string
+	GenerationParamsHash     string
+	Attempts                 int
+	ProviderJobID            string
+	ProviderRequestID        string
 	// BudgetDate and BudgetMicroUSD are set at COST_RESERVE and carried
 	// through to later stages so the ledger Commit/Release ops have the
 	// correct partition key and amount without re-deriving them.

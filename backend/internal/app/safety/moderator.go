@@ -30,6 +30,7 @@ type ModerateInput struct {
 	TenantID   string
 	JobID      string
 	OutputType generation.OutputType
+	Model      string
 	Prompt     string
 	Artifact   *generation.Artifact
 }
@@ -41,3 +42,13 @@ type ModerateInput struct {
 type Moderator interface {
 	Moderate(ctx context.Context, in ModerateInput) (safety.Verdict, error)
 }
+
+// ServiceCostMeter is satisfied structurally by quota.Meter.
+type ServiceCostMeter interface {
+	RecordServiceCost(ctx context.Context, jobID, source, requestID string, microUSD int64) error
+}
+
+const (
+	ServiceCostSourceInputModeration  = "input-moderation"
+	ServiceCostSourceOutputModeration = "output-moderation"
+)

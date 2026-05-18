@@ -217,6 +217,12 @@ func applyMutations(job *generation.Job, r StageResult) {
 	if r.PromptSpecVersion != "" {
 		job.PromptSpecVersion = r.PromptSpecVersion
 	}
+	if r.PromptEnhancementApplied != nil {
+		job.PromptEnhancementApplied = *r.PromptEnhancementApplied
+	}
+	if r.PromptEnhancementRef != "" {
+		job.PromptEnhancementRef = r.PromptEnhancementRef
+	}
 	if r.GenerationParamsHash != "" {
 		job.GenerationParamsHash = r.GenerationParamsHash
 	}

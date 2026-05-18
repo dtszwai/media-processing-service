@@ -73,7 +73,8 @@ const (
 
 	EventQuotaCapChanged = "quota.cap.changed"
 
-	EventWorkflowJobCancelled = "workflow.job.cancelled"
+	EventWorkflowJobCancelled             = "workflow.job.cancelled"
+	EventWorkflowPromptEnhancementApplied = "workflow.prompt_enhancement.applied"
 
 	EventIdempotencyClaimReset = "idempotency.claim.reset"
 

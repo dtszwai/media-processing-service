@@ -30,7 +30,7 @@ const (
 	reasonStorageBytes        = "STORAGE_BYTES"
 	reasonGeneratedOutput     = "GENERATED_OUTPUT"
 	reasonVendorCost          = "VENDOR_COST"
-	reasonServiceCost         = "SERVICE_COST"
+	reasonServiceCostPrefix   = "SERVICE_COST:"
 )
 
 // Meter is the scope-agnostic call-site entrypoint that pins the cap policy
@@ -89,11 +89,17 @@ func (m *Meter) RecordVendorCost(ctx context.Context, vendor, jobID string, micr
 	return m.reserveCommit(ctx, quota.ScopeVendor, strings.ToUpper(vendor), quota.CostMicroUSD, quota.PeriodDaily(m.now()), "vendor-cost:"+jobID, microUSD, reasonVendorCost, defaultVendorCostCapPerDay)
 }
 
-func (m *Meter) RecordServiceCost(ctx context.Context, jobID string, microUSD int64) error {
+func (m *Meter) RecordServiceCost(ctx context.Context, jobID, source, requestID string, microUSD int64) error {
 	if m == nil || microUSD <= 0 {
 		return nil
 	}
-	return m.reserveCommit(ctx, quota.ScopeService, "service.global", quota.CostMicroUSD, quota.PeriodDaily(m.now()), "service-cost:"+jobID, microUSD, reasonServiceCost, defaultServiceCostCapPerDay)
+	if source == "" {
+		source = "unknown"
+	}
+	if requestID == "" {
+		requestID = "unknown"
+	}
+	return m.reserveCommit(ctx, quota.ScopeService, "service.global", quota.CostMicroUSD, quota.PeriodDaily(m.now()), "service-cost:"+jobID+":"+source+":"+requestID, microUSD, reasonServiceCostPrefix+source, defaultServiceCostCapPerDay)
 }
 
 func (m *Meter) reserveCommit(ctx context.Context, scope quota.ScopeType, scopeID string, metric quota.Metric, period, reservationID string, amount int64, reason string, capN int64) error {

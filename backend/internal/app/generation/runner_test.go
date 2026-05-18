@@ -236,16 +236,17 @@ func unmarshalStageMessage(t *testing.T, body []byte) gen.StageMessage {
 
 func newProductionShapeStageRunner(repo *gen.MemRepo, provider genprovider.Provider) gen.StageRunner {
 	return gen.StageRunner{
-		Repo:          repo,
-		Idem:          gen.NewMemIdempotency(),
-		Sink:          gen.NewMemSink(),
-		LeaseRunner:   gen.NewLeaseScopedRunner(nil),
-		Quota:         runnerNoopQuota{},
-		Ledger:        runnerNoopQuotaLedger{},
-		Sealer:        runnerNoopPromptSealer{},
-		Pickers:       runnerStaticProviderResolver{provider: provider},
-		Moderator:     safetyapp.NewSimulatedModerator(),
-		AuditRecorder: auditapp.NoopRecorder{},
+		Repo:           repo,
+		Idem:           gen.NewMemIdempotency(),
+		Sink:           gen.NewMemSink(),
+		LeaseRunner:    gen.NewLeaseScopedRunner(nil),
+		Quota:          runnerNoopQuota{},
+		Ledger:         runnerNoopQuotaLedger{},
+		Sealer:         runnerNoopPromptSealer{},
+		Pickers:        runnerStaticProviderResolver{provider: provider},
+		Moderator:      safetyapp.NewSimulatedModerator(),
+		PromptEnhancer: &gen.PassthroughEnhancer{},
+		AuditRecorder:  auditapp.NoopRecorder{},
 	}
 }
 

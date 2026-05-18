@@ -22,6 +22,7 @@ const (
 	opFailOutputRecord     kv.TxOpName = "fail_output_record"
 	opAuditGateDecision    kv.TxOpName = "audit_gate_decision"
 	opAuditGateEvent       kv.TxOpName = "audit_gate_event"
+	opWorkflowAuditEvent   kv.TxOpName = "workflow_audit_event"
 )
 
 // AdvanceStageAndEnqueue advances the stage, applies every stage-produced mutation, and writes the outbox row in one transaction. Each op carries an explicit name so cancellation reasons map to behaviour through the name — not the slot index. The plan label "workflow.advance_stage" is the observability hook for the whole transaction.
@@ -97,6 +98,16 @@ func (r *JobRepo) AdvanceStageAndEnqueue(ctx context.Context, job *generation.Jo
 				}},
 			},
 		)
+	}
+
+	for _, ev := range result.AuditEvents {
+		plan.Ops = append(plan.Ops, kv.NamedTxOp{
+			Name: opWorkflowAuditEvent,
+			Op: kv.WriteOp{Put: &kv.PutOp{
+				Item:                buildWorkflowAuditEventRow(job, ev, now),
+				ConditionExpression: "attribute_not_exists(PK) AND attribute_not_exists(SK)",
+			}},
+		})
 	}
 
 	// LedgerOp.Items is contractually [aggregate, ledger] (see genapp.LedgerOp doc). The names attached here are what quotaapp.ClassifyTxnError keys off when DynamoDB cancels a slot.
@@ -351,6 +362,14 @@ func (r *JobRepo) buildAdvanceJob(job *generation.Job, result genapp.StageResult
 	if result.PromptSpecVersion != "" {
 		vals[":psv"] = result.PromptSpecVersion
 		sets = append(sets, "prompt_spec_version = :psv")
+	}
+	if result.PromptEnhancementApplied != nil {
+		vals[":pea"] = *result.PromptEnhancementApplied
+		sets = append(sets, "prompt_enhancement_applied = :pea")
+	}
+	if result.PromptEnhancementRef != "" {
+		vals[":per"] = result.PromptEnhancementRef
+		sets = append(sets, "prompt_enhancement_ref = :per")
 	}
 	if result.GenerationParamsHash != "" {
 		vals[":gph"] = result.GenerationParamsHash
