@@ -2,6 +2,7 @@ package quota
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	genapp "github.com/dtszwai/media-processing-service/backend/internal/app/generation"
@@ -58,6 +59,25 @@ func (a *WorkflowAdapter) Reserve(ctx context.Context, tenantID, period string, 
 		return false, 0, err
 	}
 	return a.repo.StandaloneReserve(ctx, quota.ScopeTenant, tenantID, quota.CostMicroUSD, period, microUSD)
+}
+
+// HasCapacity is the read-only submit-time hint. It never creates a reservoir
+// or mutates available capacity; COST_RESERVE remains the authoritative gate.
+func (a *WorkflowAdapter) HasCapacity(ctx context.Context, tenantID, period string, requiredMicroUSD int64) (bool, int64, error) {
+	if tenantID == "" {
+		return false, 0, errors.New("quota hint: tenant_id required")
+	}
+	res, err := a.repo.Get(ctx, quota.ScopeTenant, tenantID, quota.CostMicroUSD, period)
+	if errors.Is(err, kv.ErrNotFound) {
+		return a.defaultCap >= requiredMicroUSD, a.defaultCap, nil
+	}
+	if err != nil {
+		return false, 0, err
+	}
+	if res.State != quota.ReservoirOpen {
+		return false, res.Available, nil
+	}
+	return res.Available >= requiredMicroUSD, res.Available, nil
 }
 
 // Commit is the test-path standalone commit. Mirrors Reserve.
@@ -154,6 +174,7 @@ func (a *WorkflowAdapter) ledgerReleaseSlot(tenantID, period, jobID string, now 
 // rather than at the call site.
 var _ interface {
 	Ensure(ctx context.Context, tenantID, period string) error
+	HasCapacity(ctx context.Context, tenantID, period string, requiredMicroUSD int64) (bool, int64, error)
 	Reserve(ctx context.Context, tenantID, period string, microUSD int64) (bool, int64, error)
 	Commit(ctx context.Context, tenantID, period string, microUSD int64) error
 	Release(ctx context.Context, tenantID, period string, microUSD int64) error

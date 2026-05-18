@@ -224,6 +224,7 @@ func TestCostReserve_ThreadsSingleQuotaPeriodThroughEnsureAndLedger(t *testing.T
 	job := newRunningJob("gen_quota_period")
 	job.CurrentStage = generation.StageCostReserve
 	job.StageVersion = 1
+	job.CreatedAt = time.Date(2026, 5, 16, 23, 59, 59, 0, time.UTC)
 	if err := repo.CreateJob(ctx, job); err != nil {
 		t.Fatalf("CreateJob: %v", err)
 	}

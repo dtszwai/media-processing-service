@@ -666,7 +666,9 @@ export type CreateGenerationRequest = Message<"mediaservice.generation.v1.Create
 
   /**
    * idempotency_key is required: the server rejects the request when empty.
-   * Replays with the same key return the originally-allocated job + media id.
+   * Replays with the same key return the accepted job. Preflight-rejected
+   * requests do not create a job or sticky idempotency claim, so the same key
+   * may be accepted later after budget is replenished.
    *
    * @generated from field: string idempotency_key = 6;
    */
@@ -727,7 +729,8 @@ export type CreateAudioOverviewRequest = Message<"mediaservice.generation.v1.Cre
   tier?: string;
 
   /**
-   * idempotency_key is required.
+   * idempotency_key is required. It becomes sticky only after the request is
+   * accepted into a job; preflight-rejected requests can retry the same key.
    *
    * @generated from field: string idempotency_key = 3;
    */

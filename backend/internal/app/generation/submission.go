@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -11,6 +12,10 @@ import (
 	"github.com/dtszwai/media-processing-service/backend/internal/app/idempotency"
 	"github.com/dtszwai/media-processing-service/backend/internal/domain/generation"
 	"github.com/dtszwai/media-processing-service/backend/internal/domain/media"
+	"github.com/dtszwai/media-processing-service/backend/internal/domain/quota"
+	"github.com/dtszwai/media-processing-service/backend/internal/infra/obs"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 )
 
 // JobSubmitter brackets the cross-table submit transaction. The DDB impl
@@ -28,6 +33,14 @@ type IdempotencyGetter interface {
 	GetResultWithHash(ctx context.Context, scope string) (ref string, inputHash string, status idempotency.Status, err error)
 }
 
+type BudgetCapacityHint interface {
+	HasCapacity(ctx context.Context, tenantID, period string, requiredMicroUSD int64) (ok bool, availableMicroUSD int64, err error)
+}
+
+type AcceptedJobReader interface {
+	GetJob(ctx context.Context, tenantID, jobID string) (*generation.Job, error)
+}
+
 // Sentinel errors the transport maps to Connect codes. Keep this list small —
 // new categories should only appear when transport must distinguish them.
 var (
@@ -36,6 +49,7 @@ var (
 	ErrPriorSubmitFailed       = errors.New("submission: prior submit failed")
 	ErrSubmissionMalformed     = errors.New("submission: stored idempotency result malformed")
 	ErrSubmissionMisconfigured = errors.New("submission: misconfigured")
+	ErrBudgetInsufficient      = errors.New("submission: tenant daily budget insufficient")
 )
 
 // SubmissionService creates a generation job: it allocates ids, stakes the
@@ -44,10 +58,13 @@ var (
 // The transport hands it a principal-aware SubmitCommand; the service owns
 // every cross-aggregate step including replay-on-conflict.
 type SubmissionService struct {
-	Submitter   JobSubmitter
-	Idempotency IdempotencyGetter
-	Now         func() time.Time
-	NewID       func() string
+	Submitter    JobSubmitter
+	ReplayReader AcceptedJobReader
+	Idempotency  IdempotencyGetter
+	CapacityHint BudgetCapacityHint
+	Instruments  *obs.Instruments
+	Now          func() time.Time
+	NewID        func() string
 }
 
 // SubmitCommand is the principal-aware input the transport hands to the
@@ -74,6 +91,8 @@ type SubmitResult struct {
 
 const submitVariantCount = 1
 
+var noopSubmissionInstruments = obs.Noop()
+
 // Create runs the submit pipeline in its load-bearing order: replay-check →
 // allocate ids → build aggregates → submit → replay-on-conflict. Idempotency
 // conflicts surface as typed errors the transport maps to Connect codes.
@@ -93,6 +112,10 @@ func (s *SubmissionService) Create(ctx context.Context, cmd SubmitCommand) (Subm
 		return SubmitResult{}, err
 	} else if replayed {
 		return SubmitResult{Job: replayJob, Replay: true}, nil
+	}
+
+	if err := s.preflightBudget(ctx, cmd, now); err != nil {
+		return SubmitResult{}, err
 	}
 
 	mediaID := "med_" + s.NewID()
@@ -190,6 +213,13 @@ func (s *SubmissionService) replay(ctx context.Context, cmd SubmitCommand, scope
 		if len(parts) != 2 {
 			return generation.Job{}, false, ErrSubmissionMalformed
 		}
+		if s.ReplayReader != nil {
+			job, err := s.ReplayReader.GetJob(ctx, cmd.TenantID, parts[0])
+			if err != nil {
+				return generation.Job{}, false, fmt.Errorf("%w: replay job %s: %v", ErrSubmissionMalformed, parts[0], err)
+			}
+			return *job, true, nil
+		}
 		return generation.Job{
 			ID:           parts[0],
 			TenantID:     cmd.TenantID,
@@ -210,11 +240,68 @@ func (s *SubmissionService) replay(ctx context.Context, cmd SubmitCommand, scope
 	return generation.Job{}, false, nil
 }
 
+func (s *SubmissionService) preflightBudget(ctx context.Context, cmd SubmitCommand, now time.Time) error {
+	if s.CapacityHint == nil {
+		return nil
+	}
+	required := RequiredBudgetMicroUSD(BudgetEstimateFromSubmit(cmd))
+	period := quota.PeriodDaily(now.UTC())
+	ok, available, err := s.CapacityHint.HasCapacity(ctx, cmd.TenantID, period, required)
+	if err != nil {
+		s.emitBudgetPreflight(ctx, "error_fail_open", cmd)
+		slog.WarnContext(ctx, "generation budget preflight failed open",
+			"tenant_id", cmd.TenantID,
+			"output_type", string(cmd.OutputType),
+			"tier", string(cmd.Tier),
+			"required_micro_usd", required,
+			"err", err.Error(),
+		)
+		return nil
+	}
+	if !ok {
+		s.emitBudgetPreflight(ctx, "rejected", cmd)
+		s.emitSubmitRejected(ctx, "BUDGET_INSUFFICIENT", cmd)
+		slog.InfoContext(ctx, "generation submit rejected by budget preflight",
+			"tenant_id", cmd.TenantID,
+			"output_type", string(cmd.OutputType),
+			"tier", string(cmd.Tier),
+			"required_micro_usd", required,
+			"available_micro_usd", available,
+		)
+		return ErrBudgetInsufficient
+	}
+	s.emitBudgetPreflight(ctx, "passed", cmd)
+	return nil
+}
+
+func (s *SubmissionService) emitBudgetPreflight(ctx context.Context, outcome string, cmd SubmitCommand) {
+	s.instruments().BudgetPreflight.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("outcome", outcome),
+		attribute.String("output_type", string(cmd.OutputType)),
+		attribute.String("tier", string(cmd.Tier)),
+	))
+}
+
+func (s *SubmissionService) emitSubmitRejected(ctx context.Context, reason string, cmd SubmitCommand) {
+	s.instruments().SubmitRejected.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("reason", reason),
+		attribute.String("output_type", string(cmd.OutputType)),
+		attribute.String("tier", string(cmd.Tier)),
+	))
+}
+
 func (s *SubmissionService) now() time.Time {
 	if s.Now == nil {
 		return time.Now().UTC()
 	}
 	return s.Now()
+}
+
+func (s *SubmissionService) instruments() *obs.Instruments {
+	if s.Instruments != nil {
+		return s.Instruments
+	}
+	return noopSubmissionInstruments
 }
 
 func submitScope(tenantID, idempotencyKey string) string {

@@ -59,6 +59,7 @@ func (w *Workflow) Run(ctx context.Context, jobID string) error {
 			}
 			return fmt.Errorf("workflow: advance stage: %w", err)
 		}
+		w.emitAdvanceSuccess(ctx, job, result)
 		applyMutations(job, result)
 		if result.IsTerminalComplete() {
 			w.emitTerminal(ctx, generation.StatusComplete, "", outputType)
@@ -117,6 +118,7 @@ func (w *Workflow) AdvanceOneStage(ctx context.Context, job *generation.Job) err
 		}
 		return err
 	}
+	w.emitAdvanceSuccess(ctx, job, result)
 	switch result.NextStage {
 	case StageTerminal:
 		if result.IsTerminalFailed() {
@@ -192,8 +194,15 @@ func (w *Workflow) handleAdvanceTerminalError(ctx context.Context, job *generati
 	if commitErr := w.Repo.AdvanceStageAndEnqueue(ctx, job, w.terminalFailResult(ctx, job, classified)); commitErr != nil {
 		return true, fmt.Errorf("workflow: persist terminal %s after advance failure: %w", classified.Code, commitErr)
 	}
+	w.emitCostReserve(ctx, "budget_exhausted", job)
 	w.emitTerminal(ctx, generation.StatusFailed, classified.Code, outputType)
 	return true, nil
+}
+
+func (w *Workflow) emitAdvanceSuccess(ctx context.Context, job *generation.Job, result StageResult) {
+	if job.CurrentStage == generation.StageCostReserve && result.NextStage == generation.StagePromptPrepare {
+		w.emitCostReserve(ctx, "reserved", job)
+	}
 }
 
 func applyMutations(job *generation.Job, r StageResult) {

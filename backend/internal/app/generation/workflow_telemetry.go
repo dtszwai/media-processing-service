@@ -142,6 +142,17 @@ func (w *Workflow) emitTerminal(ctx context.Context, status generation.Status, e
 	))
 }
 
+func (w *Workflow) emitCostReserve(ctx context.Context, outcome string, job *generation.Job) {
+	if w.Instruments == nil {
+		return
+	}
+	w.Instruments.CostReserve.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("outcome", outcome),
+		attribute.String("output_type", string(job.OutputType)),
+		attribute.String("tier", string(job.Tier)),
+	))
+}
+
 // providerName extracts the vendor identifier for telemetry. Adapters
 // implement genprovider.Named to advertise their canonical name; an
 // adapter that omits the method shows up as "unknown" in dashboards rather

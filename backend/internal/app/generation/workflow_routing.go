@@ -35,7 +35,11 @@ func (w *Workflow) attachLedgerRelease(ctx context.Context, job *generation.Job,
 	// Fallback: no ledger wired; use standalone aggregate Release so the
 	// counter is not stranded.
 	if w.QuotaReserver != nil {
-		_ = w.QuotaReserver.Release(ctx, job.TenantID, job.BudgetDate, DefaultCostMicroUSD(job.OutputType))
+		cost := job.BudgetMicroUSD
+		if cost == 0 {
+			cost = RequiredBudgetMicroUSD(BudgetEstimateFromJob(*job))
+		}
+		_ = w.QuotaReserver.Release(ctx, job.TenantID, job.BudgetDate, cost)
 	}
 }
 

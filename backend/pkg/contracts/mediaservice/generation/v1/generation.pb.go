@@ -1280,7 +1280,9 @@ type CreateGenerationRequest struct {
 	Tier       *string                `protobuf:"bytes,4,opt,name=tier,proto3,oneof" json:"tier,omitempty"`
 	Seed       *int32                 `protobuf:"varint,5,opt,name=seed,proto3,oneof" json:"seed,omitempty"`
 	// idempotency_key is required: the server rejects the request when empty.
-	// Replays with the same key return the originally-allocated job + media id.
+	// Replays with the same key return the accepted job. Preflight-rejected
+	// requests do not create a job or sticky idempotency claim, so the same key
+	// may be accepted later after budget is replenished.
 	IdempotencyKey string      `protobuf:"bytes,6,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	OutputType     *OutputType `protobuf:"varint,7,opt,name=output_type,json=outputType,proto3,enum=mediaservice.generation.v1.OutputType,oneof" json:"output_type,omitempty"`
 	Provider       string      `protobuf:"bytes,8,opt,name=provider,proto3" json:"provider,omitempty"`
@@ -1430,7 +1432,8 @@ type CreateAudioOverviewRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Topic string                 `protobuf:"bytes,1,opt,name=topic,proto3" json:"topic,omitempty"`
 	Tier  *string                `protobuf:"bytes,2,opt,name=tier,proto3,oneof" json:"tier,omitempty"`
-	// idempotency_key is required.
+	// idempotency_key is required. It becomes sticky only after the request is
+	// accepted into a job; preflight-rejected requests can retry the same key.
 	IdempotencyKey string  `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	Model          *string `protobuf:"bytes,4,opt,name=model,proto3,oneof" json:"model,omitempty"`
 	Provider       string  `protobuf:"bytes,5,opt,name=provider,proto3" json:"provider,omitempty"`

@@ -55,6 +55,8 @@ func mapSubmissionError(err error) error {
 		return connect.NewError(connect.CodeFailedPrecondition, err)
 	case errors.Is(err, generationapp.ErrSubmitInFlight):
 		return connect.NewError(connect.CodeAborted, err)
+	case errors.Is(err, generationapp.ErrBudgetInsufficient):
+		return connect.NewError(connect.CodeResourceExhausted, errors.New("BUDGET_INSUFFICIENT: tenant daily budget insufficient; job was not created"))
 	case errors.Is(err, generationapp.ErrPriorSubmitFailed),
 		errors.Is(err, generationapp.ErrSubmissionMalformed):
 		return connect.NewError(connect.CodeFailedPrecondition, err)

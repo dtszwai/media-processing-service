@@ -14,11 +14,12 @@ import (
 	"github.com/dtszwai/media-processing-service/backend/internal/domain/safety"
 )
 
-// stageInputModeration is the FSM's first stage. Running BEFORE BudgetReserve
-// is load-bearing: a FAIL or REVIEW verdict here MUST NOT have reserved
-// tenant budget, because the provider was never going to be called. Adding
-// this gate after cost reservation would leak budget to attackers who fire
-// disallowed prompts to drain a tenant's daily cap.
+// stageInputModeration is the accepted-job FSM's first stage. Running BEFORE
+// BudgetReserve is load-bearing: a FAIL or REVIEW verdict here MUST NOT have
+// reserved tenant budget, because the provider was never going to be called.
+// A pre-submit capacity hint may reject unaffordable requests before job
+// creation, but it remains read-only; COST_RESERVE is the authoritative budget
+// reservation gate for accepted jobs.
 //
 // The handler is idempotent at the stage level via a stable claim keyed on
 // the prompt+model input hash. A replayed claim simply re-emits the same

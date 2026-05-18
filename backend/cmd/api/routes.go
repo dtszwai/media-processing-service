@@ -54,9 +54,12 @@ func registerConnectAPIs(mux *http.ServeMux, a *bootstrap.AWS, jwtSecret []byte)
 	mediaSvc.Derive = a.MediaRepo
 	presigner := &resultPresigner{svc: mediaSvc}
 	submissions := &generationapp.SubmissionService{
-		Submitter:   a.JobRepo,
-		Idempotency: a.Idempotency,
-		NewID:       randid.New,
+		Submitter:    a.JobRepo,
+		ReplayReader: a.JobRepo,
+		Idempotency:  a.Idempotency,
+		CapacityHint: a.QuotaAdapter,
+		Instruments:  a.Instruments,
+		NewID:        randid.New,
 	}
 	generationServer := connectgeneration.NewServer(a.JobRepo, submissions, presigner, a.AnalyticsTracker)
 	analyticsServer := connectanalytics.NewServer(a.AnalyticsReader)

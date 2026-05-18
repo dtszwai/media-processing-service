@@ -36,6 +36,9 @@ type Instruments struct {
 	WorkflowStageCompleted    metric.Int64Counter
 	WorkflowTerminal          metric.Int64Counter
 	PromptEnhancementAttempts metric.Int64Counter
+	BudgetPreflight           metric.Int64Counter
+	SubmitRejected            metric.Int64Counter
+	CostReserve               metric.Int64Counter
 
 	// Workflow latency. ms keeps the unit cardinality across providers/work
 	// classes consistent — a histogram of seconds would lose resolution on
@@ -132,6 +135,30 @@ func NewInstruments(meter metric.Meter) (*Instruments, error) {
 		metric.WithUnit("1"),
 	); err != nil {
 		return nil, fmt.Errorf("obs: workflow.prompt_enhancement_attempts_total: %w", err)
+	}
+
+	if i.BudgetPreflight, err = meter.Int64Counter(
+		"generation.budget_preflight_total",
+		metric.WithDescription("Generation submit budget preflight decisions, by outcome."),
+		metric.WithUnit("1"),
+	); err != nil {
+		return nil, fmt.Errorf("obs: generation.budget_preflight_total: %w", err)
+	}
+
+	if i.SubmitRejected, err = meter.Int64Counter(
+		"generation.submit_rejected_total",
+		metric.WithDescription("Generation submits rejected before job creation, by reason."),
+		metric.WithUnit("1"),
+	); err != nil {
+		return nil, fmt.Errorf("obs: generation.submit_rejected_total: %w", err)
+	}
+
+	if i.CostReserve, err = meter.Int64Counter(
+		"generation.cost_reserve_total",
+		metric.WithDescription("Authoritative generation cost reserve outcomes."),
+		metric.WithUnit("1"),
+	); err != nil {
+		return nil, fmt.Errorf("obs: generation.cost_reserve_total: %w", err)
 	}
 
 	// Int64 latency captures `time.Since(...).Milliseconds()` cleanly without

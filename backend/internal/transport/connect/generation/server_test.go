@@ -2,10 +2,12 @@ package generation
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	connect "connectrpc.com/connect"
 
+	generationapp "github.com/dtszwai/media-processing-service/backend/internal/app/generation"
 	"github.com/dtszwai/media-processing-service/backend/internal/app/idempotency"
 	domaingen "github.com/dtszwai/media-processing-service/backend/internal/domain/generation"
 	"github.com/dtszwai/media-processing-service/backend/internal/util/jwtauth"
@@ -56,4 +58,23 @@ func TestSubmitRejectsEmptyModel(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("expected InvalidArgument, got %s: %v", connect.CodeOf(err), err)
 	}
+}
+
+func TestMapSubmissionBudgetInsufficient(t *testing.T) {
+	err := mapSubmissionError(generationapp.ErrBudgetInsufficient)
+	if connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatalf("code = %s, want ResourceExhausted: %v", connect.CodeOf(err), err)
+	}
+	if got := err.Error(); got == "" || !containsAll(got, "BUDGET_INSUFFICIENT", "job was not created") {
+		t.Fatalf("error message = %q, want budget reason and no-job-created text", got)
+	}
+}
+
+func containsAll(s string, parts ...string) bool {
+	for _, part := range parts {
+		if !strings.Contains(s, part) {
+			return false
+		}
+	}
+	return true
 }

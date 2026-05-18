@@ -197,7 +197,9 @@ message CreateGenerationRequest {
   optional string tier = 4;
   optional int32 seed = 5;
   // idempotency_key is required: the server rejects the request when empty.
-  // Replays with the same key return the originally-allocated job + media id.
+  // Replays with the same key return the accepted job. Preflight-rejected
+  // requests do not create a job or sticky idempotency claim, so the same key
+  // may be accepted later after budget is replenished.
   string idempotency_key = 6;
   optional OutputType output_type = 7;
   string provider = 8;
@@ -211,7 +213,8 @@ message CreateGenerationResponse {
 message CreateAudioOverviewRequest {
   string topic = 1;
   optional string tier = 2;
-  // idempotency_key is required.
+  // idempotency_key is required. It becomes sticky only after the request is
+  // accepted into a job; preflight-rejected requests can retry the same key.
   string idempotency_key = 3;
   optional string model = 4;
   string provider = 5;

@@ -286,6 +286,17 @@ func fillStructFields(row map[string]any, out any) {
 		Key  string
 	}{
 		{"Amount", "amount"},
+		{"Available", "available"},
+		{"Cap", "cap"},
+		{"Committed", "committed"},
+		{"Metric", "metric"},
+		{"Period", "period"},
+		{"PolicyID", "policy_id"},
+		{"PolicyVersion", "policy_version"},
+		{"Released", "released"},
+		{"Reserved", "reserved"},
+		{"ScopeID", "scope_id"},
+		{"ScopeType", "scope_type"},
 		{"State", "state"},
 	} {
 		f := elem.FieldByName(field.Name)
@@ -373,6 +384,93 @@ func TestReserve_AtomicDecrement_AndLedgerLanding(t *testing.T) {
 	}
 	if got := countSKPrefix(fkv, "LEDGER#"); got != 1 {
 		t.Fatalf("LEDGER rows = %d, want 1", got)
+	}
+}
+
+func TestWorkflowAdapterHasCapacityUsesDefaultCapWhenReservoirMissing(t *testing.T) {
+	fkv := newFakeKV()
+	adapter := quotaapp.NewWorkflowAdapter(quotaapp.NewRepo(fkv), 4_000)
+
+	ok, available, err := adapter.HasCapacity(context.Background(), "ten-1", "20260518", 4_000)
+	if err != nil {
+		t.Fatalf("HasCapacity missing row: %v", err)
+	}
+	if !ok || available != 4_000 {
+		t.Fatalf("HasCapacity missing row ok/available = %v/%d, want true/4000", ok, available)
+	}
+
+	ok, available, err = adapter.HasCapacity(context.Background(), "ten-1", "20260518", 4_001)
+	if err != nil {
+		t.Fatalf("HasCapacity missing row over cap: %v", err)
+	}
+	if ok || available != 4_000 {
+		t.Fatalf("HasCapacity missing row over cap ok/available = %v/%d, want false/4000", ok, available)
+	}
+}
+
+func TestWorkflowAdapterHasCapacityReadsOpenReservoirAvailability(t *testing.T) {
+	fkv := newFakeKV()
+	r := quotaapp.NewRepo(fkv)
+	r.Now = fixedClock(time.Date(2026, 5, 18, 9, 0, 0, 0, time.UTC))
+	adapter := quotaapp.NewWorkflowAdapter(r, 10_000)
+	ctx := context.Background()
+
+	if err := r.Ensure(ctx, quota.ScopeTenant, "ten-1", quota.CostMicroUSD, "20260518", 5_000, "pol-1", 1); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	if _, _, err := adapter.Reserve(ctx, "ten-1", "20260518", 2_000); err != nil {
+		t.Fatalf("Reserve: %v", err)
+	}
+
+	ok, available, err := adapter.HasCapacity(ctx, "ten-1", "20260518", 4_000)
+	if err != nil {
+		t.Fatalf("HasCapacity: %v", err)
+	}
+	if ok || available != 3_000 {
+		t.Fatalf("HasCapacity ok/available = %v/%d, want false/3000", ok, available)
+	}
+
+	ok, available, err = adapter.HasCapacity(ctx, "ten-1", "20260518", 3_000)
+	if err != nil {
+		t.Fatalf("HasCapacity exact: %v", err)
+	}
+	if !ok || available != 3_000 {
+		t.Fatalf("HasCapacity exact ok/available = %v/%d, want true/3000", ok, available)
+	}
+}
+
+func TestWorkflowAdapterHasCapacityRejectsNonOpenReservoir(t *testing.T) {
+	fkv := newFakeKV()
+	r := quotaapp.NewRepo(fkv)
+	r.Now = fixedClock(time.Date(2026, 5, 18, 9, 0, 0, 0, time.UTC))
+	adapter := quotaapp.NewWorkflowAdapter(r, 10_000)
+	ctx := context.Background()
+
+	if err := r.Ensure(ctx, quota.ScopeTenant, "ten-1", quota.CostMicroUSD, "20260518", 5_000, "pol-1", 1); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	pk := quotaapp.ReservoirPK(quota.ScopeTenant, "ten-1", quota.CostMicroUSD, "20260518")
+	fkv.mu.Lock()
+	fkv.rows[pk+"\x00"+quotaapp.AggSK]["state"] = string(quota.ReservoirClosed)
+	fkv.mu.Unlock()
+
+	ok, available, err := adapter.HasCapacity(ctx, "ten-1", "20260518", 1)
+	if err != nil {
+		t.Fatalf("HasCapacity closed: %v", err)
+	}
+	if ok || available != 5_000 {
+		t.Fatalf("HasCapacity closed ok/available = %v/%d, want false/5000", ok, available)
+	}
+}
+
+func TestWorkflowAdapterHasCapacityRejectsEmptyTenant(t *testing.T) {
+	adapter := quotaapp.NewWorkflowAdapter(quotaapp.NewRepo(newFakeKV()), 4_000)
+	ok, available, err := adapter.HasCapacity(context.Background(), "", "20260518", 1)
+	if err == nil {
+		t.Fatal("HasCapacity empty tenant err = nil, want error")
+	}
+	if ok || available != 0 {
+		t.Fatalf("HasCapacity empty tenant ok/available = %v/%d, want false/0", ok, available)
 	}
 }
 

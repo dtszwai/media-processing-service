@@ -290,7 +290,7 @@ func (w *Workflow) stageArtifactAndCommit(ctx context.Context, job *generation.J
 	if w.UsageMeter != nil {
 		cost := job.BudgetMicroUSD
 		if cost == 0 {
-			cost = DefaultCostMicroUSD(job.OutputType)
+			cost = RequiredBudgetMicroUSD(BudgetEstimateFromJob(*job))
 		}
 		_ = w.UsageMeter.RecordVendorCost(ctx, providerName(w.Provider), job.ID, cost)
 		_ = w.UsageMeter.RecordServiceCost(ctx, job.ID, ServiceCostSourceProviderSubmit, serviceRequestID, cost)
@@ -329,7 +329,11 @@ func (w *Workflow) providerSuccessResult(ctx context.Context, job *generation.Jo
 		return result, nil
 	}
 	if w.QuotaReserver != nil {
-		if cerr := w.QuotaReserver.Commit(ctx, job.TenantID, job.BudgetDate, DefaultCostMicroUSD(job.OutputType)); cerr != nil {
+		cost := job.BudgetMicroUSD
+		if cost == 0 {
+			cost = RequiredBudgetMicroUSD(BudgetEstimateFromJob(*job))
+		}
+		if cerr := w.QuotaReserver.Commit(ctx, job.TenantID, job.BudgetDate, cost); cerr != nil {
 			return StageResult{}, generation.Terminal("BUDGET_COMMIT_FAILED", cerr.Error())
 		}
 	}

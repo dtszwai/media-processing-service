@@ -13,8 +13,12 @@ import (
 // AdvanceStageAndEnqueue), so the standalone Reserve call is only used
 // when the ledger is absent (test path).
 func (w *Workflow) stageQuotaReserve(ctx context.Context, job *generation.Job) (StageResult, error) {
-	cost := DefaultCostMicroUSD(job.OutputType)
-	period := quota.PeriodDaily(w.now())
+	cost := RequiredBudgetMicroUSD(BudgetEstimateFromJob(*job))
+	periodAnchor := job.CreatedAt
+	if periodAnchor.IsZero() {
+		periodAnchor = w.now()
+	}
+	period := quota.PeriodDaily(periodAnchor.UTC())
 	if w.QuotaReserver != nil {
 		if w.QuotaLedger == nil {
 			// Reserve bootstraps the aggregate row itself and gates on
@@ -24,6 +28,7 @@ func (w *Workflow) stageQuotaReserve(ctx context.Context, job *generation.Job) (
 				return StageResult{}, err
 			}
 			if !granted {
+				w.emitCostReserve(ctx, "budget_exhausted", job)
 				return StageResult{}, generation.Terminal("BUDGET_EXHAUSTED", "tenant daily budget exhausted; provider not called")
 			}
 		} else {
