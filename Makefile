@@ -36,6 +36,7 @@ help:
 	@echo "Backend gate (CI parity):"
 	@echo "  build          - go build ./... in backend/"
 	@echo "  test           - go test ./... in backend/"
+	@echo "  test-all       - test plus real provider E2Es"
 	@echo
 	@echo "Provider auth (run on host; container reads via bind-mount):"
 	@echo "  notebooklm-import - refresh ~/.notebooklm/state.json from Chrome cookies (quit Chrome first)"
@@ -49,6 +50,12 @@ build:
 .PHONY: test
 test:
 	$(GO) -C backend test ./...
+
+.PHONY: test-all
+test-all:
+	$(MAKE) test
+	$(MAKE) notebooklm-import
+	TEST_INTEGRATION=1 TEST_CODEX_REAL=1 TEST_NOTEBOOKLM_REAL=1 CODEX_TIMEOUT="$${CODEX_TIMEOUT:-10m}" $(GO) -C backend test -tags=integration ./internal/app/generation -run '^TestRealProviderE2E_' -count=1 -timeout=20m
 
 .PHONY: up
 up: proto

@@ -42,6 +42,32 @@ func TestArtifactSinkSameAssetRetryDoesNotConflictOnVariantRow(t *testing.T) {
 	if _, err := sink.StoreFinalArtifact(context.Background(), job, art); err != nil {
 		t.Fatalf("first StoreFinalArtifact: %v", err)
 	}
+	if blob.lastPut.Key != "tenant-final/media-final/assets/asset-final.png" {
+		t.Fatalf("storage key = %q, want tenant-final/media-final/assets/asset-final.png", blob.lastPut.Key)
+	}
+	if string(blob.lastBody) != "final-bytes" {
+		t.Fatalf("stored body = %q, want final-bytes", string(blob.lastBody))
+	}
+	if blob.lastPut.ContentType != "image/png" {
+		t.Fatalf("content type = %q, want image/png", blob.lastPut.ContentType)
+	}
+	if blob.lastPut.Tags["tenant_id"] != "tenant-final" || blob.lastPut.Tags["media_id"] != "media-final" || blob.lastPut.Tags["asset_id"] != "asset-final" || blob.lastPut.Tags["origin"] != "generation" {
+		t.Fatalf("storage tags = %#v, want tenant/media/asset generation tags", blob.lastPut.Tags)
+	}
+	if blob.lastPut.Metadata["disclosure"] != "AI_GENERATED_DISCLOSURE" || blob.lastPut.Metadata["visible_watermark"] != "wm" {
+		t.Fatalf("storage metadata = %#v, want disclosure + watermark", blob.lastPut.Metadata)
+	}
+	if len(fkv.updates) != 3 {
+		t.Fatalf("update ops = %d, want asset/generation/output updates", len(fkv.updates))
+	}
+	assetUpdate := fkv.updates[0]
+	if assetUpdate.ExpressionAttributeValues[":key"] != "tenant-final/media-final/assets/asset-final.png" {
+		t.Fatalf("asset storage key update = %v", assetUpdate.ExpressionAttributeValues[":key"])
+	}
+	if assetUpdate.ExpressionAttributeValues[":prov"].(map[string]any)["provider"] != "" || assetUpdate.ExpressionAttributeValues[":prov"].(map[string]any)["model"] != "model-v1" {
+		t.Fatalf("asset provenance = %#v, want provider fallback model-v1", assetUpdate.ExpressionAttributeValues[":prov"])
+	}
+
 	if _, err := sink.StoreFinalArtifact(context.Background(), job, art); err != nil {
 		t.Fatalf("retry StoreFinalArtifact: %v", err)
 	}
@@ -51,7 +77,8 @@ func TestArtifactSinkSameAssetRetryDoesNotConflictOnVariantRow(t *testing.T) {
 }
 
 type artifactSinkKV struct {
-	rows map[string]map[string]any
+	rows    map[string]map[string]any
+	updates []kv.UpdateOp
 }
 
 func (f *artifactSinkKV) Put(context.Context, kv.Item, kv.PutOptions) error {
@@ -82,6 +109,9 @@ func (f *artifactSinkKV) TransactWrite(_ context.Context, ops []kv.WriteOp) erro
 	reasons := make([]kv.ItemCancelReason, len(ops))
 	for i, op := range ops {
 		if op.Put == nil {
+			if op.Update != nil {
+				f.updates = append(f.updates, *op.Update)
+			}
 			reasons[i] = kv.ItemCancelReason{Code: "None"}
 			continue
 		}
@@ -114,13 +144,18 @@ func cloneArtifactSinkRow(in map[string]any) map[string]any {
 }
 
 type artifactSinkStorage struct {
-	puts int
+	puts     int
+	lastPut  storage.PutInput
+	lastBody []byte
 }
 
 func (s *artifactSinkStorage) Put(_ context.Context, in storage.PutInput) (storage.PutOutput, error) {
 	s.puts++
+	s.lastPut = in
 	if in.Body != nil {
-		_, _ = io.Copy(io.Discard, in.Body)
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, in.Body)
+		s.lastBody = buf.Bytes()
 	}
 	return storage.PutOutput{
 		Key:       in.Key,
