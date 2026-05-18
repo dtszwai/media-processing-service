@@ -37,6 +37,9 @@ help:
 	@echo "  build          - go build ./... in backend/"
 	@echo "  test           - go test ./... in backend/"
 	@echo "  test-all       - test plus real provider E2Es"
+	@echo "  smoke-local    - run local compose generation smoke test"
+	@echo "  smoke-local-prompt-enhancer - run smoke test expecting simulated prompt enhancer"
+	@echo "  smoke-local-clean - remove local smoke rows and objects"
 	@echo
 	@echo "Provider auth (run on host; container reads via bind-mount):"
 	@echo "  notebooklm-import - refresh ~/.notebooklm/state.json from Chrome cookies (quit Chrome first)"
@@ -56,6 +59,18 @@ test-all:
 	$(MAKE) test
 	$(MAKE) notebooklm-import
 	TEST_INTEGRATION=1 TEST_CODEX_REAL=1 TEST_NOTEBOOKLM_REAL=1 CODEX_TIMEOUT="$${CODEX_TIMEOUT:-10m}" $(GO) -C backend test -tags=integration ./internal/app/generation -run '^TestRealProviderE2E_' -count=1 -timeout=20m
+
+.PHONY: smoke-local
+smoke-local:
+	$(GO) -C backend test -tags=smoke ./internal/smoke -run '^TestGenerationLocalSmoke$$' -count=1 -timeout=3m
+
+.PHONY: smoke-local-prompt-enhancer
+smoke-local-prompt-enhancer:
+	SMOKE_EXPECT_PROMPT_ENHANCER=simulated $(GO) -C backend test -tags=smoke ./internal/smoke -run '^TestGenerationLocalSmoke$$' -count=1 -timeout=3m
+
+.PHONY: smoke-local-clean
+smoke-local-clean:
+	$(GO) -C backend test -tags=smoke ./internal/smoke -run '^TestGenerationLocalCleanup$$' -count=1 -timeout=2m
 
 .PHONY: up
 up: proto

@@ -96,8 +96,8 @@ services:
       # handler — production deploys MUST leave this unset.
       LOCAL_ONLY: "true"
       LOKI_URL: "http://grafana:3100"
-      LOCAL_TENANT_ID: tenant_local
-      LOCAL_USER_ID: user_local
+      LOCAL_TENANT_ID: ${LOCAL_TENANT_ID:-tenant_local}
+      LOCAL_USER_ID: ${LOCAL_USER_ID:-user_local}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9000/healthz"]
       interval: 5s

@@ -1,0 +1,7 @@
+services:
+  api:
+    environment:
+      PROMPT_ENHANCER_PROVIDER: simulated
+  generation-worker:
+    environment:
+      PROMPT_ENHANCER_PROVIDER: simulated
