@@ -3,6 +3,7 @@ package generation
 import (
 	"context"
 	"errors"
+	"maps"
 	"sync"
 	"time"
 
@@ -79,57 +80,20 @@ func (r *MemRepo) AdvanceStageAndEnqueue(_ context.Context, job *generation.Job,
 	if persisted.StageVersion != job.StageVersion {
 		return errors.New("memrepo: stage version condition failed")
 	}
+	if result.NextStage == StageTerminal && result.TerminalError == nil && result.CompletedAt == nil {
+		return errors.New("memrepo: terminal complete requires CompletedAt")
+	}
+
 	now := time.Now().UTC()
 	r.recordAttemptLocked(job, result, now)
-	persisted.CurrentStage = result.NextStage
-	persisted.StageVersion++
+
+	applyMutations(persisted, result)
 	persisted.UpdatedAt = now
-	if result.AttemptsDelta != 0 {
-		persisted.Attempts += result.AttemptsDelta
-	}
-	if result.PreparedPromptHash != "" {
-		persisted.PreparedPrompt = result.PreparedPrompt
-		persisted.PreparedPromptHash = result.PreparedPromptHash
-		persisted.PromptSpecVersion = result.PromptSpecVersion
-		persisted.GenerationParamsHash = result.GenerationParamsHash
-	}
-	if result.PromptEnhancementApplied != nil {
-		persisted.PromptEnhancementApplied = *result.PromptEnhancementApplied
-	}
-	if result.PromptEnhancementRef != "" {
-		persisted.PromptEnhancementRef = result.PromptEnhancementRef
-	}
-	if result.ProviderRequestID != "" {
-		persisted.ProviderRequestID = result.ProviderRequestID
-	}
-	if result.ProviderJobID != "" {
-		persisted.ProviderJobID = result.ProviderJobID
-	}
-	if result.BudgetDate != "" {
-		persisted.BudgetDate = result.BudgetDate
-	}
-	if result.BudgetMicroUSD != 0 {
-		persisted.BudgetMicroUSD = result.BudgetMicroUSD
-	}
-	if result.ResultAssetID != "" {
-		persisted.ResultAssetID = result.ResultAssetID
-	}
-	switch result.NextStage {
-	case StageTerminal:
-		if result.TerminalError != nil {
-			persisted.Status = generation.StatusFailed
-			persisted.Error = result.TerminalError
-			break
-		}
-		persisted.Status = generation.StatusComplete
-		now := time.Now().UTC()
-		persisted.CompletedAt = &now
-		if result.CompletedAt != nil {
-			persisted.CompletedAt = result.CompletedAt
-		}
-	default:
+
+	if result.NextStage != StageTerminal {
 		persisted.Status = generation.StatusRunning
 	}
+
 	if r.OutboxObserver != nil && len(result.OutboxBody) > 0 {
 		r.OutboxObserver(result.NextStage, result.OutboxBody)
 	}
@@ -399,4 +363,164 @@ func (s *MemSink) StoreFinalArtifact(_ context.Context, _ generation.Job, art ge
 		id = "ast-mem"
 	}
 	return id, nil
+}
+
+// MemStaging is the in-memory StagedArtifactStore used by tests and the
+// in-process poller. Keyed by storage key so multiple jobs can stage
+// concurrently without collision.
+type MemStaging struct {
+	mu      sync.Mutex
+	objects map[string]stagedObject
+	Now     func() time.Time
+}
+
+type stagedObject struct {
+	bytes []byte
+	ref   StagedRef
+}
+
+func NewMemStaging() *MemStaging {
+	return &MemStaging{
+		objects: map[string]stagedObject{},
+		Now:     func() time.Time { return time.Now().UTC() },
+	}
+}
+
+func (s *MemStaging) PutStaged(_ context.Context, j generation.Job, art generation.Artifact, ttl time.Duration) (StagedRef, error) {
+	if j.ID == "" || j.TenantID == "" {
+		return StagedRef{}, errors.New("mem staging: tenant + job id required")
+	}
+	ext := art.Extension
+	if ext == "" {
+		ext = "bin"
+	}
+	now := s.now()
+	ref := StagedRef{
+		StorageKey:  StagingKey(j, ext),
+		TenantID:    j.TenantID,
+		JobID:       j.ID,
+		ContentType: art.ContentType,
+		Extension:   ext,
+		SHA256Hex:   art.SHA256,
+		SizeBytes:   int64(len(art.Bytes)),
+		Metadata:    maps.Clone(art.Metadata),
+		CreatedAt:   now,
+		ExpiresAt:   now.Add(ttl),
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	buf := make([]byte, len(art.Bytes))
+	copy(buf, art.Bytes)
+	s.objects[ref.StorageKey] = stagedObject{bytes: buf, ref: ref}
+	return ref, nil
+}
+
+func (s *MemStaging) LoadStaged(_ context.Context, ref StagedRef) (generation.Artifact, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	obj, ok := s.objects[ref.StorageKey]
+	if !ok {
+		return generation.Artifact{}, ErrStagedNotFound
+	}
+	if !obj.ref.ExpiresAt.IsZero() && !obj.ref.ExpiresAt.After(s.now()) {
+		delete(s.objects, ref.StorageKey)
+		return generation.Artifact{}, ErrStagedNotFound
+	}
+	buf := make([]byte, len(obj.bytes))
+	copy(buf, obj.bytes)
+	// Read attributes from the stored ref (the canonical record), not from
+	// the caller's ref — callers reconstruct the ref from just the storage
+	// key on the replay path and don't carry the original provider metadata.
+	return generation.Artifact{
+		Bytes:       buf,
+		ContentType: obj.ref.ContentType,
+		Extension:   obj.ref.Extension,
+		SHA256:      obj.ref.SHA256Hex,
+		Metadata:    maps.Clone(obj.ref.Metadata),
+	}, nil
+}
+
+func (s *MemStaging) DeleteStaged(_ context.Context, ref StagedRef) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.objects, ref.StorageKey)
+	return nil
+}
+
+// Drop forcibly evicts the staged bytes so LoadStaged returns ErrStagedNotFound.
+// Used by tests to simulate the S3 lifecycle sweep that runs after ExpiresAt.
+func (s *MemStaging) Drop(storageKey string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.objects, storageKey)
+}
+
+func (s *MemStaging) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now().UTC()
+}
+
+// MemResourceLessor enforces a per-resource-class concurrency cap in-process.
+// Used in tests and the local-only path; production swaps in a DDB-backed
+// implementation.
+type MemResourceLessor struct {
+	mu      sync.Mutex
+	caps    map[generation.ResourceClass]int
+	current map[generation.ResourceClass]int
+	leases  map[string]generation.ResourceClass
+	clock   func() time.Time
+}
+
+func NewMemResourceLessor(caps map[generation.ResourceClass]int) *MemResourceLessor {
+	return &MemResourceLessor{
+		caps:    caps,
+		current: map[generation.ResourceClass]int{},
+		leases:  map[string]generation.ResourceClass{},
+		clock:   func() time.Time { return time.Now().UTC() },
+	}
+}
+
+func (l *MemResourceLessor) AcquireResource(_ context.Context, req LeaseRequest) (*ResourceLease, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	max, ok := l.caps[req.ResourceClass]
+	if !ok {
+		max = 1
+	}
+	if l.current[req.ResourceClass] >= max {
+		return nil, errors.New("RESOURCE_CAPACITY_UNAVAILABLE")
+	}
+	id := "lease_" + randid.New()
+	l.current[req.ResourceClass]++
+	l.leases[id] = req.ResourceClass
+	ttl := req.TTL
+	if ttl <= 0 {
+		ttl = 5 * time.Minute
+	}
+	return &ResourceLease{
+		ID:            id,
+		ResourceClass: req.ResourceClass,
+		TenantID:      req.TenantID,
+		JobID:         req.JobID,
+		ExpiresAt:     l.clock().Add(ttl),
+	}, nil
+}
+
+func (l *MemResourceLessor) ReleaseResource(_ context.Context, lease *ResourceLease) error {
+	if lease == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	class, ok := l.leases[lease.ID]
+	if !ok {
+		return nil
+	}
+	delete(l.leases, lease.ID)
+	if l.current[class] > 0 {
+		l.current[class]--
+	}
+	return nil
 }

@@ -8,7 +8,6 @@ import (
 
 	"github.com/dtszwai/media-processing-service/backend/internal/app/idempotency"
 	"github.com/dtszwai/media-processing-service/backend/internal/domain/generation"
-	"github.com/dtszwai/media-processing-service/backend/internal/infra/genprovider"
 	"github.com/dtszwai/media-processing-service/backend/internal/infra/obs"
 )
 
@@ -325,38 +324,3 @@ func (w *Workflow) providerSuccessResult(ctx context.Context, job *generation.Jo
 	return StageResult{Outcome: OutcomeArtifactStaged}, nil
 }
 
-func vendorRequestID(job *generation.Job, provider string) string {
-	return "vr_" + idempotency.HashInputs(job.TenantID, job.ID, provider, job.PreparedPromptHash, job.GenerationParamsHash)[:24]
-}
-
-func (w *Workflow) providerRequest(job *generation.Job, provider, callType, requestHash, vendorRequestID string) ProviderRequest {
-	id := "pr_" + idempotency.HashInputs(job.ID, provider, callType, requestHash, w.now().Format(time.RFC3339Nano))[:24]
-	return ProviderRequest{
-		ID:                    id,
-		TenantID:              job.TenantID,
-		JobID:                 job.ID,
-		Provider:              provider,
-		Model:                 job.Model,
-		CallType:              callType,
-		RequestHash:           requestHash,
-		VendorRequestID:       vendorRequestID,
-		VendorIdempotencyMode: genprovider.VendorIdempotency(w.Provider),
-		Status:                ProviderRequestSubmitted,
-		CreatedAt:             w.now(),
-		UpdatedAt:             w.now(),
-	}
-}
-
-func (w *Workflow) putProviderRequest(ctx context.Context, req ProviderRequest) error {
-	if w.ProviderRequests == nil {
-		return nil
-	}
-	return w.ProviderRequests.PutProviderRequest(ctx, req)
-}
-
-func (w *Workflow) updateProviderRequest(ctx context.Context, job *generation.Job, requestID string, status ProviderRequestStatus, providerJobID string, err error) error {
-	if w.ProviderRequests == nil {
-		return nil
-	}
-	return w.ProviderRequests.UpdateProviderRequest(ctx, job.TenantID, job.ID, requestID, status, providerJobID, err)
-}

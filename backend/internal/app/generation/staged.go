@@ -3,8 +3,6 @@ package generation
 import (
 	"context"
 	"errors"
-	"maps"
-	"sync"
 	"time"
 
 	"github.com/dtszwai/media-processing-service/backend/internal/domain/generation"
@@ -52,103 +50,6 @@ type StagedArtifactStore interface {
 // workflow translates this into a terminal STAGED_EXPIRED so the job fails
 // fast rather than waiting for SQS retries to exhaust.
 var ErrStagedNotFound = errors.New("staged artifact: not found")
-
-// MemStaging is the in-memory StagedArtifactStore used by tests and the
-// in-process poller. Keyed by storage key so multiple jobs can stage
-// concurrently without collision.
-type MemStaging struct {
-	mu      sync.Mutex
-	objects map[string]stagedObject
-	Now     func() time.Time
-}
-
-type stagedObject struct {
-	bytes []byte
-	ref   StagedRef
-}
-
-func NewMemStaging() *MemStaging {
-	return &MemStaging{
-		objects: map[string]stagedObject{},
-		Now:     func() time.Time { return time.Now().UTC() },
-	}
-}
-
-func (s *MemStaging) PutStaged(_ context.Context, j generation.Job, art generation.Artifact, ttl time.Duration) (StagedRef, error) {
-	if j.ID == "" || j.TenantID == "" {
-		return StagedRef{}, errors.New("mem staging: tenant + job id required")
-	}
-	ext := art.Extension
-	if ext == "" {
-		ext = "bin"
-	}
-	now := s.now()
-	ref := StagedRef{
-		StorageKey:  StagingKey(j, ext),
-		TenantID:    j.TenantID,
-		JobID:       j.ID,
-		ContentType: art.ContentType,
-		Extension:   ext,
-		SHA256Hex:   art.SHA256,
-		SizeBytes:   int64(len(art.Bytes)),
-		Metadata:    maps.Clone(art.Metadata),
-		CreatedAt:   now,
-		ExpiresAt:   now.Add(ttl),
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	buf := make([]byte, len(art.Bytes))
-	copy(buf, art.Bytes)
-	s.objects[ref.StorageKey] = stagedObject{bytes: buf, ref: ref}
-	return ref, nil
-}
-
-func (s *MemStaging) LoadStaged(_ context.Context, ref StagedRef) (generation.Artifact, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	obj, ok := s.objects[ref.StorageKey]
-	if !ok {
-		return generation.Artifact{}, ErrStagedNotFound
-	}
-	if !obj.ref.ExpiresAt.IsZero() && !obj.ref.ExpiresAt.After(s.now()) {
-		delete(s.objects, ref.StorageKey)
-		return generation.Artifact{}, ErrStagedNotFound
-	}
-	buf := make([]byte, len(obj.bytes))
-	copy(buf, obj.bytes)
-	// Read attributes from the stored ref (the canonical record), not from
-	// the caller's ref — callers reconstruct the ref from just the storage
-	// key on the replay path and don't carry the original provider metadata.
-	return generation.Artifact{
-		Bytes:       buf,
-		ContentType: obj.ref.ContentType,
-		Extension:   obj.ref.Extension,
-		SHA256:      obj.ref.SHA256Hex,
-		Metadata:    maps.Clone(obj.ref.Metadata),
-	}, nil
-}
-
-func (s *MemStaging) DeleteStaged(_ context.Context, ref StagedRef) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.objects, ref.StorageKey)
-	return nil
-}
-
-// Drop forcibly evicts the staged bytes so LoadStaged returns ErrStagedNotFound.
-// Used by tests to simulate the S3 lifecycle sweep that runs after ExpiresAt.
-func (s *MemStaging) Drop(storageKey string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.objects, storageKey)
-}
-
-func (s *MemStaging) now() time.Time {
-	if s.Now != nil {
-		return s.Now()
-	}
-	return time.Now().UTC()
-}
 
 // StagingKey is the S3 key under which staged generation artifacts live.
 // Sits under stagingKeyPrefix so the existing bucket lifecycle rule expires

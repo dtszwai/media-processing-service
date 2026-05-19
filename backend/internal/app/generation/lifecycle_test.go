@@ -121,6 +121,7 @@ func TestSimulatedLifecycle_SubmitQueueRunnerStoresGatedAssetAndChargesOnce(t *t
 				Idem:           gen.NewMemIdempotency(),
 				Sink:           sink,
 				Stager:         gen.NewMemStaging(),
+				ImageStamper:   testStamper(t),
 				LeaseRunner:    gen.NewLeaseScopedRunner(nil),
 				Quota:          quota,
 				Ledger:         ledger,

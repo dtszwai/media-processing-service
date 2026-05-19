@@ -75,7 +75,7 @@ func TestStageRunner_TransientFailureEnqueuesFreshRetryMessage(t *testing.T) {
 		outboxBodies = append(outboxBodies, append([]byte(nil), body...))
 	}
 	prov := simulated.New()
-	runner := newProductionShapeStageRunner(repo, prov)
+	runner := newProductionShapeStageRunner(t, repo, prov)
 
 	job := newProviderSubmitJob("gen_runner_transient_retry")
 	if err := repo.CreateJob(ctx, job); err != nil {
@@ -148,7 +148,7 @@ func TestStageRunner_TransientFailureExhaustsRetries(t *testing.T) {
 		outboxBodies = append(outboxBodies, append([]byte(nil), body...))
 	}
 	prov := simulated.New()
-	runner := newProductionShapeStageRunner(repo, prov)
+	runner := newProductionShapeStageRunner(t, repo, prov)
 
 	job := newProviderSubmitJob("gen_runner_retry_exhausted")
 	if err := repo.CreateJob(ctx, job); err != nil {
@@ -234,11 +234,14 @@ func unmarshalStageMessage(t *testing.T, body []byte) gen.StageMessage {
 	return msg
 }
 
-func newProductionShapeStageRunner(repo *gen.MemRepo, provider genprovider.Provider) gen.StageRunner {
+func newProductionShapeStageRunner(t *testing.T, repo *gen.MemRepo, provider genprovider.Provider) gen.StageRunner {
+	t.Helper()
 	return gen.StageRunner{
 		Repo:           repo,
 		Idem:           gen.NewMemIdempotency(),
 		Sink:           gen.NewMemSink(),
+		Stager:         gen.NewMemStaging(),
+		ImageStamper:   testStamper(t),
 		LeaseRunner:    gen.NewLeaseScopedRunner(nil),
 		Quota:          runnerNoopQuota{},
 		Ledger:         runnerNoopQuotaLedger{},

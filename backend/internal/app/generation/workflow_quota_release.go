@@ -42,12 +42,3 @@ func (w *Workflow) attachLedgerRelease(ctx context.Context, job *generation.Job,
 		_ = w.QuotaReserver.Release(ctx, job.TenantID, job.BudgetDate, cost)
 	}
 }
-
-func resourceClassForPostprocess(job *generation.Job) generation.ResourceClass {
-	switch job.OutputType {
-	case generation.OutputImage:
-		return generation.ResourceImageProcess
-	default:
-		return generation.ResourceFast
-	}
-}

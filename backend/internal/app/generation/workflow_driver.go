@@ -10,6 +10,9 @@ import (
 
 const retryExhaustedCode = "RETRY_EXHAUSTED"
 
+// Run drives RunStage→resolveAndCommit synchronously until the FSM lands in
+// TERMINAL or a stage outcome surfaces to the caller. Used by tests and the
+// in-process poller; production drives per SQS message via AdvanceOneStage.
 func (w *Workflow) Run(ctx context.Context, jobID string) error {
 	// First lookup uses empty tenant; mem repo allows it. Production callers
 	// dispatching from SQS pass the tenant id in the stage message and use
@@ -21,67 +24,19 @@ func (w *Workflow) Run(ctx context.Context, jobID string) error {
 	if job.CurrentStage == "" {
 		job.CurrentStage = generation.StageInputModeration
 	}
-	outputType := string(job.OutputType)
 	for {
 		result, runErr := w.RunStage(ctx, job)
-		if runErr != nil {
-			classified := generation.AsError(runErr)
-			if classified.Terminal {
-				if err := w.Repo.AdvanceStageAndEnqueue(ctx, job, w.terminalFailResultFromError(ctx, job, runErr)); err != nil {
-					return fmt.Errorf("workflow: persist terminal %s: %w", classified.Code, err)
-				}
-				w.emitTerminal(ctx, generation.StatusFailed, classified.Code, outputType)
-				return classified
-			}
-			if w.retryExhausted(job) {
-				exhausted := retryExhaustedError(runErr)
-				if err := w.Repo.AdvanceStageAndEnqueue(ctx, job, w.retryExhaustedResult(ctx, job, exhausted)); err != nil {
-					return fmt.Errorf("workflow: persist retry exhausted: %w", err)
-				}
-				w.emitTerminal(ctx, generation.StatusFailed, exhausted.Code, outputType)
-				return exhausted
-			}
-			result = w.transientRetryResult(ctx, job, classified)
-			result, err = w.resolveTransition(ctx, job, result)
-			if err != nil {
-				return fmt.Errorf("workflow: resolve transient retry: %w", err)
-			}
-			if err := w.Repo.AdvanceStageAndEnqueue(ctx, job, result); err != nil {
-				return fmt.Errorf("workflow: persist transient retry: %w", err)
-			}
-			applyMutations(job, result)
-			return runErr
+		step, commitErr := w.resolveAndCommit(ctx, job, result, runErr)
+		if commitErr != nil {
+			return commitErr
 		}
-		result, err = w.resolveTransition(ctx, job, result)
-		if err != nil {
-			if handled, handleErr := w.handleResolutionTerminalError(ctx, job, err, outputType); handled {
-				return handleErr
-			}
-			return fmt.Errorf("workflow: resolve transition: %w", err)
+		if step.surface != nil {
+			return step.surface
 		}
-		if err := w.Repo.AdvanceStageAndEnqueue(ctx, job, result); err != nil {
-			if handled, handleErr := w.handleAdvanceTerminalError(ctx, job, err, outputType); handled {
-				if handleErr != nil {
-					return handleErr
-				}
-				return generation.AsError(err)
-			}
-			return fmt.Errorf("workflow: advance stage: %w", err)
-		}
-		w.emitAdvanceSuccess(ctx, job, result)
-		applyMutations(job, result)
-		if result.IsTerminalComplete() {
-			w.emitTerminal(ctx, generation.StatusComplete, "", outputType)
+		if step.committed.NextStage == StageTerminal {
 			return nil
 		}
-		if result.IsTerminalFailed() {
-			code := ""
-			if result.TerminalError != nil {
-				code = result.TerminalError.Code
-			}
-			w.emitTerminal(ctx, generation.StatusFailed, code, outputType)
-			return nil
-		}
+		applyMutations(job, step.committed)
 	}
 }
 
@@ -93,29 +48,55 @@ func (w *Workflow) Run(ctx context.Context, jobID string) error {
 // failure (DDB write, etc.) leaves the message in-flight so SQS can redeliver
 // the same stage_version.
 func (w *Workflow) AdvanceOneStage(ctx context.Context, job *generation.Job) error {
-	outputType := string(job.OutputType)
-	var err error
 	result, runErr := w.RunStage(ctx, job)
+	_, commitErr := w.resolveAndCommit(ctx, job, result, runErr)
+	return commitErr
+}
+
+// stageStep carries the resolveAndCommit outcome. committed feeds Run's
+// applyMutations on the continue path; surface is the error Run bubbles after
+// a committed terminal/retry transition. AdvanceOneStage ignores surface —
+// the SQS message acks on every committed outcome.
+type stageStep struct {
+	committed StageResult
+	surface   error
+}
+
+// resolveAndCommit runs the resolve+advance pipeline for one stage outcome
+// and owns terminal telemetry emission. The second return is the
+// unrecoverable caller-facing error shared by Run and AdvanceOneStage.
+func (w *Workflow) resolveAndCommit(ctx context.Context, job *generation.Job, result StageResult, runErr error) (stageStep, error) {
+	outputType := string(job.OutputType)
+	var step stageStep
+
 	if runErr != nil {
 		classified := generation.AsError(runErr)
 		if classified.Terminal {
-			err := w.Repo.AdvanceStageAndEnqueue(ctx, job, w.terminalFailResultFromError(ctx, job, runErr))
+			result = w.terminalFailResultFromError(ctx, job, runErr)
+			if err := w.Repo.AdvanceStageAndEnqueue(ctx, job, result); err != nil {
+				return step, fmt.Errorf("workflow: persist terminal %s: %w", classified.Code, err)
+			}
 			w.emitTerminal(ctx, generation.StatusFailed, classified.Code, outputType)
-			return err
+			step.surface = classified
+			return step, nil
 		}
 		if w.retryExhausted(job) {
 			exhausted := retryExhaustedError(runErr)
-			err := w.Repo.AdvanceStageAndEnqueue(ctx, job, w.retryExhaustedResult(ctx, job, exhausted))
+			result = w.retryExhaustedResult(ctx, job, exhausted)
+			if err := w.Repo.AdvanceStageAndEnqueue(ctx, job, result); err != nil {
+				return step, fmt.Errorf("workflow: persist retry exhausted: %w", err)
+			}
 			w.emitTerminal(ctx, generation.StatusFailed, exhausted.Code, outputType)
-			return err
+			step.surface = exhausted
+			return step, nil
 		}
 		result = w.transientRetryResult(ctx, job, classified)
-		result, err = w.resolveTransition(ctx, job, result)
+		resolved, err := w.resolveTransition(ctx, job, result)
 		if err != nil {
-			return fmt.Errorf("workflow: resolve transient retry: %w", err)
+			return step, fmt.Errorf("workflow: resolve transient retry: %w", err)
 		}
-		if err := w.Repo.AdvanceStageAndEnqueue(ctx, job, result); err != nil {
-			return err
+		if err := w.Repo.AdvanceStageAndEnqueue(ctx, job, resolved); err != nil {
+			return step, fmt.Errorf("workflow: persist transient retry: %w", err)
 		}
 		slog.InfoContext(ctx, "generation stage transient retry enqueued",
 			"job_id", job.ID,
@@ -124,35 +105,40 @@ func (w *Workflow) AdvanceOneStage(ctx context.Context, job *generation.Job) err
 			"attempt", job.Attempts+1,
 			"error_code", classified.Code,
 		)
-		return nil
+		step.surface = runErr
+		return step, nil
 	}
-	result, err = w.resolveTransition(ctx, job, result)
+
+	resolved, err := w.resolveTransition(ctx, job, result)
 	if err != nil {
 		if handled, handleErr := w.handleResolutionTerminalError(ctx, job, err, outputType); handled {
-			return handleErr
+			return step, handleErr
 		}
-		return err
+		return step, fmt.Errorf("workflow: resolve transition: %w", err)
 	}
-	if err := w.Repo.AdvanceStageAndEnqueue(ctx, job, result); err != nil {
+	if err := w.Repo.AdvanceStageAndEnqueue(ctx, job, resolved); err != nil {
 		if handled, handleErr := w.handleAdvanceTerminalError(ctx, job, err, outputType); handled {
-			return handleErr
-		}
-		return err
-	}
-	w.emitAdvanceSuccess(ctx, job, result)
-	switch result.NextStage {
-	case StageTerminal:
-		if result.IsTerminalFailed() {
-			code := ""
-			if result.TerminalError != nil {
-				code = result.TerminalError.Code
+			if handleErr != nil {
+				return step, handleErr
 			}
-			w.emitTerminal(ctx, generation.StatusFailed, code, outputType)
-			return nil
+			step.surface = generation.AsError(err)
+			return step, nil
 		}
-		w.emitTerminal(ctx, generation.StatusComplete, "", outputType)
+		return step, fmt.Errorf("workflow: advance stage: %w", err)
 	}
-	return nil
+	w.emitAdvanceSuccess(ctx, job, resolved)
+	step.committed = resolved
+
+	if resolved.IsTerminalComplete() {
+		w.emitTerminal(ctx, generation.StatusComplete, "", outputType)
+	} else if resolved.IsTerminalFailed() {
+		code := ""
+		if resolved.TerminalError != nil {
+			code = resolved.TerminalError.Code
+		}
+		w.emitTerminal(ctx, generation.StatusFailed, code, outputType)
+	}
+	return step, nil
 }
 
 func (w *Workflow) terminalFailResult(ctx context.Context, job *generation.Job, err *generation.Error) StageResult {

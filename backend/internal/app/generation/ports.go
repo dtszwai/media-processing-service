@@ -8,7 +8,6 @@ import (
 	"github.com/dtszwai/media-processing-service/backend/internal/domain/audit"
 	"github.com/dtszwai/media-processing-service/backend/internal/domain/generation"
 	"github.com/dtszwai/media-processing-service/backend/internal/domain/media"
-	"github.com/dtszwai/media-processing-service/backend/internal/infra/genprovider"
 	"github.com/dtszwai/media-processing-service/backend/internal/infra/kv"
 )
 
@@ -58,6 +57,15 @@ type StageAttempt struct {
 // the workflow's terminal commit.
 type ArtifactSink interface {
 	StoreFinalArtifact(ctx context.Context, j generation.Job, art generation.Artifact) (assetID string, err error)
+}
+
+// UsageMeter records per-job usage signals (vendor cost, service cost, and
+// generated-output count) so analytics can reconcile billing against observed
+// FSM outcomes.
+type UsageMeter interface {
+	RecordGeneratedOutput(ctx context.Context, tenantID, jobID, assetID string) error
+	RecordVendorCost(ctx context.Context, vendor, jobID string, microUSD int64) error
+	RecordServiceCost(ctx context.Context, jobID, source, requestID string, microUSD int64) error
 }
 
 // StageResult is what a stage handler returns. Stage handlers set Outcome plus
@@ -150,143 +158,4 @@ type QuotaLedger interface {
 	// Called on terminal-failure before the provider charges; conditional on
 	// state = RESERVED so a post-charge release cancels the transaction.
 	LedgerUpdateReleased(tenantID, jobID, period string, amount int64) LedgerOp
-}
-
-// PromptEnhancer prepares the provider-facing prompt for a generation job.
-// Implementations may be pure functions (passthrough/prefix templates) or
-// model-backed, but they return the same durable policy/provenance envelope so
-// PROMPT_PREPARE can hash, audit, and meter the exact prompt sent downstream.
-type PromptEnhancer interface {
-	Enhance(ctx context.Context, in EnhanceInput) (EnhanceOutput, error)
-}
-
-type EnhanceInput struct {
-	TenantID     string
-	JobID        string
-	Prompt       string
-	OutputType   generation.OutputType
-	Provider     string
-	Model        string
-	Resolution   string
-	VariantCount int
-}
-
-// EnhanceOutput is the per-call result handed back to the workflow.
-//
-// Applied means "the enhancer changed the prompt text"; it is NOT a marker
-// for "the model was invoked". An LLM-backed enhancer that echoes its input
-// verbatim returns Applied=false even though it billed the call. Use
-// Provider/Model/ServiceCostMicroUSD when you need invocation-level signal.
-type EnhanceOutput struct {
-	Prompt              string
-	Applied             bool
-	PolicyVersion       string
-	Provider            string
-	Model               string
-	TokensIn            int64
-	TokensOut           int64
-	ServiceCostMicroUSD int64
-	Ref                 string
-}
-
-// PromptEnhancementModel is the model-facing seam used by LLMEnhancer. It is
-// deliberately narrower than a generic text-completion client so prompt
-// construction and schema handling stay owned by the prompt-enhancement
-// adapter rather than leaking across app packages.
-type PromptEnhancementModel interface {
-	EnhancePrompt(ctx context.Context, req PromptEnhancementModelRequest) (PromptEnhancementModelResult, error)
-}
-
-type PromptEnhancementModelRequest struct {
-	PolicyVersion string
-	OutputType    generation.OutputType
-	Provider      string
-	Model         string
-	Resolution    string
-	VariantCount  int
-	Prompt        string
-}
-
-type PromptEnhancementModelResult struct {
-	Prompt              string
-	Provider            string
-	Model               string
-	TokensIn            int64
-	TokensOut           int64
-	ServiceCostMicroUSD int64
-	VendorRequestID     string
-}
-
-type PromptEnhancementRecord struct {
-	Ref                 string
-	TenantID            string
-	JobID               string
-	OutputType          generation.OutputType
-	EncryptedPrompt     []byte
-	RawPromptHash       string
-	PolicyVersion       string
-	Provider            string
-	Model               string
-	DownstreamProvider  string
-	DownstreamModel     string
-	Resolution          string
-	VariantCount        int
-	TokensIn            int64
-	TokensOut           int64
-	ServiceCostMicroUSD int64
-	VendorRequestID     string
-	CreatedAt           time.Time
-	TTLEpoch            int64
-}
-
-// PromptEnhancementStore persists encrypted enhancement outputs so a retry
-// after a completed LLM side effect can reconstruct PreparedPrompt without
-// storing raw prompt text in the idempotency row.
-type PromptEnhancementStore interface {
-	PutPromptEnhancement(ctx context.Context, rec PromptEnhancementRecord) error
-	GetPromptEnhancement(ctx context.Context, tenantID, jobID, ref string) (PromptEnhancementRecord, error)
-}
-
-type ProviderRequestStatus string
-
-const (
-	ProviderRequestSubmitted ProviderRequestStatus = "SUBMITTED"
-	ProviderRequestSucceeded ProviderRequestStatus = "SUCCEEDED"
-	ProviderRequestFailed    ProviderRequestStatus = "FAILED"
-)
-
-// ProviderIdempotencyMode is the persisted form of an adapter's vendor
-// idempotency contract. Aliased to the vendor enum (identical string values)
-// so the wire and storage shape stays one canonical type — provider adapters
-// declare it once, the app/transport/repo layer reuses the same labels.
-type ProviderIdempotencyMode = genprovider.VendorIdempotencyMode
-
-const (
-	ProviderIdempotencySupported   = genprovider.VendorIdempotencySupported
-	ProviderIdempotencyBestEffort  = genprovider.VendorIdempotencyBestEffort
-	ProviderIdempotencyUnsupported = genprovider.VendorIdempotencyUnsupported
-)
-
-type ProviderRequest struct {
-	ID                    string
-	TenantID              string
-	JobID                 string
-	Provider              string
-	Model                 string
-	CallType              string
-	RequestHash           string
-	VendorRequestID       string
-	VendorIdempotencyMode ProviderIdempotencyMode
-	Status                ProviderRequestStatus
-	ProviderJobID         string
-	ErrorCode             string
-	ErrorMessage          string
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
-	CompletedAt           *time.Time
-}
-
-type ProviderRequestRepository interface {
-	PutProviderRequest(ctx context.Context, req ProviderRequest) error
-	UpdateProviderRequest(ctx context.Context, tenantID, jobID, requestID string, status ProviderRequestStatus, providerJobID string, err error) error
 }

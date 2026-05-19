@@ -81,12 +81,6 @@ type Workflow struct {
 	Instruments *obs.Instruments
 }
 
-type UsageMeter interface {
-	RecordGeneratedOutput(ctx context.Context, tenantID, jobID, assetID string) error
-	RecordVendorCost(ctx context.Context, vendor, jobID string, microUSD int64) error
-	RecordServiceCost(ctx context.Context, jobID, source, requestID string, microUSD int64) error
-}
-
 const (
 	ServiceCostSourceProviderSubmit = "provider-submit"
 	ServiceCostSourcePromptEnhance  = "prompt-enhance"
@@ -118,24 +112,15 @@ type PromptSealer interface {
 // returns the runtime instance. Repo and Provider are mandatory; everything
 // else may be left zero for tests. Callers serving real traffic must
 // additionally call ValidateProduction(outputType) so missing production-only
-// deps (e.g. LeaseRunner, ImageStamper for images) surface at first dispatch
-// rather than gate-rejection time.
-//
-// Stager and ImageStamper default to in-memory / a permissive stamper so test
-// paths can run INFER → DISCLOSURE_POSTPROCESS end-to-end without per-test wiring.
+// deps (e.g. LeaseRunner, Stager, ImageStamper for images) surface at first
+// dispatch rather than gate-rejection time. Stager and ImageStamper are
+// intentionally not defaulted so ValidateProduction's checks stay load-bearing.
 func NewWorkflow(w Workflow) (*Workflow, error) {
 	if w.Repo == nil {
 		return nil, errors.New("generation: NewWorkflow requires Repo")
 	}
 	if w.Provider == nil {
 		return nil, errors.New("generation: NewWorkflow requires Provider")
-	}
-	if w.Stager == nil {
-		w.Stager = NewMemStaging()
-	}
-	if w.ImageStamper == nil {
-		stamper, _ := postprocess.NewStamper("AI Generated")
-		w.ImageStamper = stamper
 	}
 	if w.MaxRetries == 0 {
 		w.MaxRetries = 3
