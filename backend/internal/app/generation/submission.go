@@ -18,17 +18,10 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
-// JobSubmitter brackets the cross-table submit transaction. The DDB impl
-// stakes the idempotency claim, inserts Job + Media + result Asset rows, and
-// enqueues the first-stage outbox row in one TransactWrite. Implemented by
-// app/generation/ddb.JobRepo for production; tests provide an in-memory fake.
 type JobSubmitter interface {
 	Submit(ctx context.Context, in SubmitInput) error
 }
 
-// IdempotencyGetter reads a previously-stored claim result plus the persisted
-// input hash. The submission service uses this to replay a prior allocation
-// when the same idempotency_key carries identical inputs.
 type IdempotencyGetter interface {
 	GetResultWithHash(ctx context.Context, scope string) (ref string, inputHash string, status idempotency.Status, err error)
 }
@@ -41,8 +34,6 @@ type AcceptedJobReader interface {
 	GetJob(ctx context.Context, tenantID, jobID string) (*generation.Job, error)
 }
 
-// Sentinel errors the transport maps to Connect codes. Keep this list small —
-// new categories should only appear when transport must distinguish them.
 var (
 	ErrIdempotencyKeyConflict  = errors.New("submission: idempotency_key reused with different input")
 	ErrSubmitInFlight          = errors.New("submission: already in flight")
@@ -52,11 +43,6 @@ var (
 	ErrBudgetInsufficient      = errors.New("submission: tenant daily budget insufficient")
 )
 
-// SubmissionService creates a generation job: it allocates ids, stakes the
-// idempotency claim, builds the Job + Media + result Asset aggregates, marshals
-// the first-stage outbox body, and runs the JobSubmitter atomic transaction.
-// The transport hands it a principal-aware SubmitCommand; the service owns
-// every cross-aggregate step including replay-on-conflict.
 type SubmissionService struct {
 	Submitter    JobSubmitter
 	ReplayReader AcceptedJobReader
@@ -67,8 +53,6 @@ type SubmissionService struct {
 	NewID        func() string
 }
 
-// SubmitCommand is the principal-aware input the transport hands to the
-// service. Auth + proto-mapping live in transport; everything else here.
 type SubmitCommand struct {
 	TenantID        string
 	UserID          string
@@ -82,8 +66,6 @@ type SubmitCommand struct {
 	IdempotencyKey  string
 }
 
-// SubmitResult is what the service returns. Replay is true when the call hit
-// a prior allocation under the same idempotency key with identical inputs.
 type SubmitResult struct {
 	Job    generation.Job
 	Replay bool
@@ -93,9 +75,6 @@ const submitVariantCount = 1
 
 var noopSubmissionInstruments = obs.Noop()
 
-// Create runs the submit pipeline in its load-bearing order: replay-check →
-// allocate ids → build aggregates → submit → replay-on-conflict. Idempotency
-// conflicts surface as typed errors the transport maps to Connect codes.
 func (s *SubmissionService) Create(ctx context.Context, cmd SubmitCommand) (SubmitResult, error) {
 	if s == nil || s.Submitter == nil {
 		return SubmitResult{}, fmt.Errorf("%w: no submitter configured", ErrSubmissionMisconfigured)
@@ -192,8 +171,6 @@ func (s *SubmissionService) Create(ctx context.Context, cmd SubmitCommand) (Subm
 	return SubmitResult{Job: job}, nil
 }
 
-// replay reads the idempotency claim and either returns a replay job, signals
-// a typed conflict, or reports no prior claim.
 func (s *SubmissionService) replay(ctx context.Context, cmd SubmitCommand, scope, inputHash string, now time.Time) (generation.Job, bool, error) {
 	if s.Idempotency == nil {
 		return generation.Job{}, false, nil

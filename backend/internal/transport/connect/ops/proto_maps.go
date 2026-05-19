@@ -61,6 +61,25 @@ func ddbRowToProto(r opsapp.DdbRow) *opsv1.DdbRow {
 	}
 }
 
+func tenantUsageReservoirToProto(r opsapp.TenantUsageReservoir) *opsv1.TenantUsageReservoir {
+	return &opsv1.TenantUsageReservoir{
+		TenantId:      r.TenantID,
+		Metric:        r.Metric,
+		Period:        r.Period,
+		Cap:           r.Cap,
+		Available:     r.Available,
+		Reserved:      r.Reserved,
+		Committed:     r.Committed,
+		Released:      r.Released,
+		State:         r.State,
+		PolicyId:      r.PolicyID,
+		PolicyVersion: r.PolicyVersion,
+		CreatedAt:     protoutil.OptTimestamp(r.CreatedAt),
+		UpdatedAt:     protoutil.OptTimestamp(r.UpdatedAt),
+		Materialized:  r.Materialized,
+	}
+}
+
 func traceSpanToProto(s opsapp.TraceSpan) *opsv1.TraceSpan {
 	return &opsv1.TraceSpan{
 		Id:            s.ID,

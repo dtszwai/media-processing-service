@@ -52,6 +52,9 @@ const (
 	OpsServiceGetDdbRowProcedure = "/mediaservice.ops.v1.OpsService/GetDdbRow"
 	// OpsServiceQueueDepthsProcedure is the fully-qualified name of the OpsService's QueueDepths RPC.
 	OpsServiceQueueDepthsProcedure = "/mediaservice.ops.v1.OpsService/QueueDepths"
+	// OpsServiceGetTenantUsageProcedure is the fully-qualified name of the OpsService's GetTenantUsage
+	// RPC.
+	OpsServiceGetTenantUsageProcedure = "/mediaservice.ops.v1.OpsService/GetTenantUsage"
 	// OpsServiceListS3Procedure is the fully-qualified name of the OpsService's ListS3 RPC.
 	OpsServiceListS3Procedure = "/mediaservice.ops.v1.OpsService/ListS3"
 	// OpsServicePresignDownloadProcedure is the fully-qualified name of the OpsService's
@@ -96,6 +99,7 @@ type OpsServiceClient interface {
 	ScanDdb(context.Context, *connect.Request[v1.ScanDdbRequest]) (*connect.Response[v1.ScanDdbResponse], error)
 	GetDdbRow(context.Context, *connect.Request[v1.GetDdbRowRequest]) (*connect.Response[v1.GetDdbRowResponse], error)
 	QueueDepths(context.Context, *connect.Request[v1.QueueDepthsRequest]) (*connect.Response[v1.QueueDepthsResponse], error)
+	GetTenantUsage(context.Context, *connect.Request[v1.GetTenantUsageRequest]) (*connect.Response[v1.GetTenantUsageResponse], error)
 	ListS3(context.Context, *connect.Request[v1.ListS3Request]) (*connect.Response[v1.ListS3Response], error)
 	PresignDownload(context.Context, *connect.Request[v1.PresignDownloadRequest]) (*connect.Response[v1.PresignDownloadResponse], error)
 	StreamLogs(context.Context, *connect.Request[v1.StreamLogsRequest]) (*connect.ServerStreamForClient[v1.StreamLogsResponse], error)
@@ -167,6 +171,12 @@ func NewOpsServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...
 			httpClient,
 			baseURL+OpsServiceQueueDepthsProcedure,
 			connect.WithSchema(opsServiceMethods.ByName("QueueDepths")),
+			connect.WithClientOptions(opts...),
+		),
+		getTenantUsage: connect.NewClient[v1.GetTenantUsageRequest, v1.GetTenantUsageResponse](
+			httpClient,
+			baseURL+OpsServiceGetTenantUsageProcedure,
+			connect.WithSchema(opsServiceMethods.ByName("GetTenantUsage")),
 			connect.WithClientOptions(opts...),
 		),
 		listS3: connect.NewClient[v1.ListS3Request, v1.ListS3Response](
@@ -265,6 +275,7 @@ type opsServiceClient struct {
 	scanDdb              *connect.Client[v1.ScanDdbRequest, v1.ScanDdbResponse]
 	getDdbRow            *connect.Client[v1.GetDdbRowRequest, v1.GetDdbRowResponse]
 	queueDepths          *connect.Client[v1.QueueDepthsRequest, v1.QueueDepthsResponse]
+	getTenantUsage       *connect.Client[v1.GetTenantUsageRequest, v1.GetTenantUsageResponse]
 	listS3               *connect.Client[v1.ListS3Request, v1.ListS3Response]
 	presignDownload      *connect.Client[v1.PresignDownloadRequest, v1.PresignDownloadResponse]
 	streamLogs           *connect.Client[v1.StreamLogsRequest, v1.StreamLogsResponse]
@@ -314,6 +325,11 @@ func (c *opsServiceClient) GetDdbRow(ctx context.Context, req *connect.Request[v
 // QueueDepths calls mediaservice.ops.v1.OpsService.QueueDepths.
 func (c *opsServiceClient) QueueDepths(ctx context.Context, req *connect.Request[v1.QueueDepthsRequest]) (*connect.Response[v1.QueueDepthsResponse], error) {
 	return c.queueDepths.CallUnary(ctx, req)
+}
+
+// GetTenantUsage calls mediaservice.ops.v1.OpsService.GetTenantUsage.
+func (c *opsServiceClient) GetTenantUsage(ctx context.Context, req *connect.Request[v1.GetTenantUsageRequest]) (*connect.Response[v1.GetTenantUsageResponse], error) {
+	return c.getTenantUsage.CallUnary(ctx, req)
 }
 
 // ListS3 calls mediaservice.ops.v1.OpsService.ListS3.
@@ -396,6 +412,7 @@ type OpsServiceHandler interface {
 	ScanDdb(context.Context, *connect.Request[v1.ScanDdbRequest]) (*connect.Response[v1.ScanDdbResponse], error)
 	GetDdbRow(context.Context, *connect.Request[v1.GetDdbRowRequest]) (*connect.Response[v1.GetDdbRowResponse], error)
 	QueueDepths(context.Context, *connect.Request[v1.QueueDepthsRequest]) (*connect.Response[v1.QueueDepthsResponse], error)
+	GetTenantUsage(context.Context, *connect.Request[v1.GetTenantUsageRequest]) (*connect.Response[v1.GetTenantUsageResponse], error)
 	ListS3(context.Context, *connect.Request[v1.ListS3Request]) (*connect.Response[v1.ListS3Response], error)
 	PresignDownload(context.Context, *connect.Request[v1.PresignDownloadRequest]) (*connect.Response[v1.PresignDownloadResponse], error)
 	StreamLogs(context.Context, *connect.Request[v1.StreamLogsRequest], *connect.ServerStream[v1.StreamLogsResponse]) error
@@ -463,6 +480,12 @@ func NewOpsServiceHandler(svc OpsServiceHandler, opts ...connect.HandlerOption) 
 		OpsServiceQueueDepthsProcedure,
 		svc.QueueDepths,
 		connect.WithSchema(opsServiceMethods.ByName("QueueDepths")),
+		connect.WithHandlerOptions(opts...),
+	)
+	opsServiceGetTenantUsageHandler := connect.NewUnaryHandler(
+		OpsServiceGetTenantUsageProcedure,
+		svc.GetTenantUsage,
+		connect.WithSchema(opsServiceMethods.ByName("GetTenantUsage")),
 		connect.WithHandlerOptions(opts...),
 	)
 	opsServiceListS3Handler := connect.NewUnaryHandler(
@@ -565,6 +588,8 @@ func NewOpsServiceHandler(svc OpsServiceHandler, opts ...connect.HandlerOption) 
 			opsServiceGetDdbRowHandler.ServeHTTP(w, r)
 		case OpsServiceQueueDepthsProcedure:
 			opsServiceQueueDepthsHandler.ServeHTTP(w, r)
+		case OpsServiceGetTenantUsageProcedure:
+			opsServiceGetTenantUsageHandler.ServeHTTP(w, r)
 		case OpsServiceListS3Procedure:
 			opsServiceListS3Handler.ServeHTTP(w, r)
 		case OpsServicePresignDownloadProcedure:
@@ -628,6 +653,10 @@ func (UnimplementedOpsServiceHandler) GetDdbRow(context.Context, *connect.Reques
 
 func (UnimplementedOpsServiceHandler) QueueDepths(context.Context, *connect.Request[v1.QueueDepthsRequest]) (*connect.Response[v1.QueueDepthsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("mediaservice.ops.v1.OpsService.QueueDepths is not implemented"))
+}
+
+func (UnimplementedOpsServiceHandler) GetTenantUsage(context.Context, *connect.Request[v1.GetTenantUsageRequest]) (*connect.Response[v1.GetTenantUsageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("mediaservice.ops.v1.OpsService.GetTenantUsage is not implemented"))
 }
 
 func (UnimplementedOpsServiceHandler) ListS3(context.Context, *connect.Request[v1.ListS3Request]) (*connect.Response[v1.ListS3Response], error) {

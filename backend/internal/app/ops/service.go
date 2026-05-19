@@ -52,6 +52,9 @@ type Service struct {
 	// hard-coded by cmd wiring (the auth-stub identity).
 	LocalUserID   string
 	LocalTenantID string
+	// TenantCostCapMicroUSD is the configured default used before the
+	// tenant's daily COST_MICRO_USD reservoir has been materialized.
+	TenantCostCapMicroUSD int64
 
 	// Logger for non-fatal diagnostic emit during mutations.
 	Logger *slog.Logger

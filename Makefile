@@ -7,6 +7,7 @@ PYTHON    ?= $(shell test -x $(HOME)/.notebooklm/venv/bin/python && echo $(HOME)
 TFLOCAL   ?= tflocal
 COMPOSE   ?= docker compose -f deploy/compose/local.yaml
 LOG_DIR   := .local/logs
+TEST_ALL_ASSET_DIR ?= .local/test-all/generated-assets
 LAMBDA_DIR := backend/dist/lambda
 NOTEBOOKLM_STATE ?= $(HOME)/.notebooklm/state.json
 
@@ -36,7 +37,7 @@ help:
 	@echo "Backend gate (CI parity):"
 	@echo "  build          - go build ./... in backend/"
 	@echo "  test           - go test ./... in backend/"
-	@echo "  test-all       - test plus real provider E2Es"
+	@echo "  test-all       - test plus real provider E2Es; saves outputs under .local/test-all/generated-assets"
 	@echo "  smoke-local    - run local compose generation smoke test"
 	@echo "  smoke-local-prompt-enhancer - run smoke test expecting simulated prompt enhancer"
 	@echo "  smoke-local-clean - remove local smoke rows and objects"
@@ -58,7 +59,9 @@ test:
 test-all:
 	$(MAKE) test
 	$(MAKE) notebooklm-import
-	TEST_INTEGRATION=1 TEST_CODEX_REAL=1 TEST_NOTEBOOKLM_REAL=1 CODEX_TIMEOUT="$${CODEX_TIMEOUT:-10m}" $(GO) -C backend test -tags=integration ./internal/app/generation -run '^TestRealProviderE2E_' -count=1 -timeout=20m
+	@run_dir="$(abspath $(TEST_ALL_ASSET_DIR))/$$(date -u +%Y%m%dT%H%M%SZ)"; \
+	echo "Saving real provider artifacts under $$run_dir"; \
+	TEST_GENERATED_ASSET_DIR="$$run_dir" TEST_INTEGRATION=1 TEST_CODEX_REAL=1 TEST_NOTEBOOKLM_REAL=1 CODEX_TIMEOUT="$${CODEX_TIMEOUT:-10m}" $(GO) -C backend test -tags=integration ./internal/app/generation -run '^TestRealProviderE2E_' -count=1 -timeout=20m
 
 .PHONY: smoke-local
 smoke-local:

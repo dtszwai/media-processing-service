@@ -19,8 +19,6 @@ type JobRepo struct {
 	QuotaLedger genapp.QuotaLedger
 }
 
-// NewJobRepo binds the impl to a kv driver and the optional prompt sealer
-// used when reading/writing job rows. Pass nil for the sealer in tests.
 func NewJobRepo(k kv.KV, sealer genapp.PromptSealer) *JobRepo {
 	return &JobRepo{KV: k, Sealer: sealer}
 }

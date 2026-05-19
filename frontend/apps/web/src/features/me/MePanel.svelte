@@ -1,22 +1,22 @@
 <!--
   MePanel — the operator's current-tenant overview.
 
-  Composed from existing RPCs (listJobs, listMedia, queueDepths) — no
-  dedicated TenantInfo backend endpoint exists yet, so we derive what
-  we can client-side. In local single-tenant mode every record traces
-  back to the same tenant; the panel reads the tenant id off the first
-  job/media row it finds and renders a one-glance health summary.
+  Composed from the same LOCAL_ONLY ops reads that power the deeper tabs:
+  listJobs, listMedia, queueDepths, and tenant usage. In local single-tenant
+  mode every record traces back to the same tenant.
 -->
 <script lang="ts">
   import { create } from "@bufbuild/protobuf";
   import {
     GetLocalIdentityRequestSchema,
+    GetTenantUsageRequestSchema,
     ListJobsRequestSchema,
     ListMediaRequestSchema,
     QueueDepthsRequestSchema,
     type JobSummary,
     type MediaRow,
     type QueueStat,
+    type TenantUsageReservoir,
   } from "@media-service/api-client/gen/mediaservice/ops/v1/ops_pb.js";
   import { opsClient } from "../../shared/ops";
   import { navigate } from "../../shared/route.svelte";
@@ -28,6 +28,8 @@
   let jobs = $state<JobSummary[]>([]);
   let media = $state<MediaRow[]>([]);
   let queues = $state<QueueStat[]>([]);
+  let dailyCost = $state<TenantUsageReservoir | null>(null);
+  let usagePeriod = $state("");
   let loading = $state(true);
   let lastError = $state<string | null>(null);
   let refreshedAt = $state<number>(Date.now());
@@ -39,16 +41,19 @@
     loading = true;
     lastError = null;
     try {
-      const [idRes, jobsRes, mediaRes, queuesRes] = await Promise.all([
+      const [idRes, jobsRes, mediaRes, queuesRes, usageRes] = await Promise.all([
         opsClient.getLocalIdentity(create(GetLocalIdentityRequestSchema, {})),
         opsClient.listJobs(create(ListJobsRequestSchema, { limit: 200 })),
         opsClient.listMedia(create(ListMediaRequestSchema, { limit: 200, includeDeleted: false })),
         opsClient.queueDepths(create(QueueDepthsRequestSchema, {})),
+        opsClient.getTenantUsage(create(GetTenantUsageRequestSchema, {})),
       ]);
       tenantId = idRes.tenantId;
       jobs = jobsRes.jobs;
       media = mediaRes.items;
       queues = queuesRes.queues;
+      dailyCost = usageRes.dailyCost ?? null;
+      usagePeriod = usageRes.currentDailyPeriod;
       refreshedAt = Date.now();
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
@@ -78,8 +83,22 @@
     return Number(ts.seconds) * 1000;
   }
 
+  function int64(v?: bigint | number | string | null): number {
+    if (typeof v === "bigint") return Number(v);
+    if (typeof v === "number") return v;
+    if (typeof v === "string") return Number(v) || 0;
+    return 0;
+  }
+
+  function fmtMicroUSD(v?: bigint | number | string | null): string {
+    const usd = int64(v) / 1_000_000;
+    const decimals = usd > 0 && usd < 1 ? 4 : 2;
+    return `$${usd.toFixed(decimals)}`;
+  }
+
   let jobsToday = $derived(jobs.filter((j) => tsMs(j.createdAt) >= todayStart));
   let mediaToday = $derived(media.filter((m) => tsMs(m.createdAt) >= todayStart));
+  let dailyCostPeriod = $derived(dailyCost?.period || usagePeriod || "—");
 
   let jobsByStatus = $derived.by(() => {
     const out: Record<string, number> = {};
@@ -144,6 +163,19 @@
   {/if}
 
   <section class="grid">
+    <article class="card stat">
+      <div class="stat-label">daily cost</div>
+      <div class="stat-value cost-value">{fmtMicroUSD(dailyCost?.committed)}</div>
+      <div class="stat-detail">
+        <span class="qline">held <strong class="tnum">{fmtMicroUSD(dailyCost?.reserved)}</strong></span>
+        <span class="qline">remaining <strong class="tnum">{fmtMicroUSD(dailyCost?.available)}</strong></span>
+        <span class="qline">cap <strong class="tnum">{fmtMicroUSD(dailyCost?.cap)}</strong></span>
+        <span class="cost-period mono">
+          {dailyCostPeriod}{dailyCost && !dailyCost.materialized ? " · unopened" : ""}
+        </span>
+      </div>
+    </article>
+
     <article class="card stat">
       <div class="stat-label">today's jobs</div>
       <div class="stat-value">{jobsToday.length}</div>
@@ -311,12 +343,12 @@
 
   .grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 14px;
   }
 
-  /* Below ~760px the four stat cards can no longer breathe in a single
-     row, so collapse to a 2x2 grid; below ~480px collapse to a stack. */
+  /* Below ~760px the stat cards can no longer breathe in a single row, so
+     collapse to two columns; below ~480px collapse to a stack. */
   @media (max-width: 760px) {
     .grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -359,6 +391,11 @@
     font-feature-settings: "ss01";
   }
 
+  .cost-value {
+    font-size: 34px;
+    line-height: 1.08;
+  }
+
   .stat-detail {
     font-family: var(--font-sans);
     font-size: 13px;
@@ -369,6 +406,12 @@
   }
 
   .stat-detail.dim { color: var(--fg-dim); line-height: 1.5; }
+
+  .cost-period {
+    color: var(--fg-dim);
+    font-size: 11.5px;
+    margin-top: 2px;
+  }
 
   .status-row,
   .type-row,

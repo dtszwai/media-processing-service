@@ -18,7 +18,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file mediaservice/ops/v1/ops.proto.
  */
 export const file_mediaservice_ops_v1_ops: GenFile = /*@__PURE__*/
-  fileDesc("Ch1tZWRpYXNlcnZpY2Uvb3BzL3YxL29wcy5wcm90bxITbWVkaWFzZXJ2aWNlLm9wcy52MSLoAgoKSm9iU3VtbWFyeRIOCgZqb2JfaWQYASABKAkSEQoJdGVuYW50X2lkGAIgASgJEhAKCG1lZGlhX2lkGAMgASgJEg4KBnN0YXR1cxgEIAEoCRIVCg1jdXJyZW50X3N0YWdlGAUgASgJEhMKC291dHB1dF90eXBlGAYgASgJEgwKBHRpZXIYByABKAkSDQoFbW9kZWwYCCABKAkSEAoIYXR0ZW1wdHMYCSABKAUSEgoKZXJyb3JfY29kZRgKIAEoCRIuCgpjcmVhdGVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI1Cgxjb21wbGV0ZWRfYXQYDSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wSACIAQFCDwoNX2NvbXBsZXRlZF9hdCJoCg9MaXN0Sm9ic1JlcXVlc3QSEQoJdGVuYW50X2lkGAEgASgJEg4KBnN0YXR1cxgCIAEoCRITCgtvdXRwdXRfdHlwZRgDIAEoCRINCgVsaW1pdBgEIAEoBRIOCgZjdXJzb3IYBSABKAkiVgoQTGlzdEpvYnNSZXNwb25zZRItCgRqb2JzGAEgAygLMh8ubWVkaWFzZXJ2aWNlLm9wcy52MS5Kb2JTdW1tYXJ5EhMKC25leHRfY3Vyc29yGAIgASgJIrsDCglUcmFjZVNwYW4SCgoCaWQYASABKAkSEQoJcGFyZW50X2lkGAIgASgJEgwKBGtpbmQYAyABKAkSDQoFbGFiZWwYBCABKAkSDgoGc3RhdHVzGAUgASgJEg0KBXN0YWdlGAYgASgJEhYKDnJlc291cmNlX2NsYXNzGAcgASgJEhIKCmF0dGVtcHRfbm8YCCABKAUSEgoKZXJyb3JfY29kZRgJIAEoCRIVCg1lcnJvcl9tZXNzYWdlGAogASgJEkIKCmF0dHJpYnV0ZXMYCyADKAsyLi5tZWRpYXNlcnZpY2Uub3BzLnYxLlRyYWNlU3Bhbi5BdHRyaWJ1dGVzRW50cnkSLAoIc3RhcnRfYXQYDCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEioKBmVuZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEwoLZHVyYXRpb25fbXMYDiABKAMSCgoCcGsYDyABKAkSCgoCc2sYECABKAkaMQoPQXR0cmlidXRlc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEijQMKDEdhdGVEZWNpc2lvbhIOCgZqb2JfaWQYASABKAkSEQoJdGVuYW50X2lkGAIgASgJEhQKDGdhdGVfdmVyc2lvbhgDIAEoCRITCgtvdXRwdXRfdHlwZRgEIAEoCRIQCghwcm92aWRlchgFIAEoCRINCgVtb2RlbBgGIAEoCRIQCghkZWNpc2lvbhgHIAEoCRISCgplcnJvcl9jb2RlGAggASgJEhkKEXdhdGVybWFya19wcmVzZW50GAkgASgIEhoKEmRpc2Nsb3N1cmVfcHJlc2VudBgKIAEoCBIWCg5zYWZldHlfcHJlc2VudBgLIAEoCBIdChV3YXRlcm1hcmtfZmluZ2VycHJpbnQYDCABKAkSFgoOd2F0ZXJtYXJrX2FsZ28YDSABKAkSGgoSd2F0ZXJtYXJrX3Bvc2l0aW9uGA4gASgJEhYKDndhdGVybWFya190ZXh0GA8gASgJEi4KCmRlY2lkZWRfYXQYECABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIvYDCgtGdWxsSm9iVmlldxIwCgdzdW1tYXJ5GAEgASgLMh8ubWVkaWFzZXJ2aWNlLm9wcy52MS5Kb2JTdW1tYXJ5EiQKA2pvYhgCIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSJgoFbWVkaWEYAyABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0Ei0KDHJlc3VsdF9hc3NldBgEIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSLQoFc3BhbnMYBSADKAsyHi5tZWRpYXNlcnZpY2Uub3BzLnYxLlRyYWNlU3BhbhI9Cg1nYXRlX2RlY2lzaW9uGAYgASgLMiEubWVkaWFzZXJ2aWNlLm9wcy52MS5HYXRlRGVjaXNpb25IAIgBARIUCgxyZWxhdGVkX2tleXMYByADKAkSMgoOZmlyc3RfZXZlbnRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjEKDWxhc3RfZXZlbnRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhgKEGRlY3J5cHRlZF9wcm9tcHQYCiABKAkSIQoZZGVjcnlwdGVkX3ByZXBhcmVkX3Byb21wdBgLIAEoCUIQCg5fZ2F0ZV9kZWNpc2lvbiIfCg1HZXRKb2JSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCSJACg5HZXRKb2JSZXNwb25zZRIuCgR2aWV3GAEgASgLMiAubWVkaWFzZXJ2aWNlLm9wcy52MS5GdWxsSm9iVmlldyL3AgoITWVkaWFSb3cSEAoIbWVkaWFfaWQYASABKAkSEQoJdGVuYW50X2lkGAIgASgJEhUKDW93bmVyX3VzZXJfaWQYAyABKAkSDgoGb3JpZ2luGAQgASgJEhIKCm1lZGlhX3R5cGUYBSABKAkSEQoJbGlmZWN5Y2xlGAYgASgJEh4KEW9yaWdpbmFsX2Fzc2V0X2lkGAcgASgJSACIAQESLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMwoKZGVsZXRlZF9hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBIAYgBARITCgZqb2JfaWQYCyABKAlIAogBAUIUChJfb3JpZ2luYWxfYXNzZXRfaWRCDQoLX2RlbGV0ZWRfYXRCCQoHX2pvYl9pZCKUAQoQTGlzdE1lZGlhUmVxdWVzdBIRCgl0ZW5hbnRfaWQYASABKAkSEgoKbWVkaWFfdHlwZRgCIAEoCRIOCgZvcmlnaW4YAyABKAkSEQoJbGlmZWN5Y2xlGAQgASgJEhcKD2luY2x1ZGVfZGVsZXRlZBgFIAEoCBINCgVsaW1pdBgGIAEoBRIOCgZjdXJzb3IYByABKAkiVgoRTGlzdE1lZGlhUmVzcG9uc2USLAoFaXRlbXMYASADKAsyHS5tZWRpYXNlcnZpY2Uub3BzLnYxLk1lZGlhUm93EhMKC25leHRfY3Vyc29yGAIgASgJIqwBCg1GdWxsTWVkaWFWaWV3EioKA3JvdxgBIAEoCzIdLm1lZGlhc2VydmljZS5vcHMudjEuTWVkaWFSb3cSJgoFbWVkaWEYAiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EicKBmFzc2V0cxgDIAMoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSEwoGam9iX2lkGAQgASgJSACIAQFCCQoHX2pvYl9pZCIjCg9HZXRNZWRpYVJlcXVlc3QSEAoIbWVkaWFfaWQYASABKAkiRAoQR2V0TWVkaWFSZXNwb25zZRIwCgR2aWV3GAEgASgLMiIubWVkaWFzZXJ2aWNlLm9wcy52MS5GdWxsTWVkaWFWaWV3ImAKBkRkYlJvdxIKCgJwaxgBIAEoCRIKCgJzaxgCIAEoCRIRCglpdGVtX3R5cGUYAyABKAkSKwoKYXR0cmlidXRlcxgEIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QiVQoOU2NhbkRkYlJlcXVlc3QSEQoJcGtfcHJlZml4GAEgASgJEhEKCXNrX3ByZWZpeBgCIAEoCRINCgVsaW1pdBgDIAEoBRIOCgZjdXJzb3IYBCABKAkiUQoPU2NhbkRkYlJlc3BvbnNlEikKBHJvd3MYASADKAsyGy5tZWRpYXNlcnZpY2Uub3BzLnYxLkRkYlJvdxITCgtuZXh0X2N1cnNvchgCIAEoCSIqChBHZXREZGJSb3dSZXF1ZXN0EgoKAnBrGAEgASgJEgoKAnNrGAIgASgJIj0KEUdldERkYlJvd1Jlc3BvbnNlEigKA3JvdxgBIAEoCzIbLm1lZGlhc2VydmljZS5vcHMudjEuRGRiUm93ItwBCglRdWV1ZVN0YXQSDAoEbmFtZRgBIAEoCRILCgN1cmwYAiABKAkSDwoHdmlzaWJsZRgDIAEoBRIRCglpbl9mbGlnaHQYBCABKAUSDwoHZGVsYXllZBgFIAEoBRIiChp2aXNpYmlsaXR5X3RpbWVvdXRfc2Vjb25kcxgGIAEoBRIiChpvbGRlc3RfbWVzc2FnZV9hZ2Vfc2Vjb25kcxgHIAEoBRIQCghkbHFfbmFtZRgIIAEoCRIRCglkbHFfY291bnQYCSABKAUSEgoKdGllcl9jbGFzcxgKIAEoCSIUChJRdWV1ZURlcHRoc1JlcXVlc3QiRQoTUXVldWVEZXB0aHNSZXNwb25zZRIuCgZxdWV1ZXMYASADKAsyHi5tZWRpYXNlcnZpY2Uub3BzLnYxLlF1ZXVlU3RhdCKiAQoGUzNOb2RlEgsKA2tleRgBIAEoCRIMCgRuYW1lGAIgASgJEhEKCWlzX3ByZWZpeBgDIAEoCBISCgpzaXplX2J5dGVzGAQgASgDEgwKBGV0YWcYBSABKAkSNgoNbGFzdF9tb2RpZmllZBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBIAIgBAUIQCg5fbGFzdF9tb2RpZmllZCJBCg1MaXN0UzNSZXF1ZXN0Eg4KBnByZWZpeBgBIAEoCRIRCglkZWxpbWl0ZXIYAiABKAkSDQoFbGltaXQYAyABKAUiPAoOTGlzdFMzUmVzcG9uc2USKgoFbm9kZXMYASADKAsyGy5tZWRpYXNlcnZpY2Uub3BzLnYxLlMzTm9kZSIlChZQcmVzaWduRG93bmxvYWRSZXF1ZXN0EgsKA2tleRgBIAEoCSJWChdQcmVzaWduRG93bmxvYWRSZXNwb25zZRILCgN1cmwYASABKAkSLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAilQEKEVN0cmVhbUxvZ3NSZXF1ZXN0Eg8KB3NlcnZpY2UYASABKAkSDgoGam9iX2lkGAIgASgJEhAKCG1lZGlhX2lkGAMgASgJEg0KBWxldmVsGAQgASgJEhAKCGNvbnRhaW5zGAUgASgJEhIKCnRhaWxfbGluZXMYBiABKAUSGAoQbG9va2JhY2tfc2Vjb25kcxgHIAEoBSLIAQoHTG9nTGluZRImCgJ0cxgBIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHc2VydmljZRgCIAEoCRINCgVsZXZlbBgDIAEoCRIMCgRib2R5GAQgASgJEjgKBmxhYmVscxgFIAMoCzIoLm1lZGlhc2VydmljZS5vcHMudjEuTG9nTGluZS5MYWJlbHNFbnRyeRotCgtMYWJlbHNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIkAKElN0cmVhbUxvZ3NSZXNwb25zZRIqCgRsaW5lGAEgASgLMhwubWVkaWFzZXJ2aWNlLm9wcy52MS5Mb2dMaW5lIjIKEENhbmNlbEpvYlJlcXVlc3QSDgoGam9iX2lkGAEgASgJEg4KBnJlYXNvbhgCIAEoCSITChFDYW5jZWxKb2JSZXNwb25zZSIhCg9SZXRyeUpvYlJlcXVlc3QSDgoGam9iX2lkGAEgASgJIhIKEFJldHJ5Sm9iUmVzcG9uc2UiUAoTRm9yY2VGYWlsSm9iUmVxdWVzdBIOCgZqb2JfaWQYASABKAkSEgoKZXJyb3JfY29kZRgCIAEoCRIVCg1lcnJvcl9tZXNzYWdlGAMgASgJIhYKFEZvcmNlRmFpbEpvYlJlc3BvbnNlIiUKE1JlcGxheU91dGJveFJlcXVlc3QSDgoGam9iX2lkGAEgASgJIhYKFFJlcGxheU91dGJveFJlc3BvbnNlIicKEVB1cmdlUXVldWVSZXF1ZXN0EhIKCnF1ZXVlX25hbWUYASABKAkiFAoSUHVyZ2VRdWV1ZVJlc3BvbnNlIjQKEVJlZHJpdmVEbHFSZXF1ZXN0EhAKCGRscV9uYW1lGAEgASgJEg0KBWxpbWl0GAIgASgFIjMKElJlZHJpdmVEbHFSZXNwb25zZRINCgVtb3ZlZBgBIAEoBRIOCgZmYWlsZWQYAiABKAUiVwoRUHV0RGRiQXR0clJlcXVlc3QSCgoCcGsYASABKAkSCgoCc2sYAiABKAkSFgoOYXR0cmlidXRlX25hbWUYAyABKAkSEgoKdmFsdWVfanNvbhgEIAEoCSIUChJQdXREZGJBdHRyUmVzcG9uc2UiLQoTRGVsZXRlRGRiUm93UmVxdWVzdBIKCgJwaxgBIAEoCRIKCgJzaxgCIAEoCSIWChREZWxldGVEZGJSb3dSZXNwb25zZSIkChVEZWxldGVTM09iamVjdFJlcXVlc3QSCwoDa2V5GAEgASgJIhgKFkRlbGV0ZVMzT2JqZWN0UmVzcG9uc2UiaAoYR2VuZXJhdGlvblByb3ZpZGVyTW9kZWxzEhMKC291dHB1dF90eXBlGAEgASgJEhAKCHByb3ZpZGVyGAIgASgJEg4KBm1vZGVscxgDIAMoCRIVCg1kZWZhdWx0X21vZGVsGAQgASgJIh0KG0xpc3RHZW5lcmF0aW9uTW9kZWxzUmVxdWVzdCJgChxMaXN0R2VuZXJhdGlvbk1vZGVsc1Jlc3BvbnNlEkAKCXByb3ZpZGVycxgBIAMoCzItLm1lZGlhc2VydmljZS5vcHMudjEuR2VuZXJhdGlvblByb3ZpZGVyTW9kZWxzIhkKF0dldExvY2FsSWRlbnRpdHlSZXF1ZXN0Ij4KGEdldExvY2FsSWRlbnRpdHlSZXNwb25zZRIRCgl0ZW5hbnRfaWQYASABKAkSDwoHdXNlcl9pZBgCIAEoCTL9DwoKT3BzU2VydmljZRJXCghMaXN0Sm9icxIkLm1lZGlhc2VydmljZS5vcHMudjEuTGlzdEpvYnNSZXF1ZXN0GiUubWVkaWFzZXJ2aWNlLm9wcy52MS5MaXN0Sm9ic1Jlc3BvbnNlElEKBkdldEpvYhIiLm1lZGlhc2VydmljZS5vcHMudjEuR2V0Sm9iUmVxdWVzdBojLm1lZGlhc2VydmljZS5vcHMudjEuR2V0Sm9iUmVzcG9uc2USWgoJTGlzdE1lZGlhEiUubWVkaWFzZXJ2aWNlLm9wcy52MS5MaXN0TWVkaWFSZXF1ZXN0GiYubWVkaWFzZXJ2aWNlLm9wcy52MS5MaXN0TWVkaWFSZXNwb25zZRJXCghHZXRNZWRpYRIkLm1lZGlhc2VydmljZS5vcHMudjEuR2V0TWVkaWFSZXF1ZXN0GiUubWVkaWFzZXJ2aWNlLm9wcy52MS5HZXRNZWRpYVJlc3BvbnNlElQKB1NjYW5EZGISIy5tZWRpYXNlcnZpY2Uub3BzLnYxLlNjYW5EZGJSZXF1ZXN0GiQubWVkaWFzZXJ2aWNlLm9wcy52MS5TY2FuRGRiUmVzcG9uc2USWgoJR2V0RGRiUm93EiUubWVkaWFzZXJ2aWNlLm9wcy52MS5HZXREZGJSb3dSZXF1ZXN0GiYubWVkaWFzZXJ2aWNlLm9wcy52MS5HZXREZGJSb3dSZXNwb25zZRJgCgtRdWV1ZURlcHRocxInLm1lZGlhc2VydmljZS5vcHMudjEuUXVldWVEZXB0aHNSZXF1ZXN0GigubWVkaWFzZXJ2aWNlLm9wcy52MS5RdWV1ZURlcHRoc1Jlc3BvbnNlElEKBkxpc3RTMxIiLm1lZGlhc2VydmljZS5vcHMudjEuTGlzdFMzUmVxdWVzdBojLm1lZGlhc2VydmljZS5vcHMudjEuTGlzdFMzUmVzcG9uc2USbAoPUHJlc2lnbkRvd25sb2FkEisubWVkaWFzZXJ2aWNlLm9wcy52MS5QcmVzaWduRG93bmxvYWRSZXF1ZXN0GiwubWVkaWFzZXJ2aWNlLm9wcy52MS5QcmVzaWduRG93bmxvYWRSZXNwb25zZRJfCgpTdHJlYW1Mb2dzEiYubWVkaWFzZXJ2aWNlLm9wcy52MS5TdHJlYW1Mb2dzUmVxdWVzdBonLm1lZGlhc2VydmljZS5vcHMudjEuU3RyZWFtTG9nc1Jlc3BvbnNlMAESWgoJQ2FuY2VsSm9iEiUubWVkaWFzZXJ2aWNlLm9wcy52MS5DYW5jZWxKb2JSZXF1ZXN0GiYubWVkaWFzZXJ2aWNlLm9wcy52MS5DYW5jZWxKb2JSZXNwb25zZRJXCghSZXRyeUpvYhIkLm1lZGlhc2VydmljZS5vcHMudjEuUmV0cnlKb2JSZXF1ZXN0GiUubWVkaWFzZXJ2aWNlLm9wcy52MS5SZXRyeUpvYlJlc3BvbnNlEmMKDEZvcmNlRmFpbEpvYhIoLm1lZGlhc2VydmljZS5vcHMudjEuRm9yY2VGYWlsSm9iUmVxdWVzdBopLm1lZGlhc2VydmljZS5vcHMudjEuRm9yY2VGYWlsSm9iUmVzcG9uc2USYwoMUmVwbGF5T3V0Ym94EigubWVkaWFzZXJ2aWNlLm9wcy52MS5SZXBsYXlPdXRib3hSZXF1ZXN0GikubWVkaWFzZXJ2aWNlLm9wcy52MS5SZXBsYXlPdXRib3hSZXNwb25zZRJdCgpQdXJnZVF1ZXVlEiYubWVkaWFzZXJ2aWNlLm9wcy52MS5QdXJnZVF1ZXVlUmVxdWVzdBonLm1lZGlhc2VydmljZS5vcHMudjEuUHVyZ2VRdWV1ZVJlc3BvbnNlEl0KClJlZHJpdmVEbHESJi5tZWRpYXNlcnZpY2Uub3BzLnYxLlJlZHJpdmVEbHFSZXF1ZXN0GicubWVkaWFzZXJ2aWNlLm9wcy52MS5SZWRyaXZlRGxxUmVzcG9uc2USXQoKUHV0RGRiQXR0chImLm1lZGlhc2VydmljZS5vcHMudjEuUHV0RGRiQXR0clJlcXVlc3QaJy5tZWRpYXNlcnZpY2Uub3BzLnYxLlB1dERkYkF0dHJSZXNwb25zZRJjCgxEZWxldGVEZGJSb3cSKC5tZWRpYXNlcnZpY2Uub3BzLnYxLkRlbGV0ZURkYlJvd1JlcXVlc3QaKS5tZWRpYXNlcnZpY2Uub3BzLnYxLkRlbGV0ZURkYlJvd1Jlc3BvbnNlEmkKDkRlbGV0ZVMzT2JqZWN0EioubWVkaWFzZXJ2aWNlLm9wcy52MS5EZWxldGVTM09iamVjdFJlcXVlc3QaKy5tZWRpYXNlcnZpY2Uub3BzLnYxLkRlbGV0ZVMzT2JqZWN0UmVzcG9uc2USewoUTGlzdEdlbmVyYXRpb25Nb2RlbHMSMC5tZWRpYXNlcnZpY2Uub3BzLnYxLkxpc3RHZW5lcmF0aW9uTW9kZWxzUmVxdWVzdBoxLm1lZGlhc2VydmljZS5vcHMudjEuTGlzdEdlbmVyYXRpb25Nb2RlbHNSZXNwb25zZRJvChBHZXRMb2NhbElkZW50aXR5EiwubWVkaWFzZXJ2aWNlLm9wcy52MS5HZXRMb2NhbElkZW50aXR5UmVxdWVzdBotLm1lZGlhc2VydmljZS5vcHMudjEuR2V0TG9jYWxJZGVudGl0eVJlc3BvbnNlQu4BChdjb20ubWVkaWFzZXJ2aWNlLm9wcy52MUIIT3BzUHJvdG9QAVpbZ2l0aHViLmNvbS9kdHN6d2FpL21lZGlhLXByb2Nlc3Npbmctc2VydmljZS9iYWNrZW5kL3BrZy9jb250cmFjdHMvbWVkaWFzZXJ2aWNlL29wcy92MTtvcHN2MaICA01PWKoCE01lZGlhc2VydmljZS5PcHMuVjHKAhNNZWRpYXNlcnZpY2VcT3BzXFYx4gIfTWVkaWFzZXJ2aWNlXE9wc1xWMVxHUEJNZXRhZGF0YeoCFU1lZGlhc2VydmljZTo6T3BzOjpWMWIGcHJvdG8z", [file_google_protobuf_struct, file_google_protobuf_timestamp]);
+  fileDesc("Ch1tZWRpYXNlcnZpY2Uvb3BzL3YxL29wcy5wcm90bxITbWVkaWFzZXJ2aWNlLm9wcy52MSLoAgoKSm9iU3VtbWFyeRIOCgZqb2JfaWQYASABKAkSEQoJdGVuYW50X2lkGAIgASgJEhAKCG1lZGlhX2lkGAMgASgJEg4KBnN0YXR1cxgEIAEoCRIVCg1jdXJyZW50X3N0YWdlGAUgASgJEhMKC291dHB1dF90eXBlGAYgASgJEgwKBHRpZXIYByABKAkSDQoFbW9kZWwYCCABKAkSEAoIYXR0ZW1wdHMYCSABKAUSEgoKZXJyb3JfY29kZRgKIAEoCRIuCgpjcmVhdGVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI1Cgxjb21wbGV0ZWRfYXQYDSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wSACIAQFCDwoNX2NvbXBsZXRlZF9hdCJoCg9MaXN0Sm9ic1JlcXVlc3QSEQoJdGVuYW50X2lkGAEgASgJEg4KBnN0YXR1cxgCIAEoCRITCgtvdXRwdXRfdHlwZRgDIAEoCRINCgVsaW1pdBgEIAEoBRIOCgZjdXJzb3IYBSABKAkiVgoQTGlzdEpvYnNSZXNwb25zZRItCgRqb2JzGAEgAygLMh8ubWVkaWFzZXJ2aWNlLm9wcy52MS5Kb2JTdW1tYXJ5EhMKC25leHRfY3Vyc29yGAIgASgJIrsDCglUcmFjZVNwYW4SCgoCaWQYASABKAkSEQoJcGFyZW50X2lkGAIgASgJEgwKBGtpbmQYAyABKAkSDQoFbGFiZWwYBCABKAkSDgoGc3RhdHVzGAUgASgJEg0KBXN0YWdlGAYgASgJEhYKDnJlc291cmNlX2NsYXNzGAcgASgJEhIKCmF0dGVtcHRfbm8YCCABKAUSEgoKZXJyb3JfY29kZRgJIAEoCRIVCg1lcnJvcl9tZXNzYWdlGAogASgJEkIKCmF0dHJpYnV0ZXMYCyADKAsyLi5tZWRpYXNlcnZpY2Uub3BzLnYxLlRyYWNlU3Bhbi5BdHRyaWJ1dGVzRW50cnkSLAoIc3RhcnRfYXQYDCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEioKBmVuZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEwoLZHVyYXRpb25fbXMYDiABKAMSCgoCcGsYDyABKAkSCgoCc2sYECABKAkaMQoPQXR0cmlidXRlc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEijQMKDEdhdGVEZWNpc2lvbhIOCgZqb2JfaWQYASABKAkSEQoJdGVuYW50X2lkGAIgASgJEhQKDGdhdGVfdmVyc2lvbhgDIAEoCRITCgtvdXRwdXRfdHlwZRgEIAEoCRIQCghwcm92aWRlchgFIAEoCRINCgVtb2RlbBgGIAEoCRIQCghkZWNpc2lvbhgHIAEoCRISCgplcnJvcl9jb2RlGAggASgJEhkKEXdhdGVybWFya19wcmVzZW50GAkgASgIEhoKEmRpc2Nsb3N1cmVfcHJlc2VudBgKIAEoCBIWCg5zYWZldHlfcHJlc2VudBgLIAEoCBIdChV3YXRlcm1hcmtfZmluZ2VycHJpbnQYDCABKAkSFgoOd2F0ZXJtYXJrX2FsZ28YDSABKAkSGgoSd2F0ZXJtYXJrX3Bvc2l0aW9uGA4gASgJEhYKDndhdGVybWFya190ZXh0GA8gASgJEi4KCmRlY2lkZWRfYXQYECABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIvYDCgtGdWxsSm9iVmlldxIwCgdzdW1tYXJ5GAEgASgLMh8ubWVkaWFzZXJ2aWNlLm9wcy52MS5Kb2JTdW1tYXJ5EiQKA2pvYhgCIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSJgoFbWVkaWEYAyABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0Ei0KDHJlc3VsdF9hc3NldBgEIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSLQoFc3BhbnMYBSADKAsyHi5tZWRpYXNlcnZpY2Uub3BzLnYxLlRyYWNlU3BhbhI9Cg1nYXRlX2RlY2lzaW9uGAYgASgLMiEubWVkaWFzZXJ2aWNlLm9wcy52MS5HYXRlRGVjaXNpb25IAIgBARIUCgxyZWxhdGVkX2tleXMYByADKAkSMgoOZmlyc3RfZXZlbnRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjEKDWxhc3RfZXZlbnRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhgKEGRlY3J5cHRlZF9wcm9tcHQYCiABKAkSIQoZZGVjcnlwdGVkX3ByZXBhcmVkX3Byb21wdBgLIAEoCUIQCg5fZ2F0ZV9kZWNpc2lvbiIfCg1HZXRKb2JSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCSJACg5HZXRKb2JSZXNwb25zZRIuCgR2aWV3GAEgASgLMiAubWVkaWFzZXJ2aWNlLm9wcy52MS5GdWxsSm9iVmlldyL3AgoITWVkaWFSb3cSEAoIbWVkaWFfaWQYASABKAkSEQoJdGVuYW50X2lkGAIgASgJEhUKDW93bmVyX3VzZXJfaWQYAyABKAkSDgoGb3JpZ2luGAQgASgJEhIKCm1lZGlhX3R5cGUYBSABKAkSEQoJbGlmZWN5Y2xlGAYgASgJEh4KEW9yaWdpbmFsX2Fzc2V0X2lkGAcgASgJSACIAQESLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMwoKZGVsZXRlZF9hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBIAYgBARITCgZqb2JfaWQYCyABKAlIAogBAUIUChJfb3JpZ2luYWxfYXNzZXRfaWRCDQoLX2RlbGV0ZWRfYXRCCQoHX2pvYl9pZCKUAQoQTGlzdE1lZGlhUmVxdWVzdBIRCgl0ZW5hbnRfaWQYASABKAkSEgoKbWVkaWFfdHlwZRgCIAEoCRIOCgZvcmlnaW4YAyABKAkSEQoJbGlmZWN5Y2xlGAQgASgJEhcKD2luY2x1ZGVfZGVsZXRlZBgFIAEoCBINCgVsaW1pdBgGIAEoBRIOCgZjdXJzb3IYByABKAkiVgoRTGlzdE1lZGlhUmVzcG9uc2USLAoFaXRlbXMYASADKAsyHS5tZWRpYXNlcnZpY2Uub3BzLnYxLk1lZGlhUm93EhMKC25leHRfY3Vyc29yGAIgASgJIqwBCg1GdWxsTWVkaWFWaWV3EioKA3JvdxgBIAEoCzIdLm1lZGlhc2VydmljZS5vcHMudjEuTWVkaWFSb3cSJgoFbWVkaWEYAiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EicKBmFzc2V0cxgDIAMoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSEwoGam9iX2lkGAQgASgJSACIAQFCCQoHX2pvYl9pZCIjCg9HZXRNZWRpYVJlcXVlc3QSEAoIbWVkaWFfaWQYASABKAkiRAoQR2V0TWVkaWFSZXNwb25zZRIwCgR2aWV3GAEgASgLMiIubWVkaWFzZXJ2aWNlLm9wcy52MS5GdWxsTWVkaWFWaWV3ImAKBkRkYlJvdxIKCgJwaxgBIAEoCRIKCgJzaxgCIAEoCRIRCglpdGVtX3R5cGUYAyABKAkSKwoKYXR0cmlidXRlcxgEIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QiVQoOU2NhbkRkYlJlcXVlc3QSEQoJcGtfcHJlZml4GAEgASgJEhEKCXNrX3ByZWZpeBgCIAEoCRINCgVsaW1pdBgDIAEoBRIOCgZjdXJzb3IYBCABKAkiUQoPU2NhbkRkYlJlc3BvbnNlEikKBHJvd3MYASADKAsyGy5tZWRpYXNlcnZpY2Uub3BzLnYxLkRkYlJvdxITCgtuZXh0X2N1cnNvchgCIAEoCSIqChBHZXREZGJSb3dSZXF1ZXN0EgoKAnBrGAEgASgJEgoKAnNrGAIgASgJIj0KEUdldERkYlJvd1Jlc3BvbnNlEigKA3JvdxgBIAEoCzIbLm1lZGlhc2VydmljZS5vcHMudjEuRGRiUm93ItwBCglRdWV1ZVN0YXQSDAoEbmFtZRgBIAEoCRILCgN1cmwYAiABKAkSDwoHdmlzaWJsZRgDIAEoBRIRCglpbl9mbGlnaHQYBCABKAUSDwoHZGVsYXllZBgFIAEoBRIiChp2aXNpYmlsaXR5X3RpbWVvdXRfc2Vjb25kcxgGIAEoBRIiChpvbGRlc3RfbWVzc2FnZV9hZ2Vfc2Vjb25kcxgHIAEoBRIQCghkbHFfbmFtZRgIIAEoCRIRCglkbHFfY291bnQYCSABKAUSEgoKdGllcl9jbGFzcxgKIAEoCSIUChJRdWV1ZURlcHRoc1JlcXVlc3QiRQoTUXVldWVEZXB0aHNSZXNwb25zZRIuCgZxdWV1ZXMYASADKAsyHi5tZWRpYXNlcnZpY2Uub3BzLnYxLlF1ZXVlU3RhdCLQAgoUVGVuYW50VXNhZ2VSZXNlcnZvaXISEQoJdGVuYW50X2lkGAEgASgJEg4KBm1ldHJpYxgCIAEoCRIOCgZwZXJpb2QYAyABKAkSCwoDY2FwGAQgASgDEhEKCWF2YWlsYWJsZRgFIAEoAxIQCghyZXNlcnZlZBgGIAEoAxIRCgljb21taXR0ZWQYByABKAMSEAoIcmVsZWFzZWQYCCABKAMSDQoFc3RhdGUYCSABKAkSEQoJcG9saWN5X2lkGAogASgJEhYKDnBvbGljeV92ZXJzaW9uGAsgASgDEi4KCmNyZWF0ZWRfYXQYDCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYDSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDG1hdGVyaWFsaXplZBgOIAEoCCIqChVHZXRUZW5hbnRVc2FnZVJlcXVlc3QSEQoJdGVuYW50X2lkGAEgASgJIscBChZHZXRUZW5hbnRVc2FnZVJlc3BvbnNlEhEKCXRlbmFudF9pZBgBIAEoCRIcChRjdXJyZW50X2RhaWx5X3BlcmlvZBgCIAEoCRI9CgpkYWlseV9jb3N0GAMgASgLMikubWVkaWFzZXJ2aWNlLm9wcy52MS5UZW5hbnRVc2FnZVJlc2Vydm9pchI9CgpyZXNlcnZvaXJzGAQgAygLMikubWVkaWFzZXJ2aWNlLm9wcy52MS5UZW5hbnRVc2FnZVJlc2Vydm9pciKiAQoGUzNOb2RlEgsKA2tleRgBIAEoCRIMCgRuYW1lGAIgASgJEhEKCWlzX3ByZWZpeBgDIAEoCBISCgpzaXplX2J5dGVzGAQgASgDEgwKBGV0YWcYBSABKAkSNgoNbGFzdF9tb2RpZmllZBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBIAIgBAUIQCg5fbGFzdF9tb2RpZmllZCJBCg1MaXN0UzNSZXF1ZXN0Eg4KBnByZWZpeBgBIAEoCRIRCglkZWxpbWl0ZXIYAiABKAkSDQoFbGltaXQYAyABKAUiPAoOTGlzdFMzUmVzcG9uc2USKgoFbm9kZXMYASADKAsyGy5tZWRpYXNlcnZpY2Uub3BzLnYxLlMzTm9kZSIlChZQcmVzaWduRG93bmxvYWRSZXF1ZXN0EgsKA2tleRgBIAEoCSJWChdQcmVzaWduRG93bmxvYWRSZXNwb25zZRILCgN1cmwYASABKAkSLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAilQEKEVN0cmVhbUxvZ3NSZXF1ZXN0Eg8KB3NlcnZpY2UYASABKAkSDgoGam9iX2lkGAIgASgJEhAKCG1lZGlhX2lkGAMgASgJEg0KBWxldmVsGAQgASgJEhAKCGNvbnRhaW5zGAUgASgJEhIKCnRhaWxfbGluZXMYBiABKAUSGAoQbG9va2JhY2tfc2Vjb25kcxgHIAEoBSLIAQoHTG9nTGluZRImCgJ0cxgBIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHc2VydmljZRgCIAEoCRINCgVsZXZlbBgDIAEoCRIMCgRib2R5GAQgASgJEjgKBmxhYmVscxgFIAMoCzIoLm1lZGlhc2VydmljZS5vcHMudjEuTG9nTGluZS5MYWJlbHNFbnRyeRotCgtMYWJlbHNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIkAKElN0cmVhbUxvZ3NSZXNwb25zZRIqCgRsaW5lGAEgASgLMhwubWVkaWFzZXJ2aWNlLm9wcy52MS5Mb2dMaW5lIjIKEENhbmNlbEpvYlJlcXVlc3QSDgoGam9iX2lkGAEgASgJEg4KBnJlYXNvbhgCIAEoCSITChFDYW5jZWxKb2JSZXNwb25zZSIhCg9SZXRyeUpvYlJlcXVlc3QSDgoGam9iX2lkGAEgASgJIhIKEFJldHJ5Sm9iUmVzcG9uc2UiUAoTRm9yY2VGYWlsSm9iUmVxdWVzdBIOCgZqb2JfaWQYASABKAkSEgoKZXJyb3JfY29kZRgCIAEoCRIVCg1lcnJvcl9tZXNzYWdlGAMgASgJIhYKFEZvcmNlRmFpbEpvYlJlc3BvbnNlIiUKE1JlcGxheU91dGJveFJlcXVlc3QSDgoGam9iX2lkGAEgASgJIhYKFFJlcGxheU91dGJveFJlc3BvbnNlIicKEVB1cmdlUXVldWVSZXF1ZXN0EhIKCnF1ZXVlX25hbWUYASABKAkiFAoSUHVyZ2VRdWV1ZVJlc3BvbnNlIjQKEVJlZHJpdmVEbHFSZXF1ZXN0EhAKCGRscV9uYW1lGAEgASgJEg0KBWxpbWl0GAIgASgFIjMKElJlZHJpdmVEbHFSZXNwb25zZRINCgVtb3ZlZBgBIAEoBRIOCgZmYWlsZWQYAiABKAUiVwoRUHV0RGRiQXR0clJlcXVlc3QSCgoCcGsYASABKAkSCgoCc2sYAiABKAkSFgoOYXR0cmlidXRlX25hbWUYAyABKAkSEgoKdmFsdWVfanNvbhgEIAEoCSIUChJQdXREZGJBdHRyUmVzcG9uc2UiLQoTRGVsZXRlRGRiUm93UmVxdWVzdBIKCgJwaxgBIAEoCRIKCgJzaxgCIAEoCSIWChREZWxldGVEZGJSb3dSZXNwb25zZSIkChVEZWxldGVTM09iamVjdFJlcXVlc3QSCwoDa2V5GAEgASgJIhgKFkRlbGV0ZVMzT2JqZWN0UmVzcG9uc2UiaAoYR2VuZXJhdGlvblByb3ZpZGVyTW9kZWxzEhMKC291dHB1dF90eXBlGAEgASgJEhAKCHByb3ZpZGVyGAIgASgJEg4KBm1vZGVscxgDIAMoCRIVCg1kZWZhdWx0X21vZGVsGAQgASgJIh0KG0xpc3RHZW5lcmF0aW9uTW9kZWxzUmVxdWVzdCJgChxMaXN0R2VuZXJhdGlvbk1vZGVsc1Jlc3BvbnNlEkAKCXByb3ZpZGVycxgBIAMoCzItLm1lZGlhc2VydmljZS5vcHMudjEuR2VuZXJhdGlvblByb3ZpZGVyTW9kZWxzIhkKF0dldExvY2FsSWRlbnRpdHlSZXF1ZXN0Ij4KGEdldExvY2FsSWRlbnRpdHlSZXNwb25zZRIRCgl0ZW5hbnRfaWQYASABKAkSDwoHdXNlcl9pZBgCIAEoCTLoEAoKT3BzU2VydmljZRJXCghMaXN0Sm9icxIkLm1lZGlhc2VydmljZS5vcHMudjEuTGlzdEpvYnNSZXF1ZXN0GiUubWVkaWFzZXJ2aWNlLm9wcy52MS5MaXN0Sm9ic1Jlc3BvbnNlElEKBkdldEpvYhIiLm1lZGlhc2VydmljZS5vcHMudjEuR2V0Sm9iUmVxdWVzdBojLm1lZGlhc2VydmljZS5vcHMudjEuR2V0Sm9iUmVzcG9uc2USWgoJTGlzdE1lZGlhEiUubWVkaWFzZXJ2aWNlLm9wcy52MS5MaXN0TWVkaWFSZXF1ZXN0GiYubWVkaWFzZXJ2aWNlLm9wcy52MS5MaXN0TWVkaWFSZXNwb25zZRJXCghHZXRNZWRpYRIkLm1lZGlhc2VydmljZS5vcHMudjEuR2V0TWVkaWFSZXF1ZXN0GiUubWVkaWFzZXJ2aWNlLm9wcy52MS5HZXRNZWRpYVJlc3BvbnNlElQKB1NjYW5EZGISIy5tZWRpYXNlcnZpY2Uub3BzLnYxLlNjYW5EZGJSZXF1ZXN0GiQubWVkaWFzZXJ2aWNlLm9wcy52MS5TY2FuRGRiUmVzcG9uc2USWgoJR2V0RGRiUm93EiUubWVkaWFzZXJ2aWNlLm9wcy52MS5HZXREZGJSb3dSZXF1ZXN0GiYubWVkaWFzZXJ2aWNlLm9wcy52MS5HZXREZGJSb3dSZXNwb25zZRJgCgtRdWV1ZURlcHRocxInLm1lZGlhc2VydmljZS5vcHMudjEuUXVldWVEZXB0aHNSZXF1ZXN0GigubWVkaWFzZXJ2aWNlLm9wcy52MS5RdWV1ZURlcHRoc1Jlc3BvbnNlEmkKDkdldFRlbmFudFVzYWdlEioubWVkaWFzZXJ2aWNlLm9wcy52MS5HZXRUZW5hbnRVc2FnZVJlcXVlc3QaKy5tZWRpYXNlcnZpY2Uub3BzLnYxLkdldFRlbmFudFVzYWdlUmVzcG9uc2USUQoGTGlzdFMzEiIubWVkaWFzZXJ2aWNlLm9wcy52MS5MaXN0UzNSZXF1ZXN0GiMubWVkaWFzZXJ2aWNlLm9wcy52MS5MaXN0UzNSZXNwb25zZRJsCg9QcmVzaWduRG93bmxvYWQSKy5tZWRpYXNlcnZpY2Uub3BzLnYxLlByZXNpZ25Eb3dubG9hZFJlcXVlc3QaLC5tZWRpYXNlcnZpY2Uub3BzLnYxLlByZXNpZ25Eb3dubG9hZFJlc3BvbnNlEl8KClN0cmVhbUxvZ3MSJi5tZWRpYXNlcnZpY2Uub3BzLnYxLlN0cmVhbUxvZ3NSZXF1ZXN0GicubWVkaWFzZXJ2aWNlLm9wcy52MS5TdHJlYW1Mb2dzUmVzcG9uc2UwARJaCglDYW5jZWxKb2ISJS5tZWRpYXNlcnZpY2Uub3BzLnYxLkNhbmNlbEpvYlJlcXVlc3QaJi5tZWRpYXNlcnZpY2Uub3BzLnYxLkNhbmNlbEpvYlJlc3BvbnNlElcKCFJldHJ5Sm9iEiQubWVkaWFzZXJ2aWNlLm9wcy52MS5SZXRyeUpvYlJlcXVlc3QaJS5tZWRpYXNlcnZpY2Uub3BzLnYxLlJldHJ5Sm9iUmVzcG9uc2USYwoMRm9yY2VGYWlsSm9iEigubWVkaWFzZXJ2aWNlLm9wcy52MS5Gb3JjZUZhaWxKb2JSZXF1ZXN0GikubWVkaWFzZXJ2aWNlLm9wcy52MS5Gb3JjZUZhaWxKb2JSZXNwb25zZRJjCgxSZXBsYXlPdXRib3gSKC5tZWRpYXNlcnZpY2Uub3BzLnYxLlJlcGxheU91dGJveFJlcXVlc3QaKS5tZWRpYXNlcnZpY2Uub3BzLnYxLlJlcGxheU91dGJveFJlc3BvbnNlEl0KClB1cmdlUXVldWUSJi5tZWRpYXNlcnZpY2Uub3BzLnYxLlB1cmdlUXVldWVSZXF1ZXN0GicubWVkaWFzZXJ2aWNlLm9wcy52MS5QdXJnZVF1ZXVlUmVzcG9uc2USXQoKUmVkcml2ZURscRImLm1lZGlhc2VydmljZS5vcHMudjEuUmVkcml2ZURscVJlcXVlc3QaJy5tZWRpYXNlcnZpY2Uub3BzLnYxLlJlZHJpdmVEbHFSZXNwb25zZRJdCgpQdXREZGJBdHRyEiYubWVkaWFzZXJ2aWNlLm9wcy52MS5QdXREZGJBdHRyUmVxdWVzdBonLm1lZGlhc2VydmljZS5vcHMudjEuUHV0RGRiQXR0clJlc3BvbnNlEmMKDERlbGV0ZURkYlJvdxIoLm1lZGlhc2VydmljZS5vcHMudjEuRGVsZXRlRGRiUm93UmVxdWVzdBopLm1lZGlhc2VydmljZS5vcHMudjEuRGVsZXRlRGRiUm93UmVzcG9uc2USaQoORGVsZXRlUzNPYmplY3QSKi5tZWRpYXNlcnZpY2Uub3BzLnYxLkRlbGV0ZVMzT2JqZWN0UmVxdWVzdBorLm1lZGlhc2VydmljZS5vcHMudjEuRGVsZXRlUzNPYmplY3RSZXNwb25zZRJ7ChRMaXN0R2VuZXJhdGlvbk1vZGVscxIwLm1lZGlhc2VydmljZS5vcHMudjEuTGlzdEdlbmVyYXRpb25Nb2RlbHNSZXF1ZXN0GjEubWVkaWFzZXJ2aWNlLm9wcy52MS5MaXN0R2VuZXJhdGlvbk1vZGVsc1Jlc3BvbnNlEm8KEEdldExvY2FsSWRlbnRpdHkSLC5tZWRpYXNlcnZpY2Uub3BzLnYxLkdldExvY2FsSWRlbnRpdHlSZXF1ZXN0Gi0ubWVkaWFzZXJ2aWNlLm9wcy52MS5HZXRMb2NhbElkZW50aXR5UmVzcG9uc2VC7gEKF2NvbS5tZWRpYXNlcnZpY2Uub3BzLnYxQghPcHNQcm90b1ABWltnaXRodWIuY29tL2R0c3p3YWkvbWVkaWEtcHJvY2Vzc2luZy1zZXJ2aWNlL2JhY2tlbmQvcGtnL2NvbnRyYWN0cy9tZWRpYXNlcnZpY2Uvb3BzL3YxO29wc3YxogIDTU9YqgITTWVkaWFzZXJ2aWNlLk9wcy5WMcoCE01lZGlhc2VydmljZVxPcHNcVjHiAh9NZWRpYXNlcnZpY2VcT3BzXFYxXEdQQk1ldGFkYXRh6gIVTWVkaWFzZXJ2aWNlOjpPcHM6OlYxYgZwcm90bzM", [file_google_protobuf_struct, file_google_protobuf_timestamp]);
 
 /**
  * JobSummary is one row in the jobs / library tables. The console renders
@@ -955,6 +955,146 @@ export const QueueDepthsResponseSchema: GenMessage<QueueDepthsResponse> = /*@__P
   messageDesc(file_mediaservice_ops_v1_ops, 21);
 
 /**
+ * TenantUsageReservoir is the aggregate row for one tenant-scoped quota
+ * reservoir. Cost values are stored in micro-USD; count and byte metrics use
+ * their native unit.
+ *
+ * @generated from message mediaservice.ops.v1.TenantUsageReservoir
+ */
+export type TenantUsageReservoir = Message<"mediaservice.ops.v1.TenantUsageReservoir"> & {
+  /**
+   * @generated from field: string tenant_id = 1;
+   */
+  tenantId: string;
+
+  /**
+   * @generated from field: string metric = 2;
+   */
+  metric: string;
+
+  /**
+   * @generated from field: string period = 3;
+   */
+  period: string;
+
+  /**
+   * @generated from field: int64 cap = 4;
+   */
+  cap: bigint;
+
+  /**
+   * @generated from field: int64 available = 5;
+   */
+  available: bigint;
+
+  /**
+   * @generated from field: int64 reserved = 6;
+   */
+  reserved: bigint;
+
+  /**
+   * @generated from field: int64 committed = 7;
+   */
+  committed: bigint;
+
+  /**
+   * @generated from field: int64 released = 8;
+   */
+  released: bigint;
+
+  /**
+   * @generated from field: string state = 9;
+   */
+  state: string;
+
+  /**
+   * @generated from field: string policy_id = 10;
+   */
+  policyId: string;
+
+  /**
+   * @generated from field: int64 policy_version = 11;
+   */
+  policyVersion: bigint;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 12;
+   */
+  createdAt?: Timestamp;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp updated_at = 13;
+   */
+  updatedAt?: Timestamp;
+
+  /**
+   * false when the API is returning the configured default for a reservoir
+   * that has not been materialized in DynamoDB yet.
+   *
+   * @generated from field: bool materialized = 14;
+   */
+  materialized: boolean;
+};
+
+/**
+ * Describes the message mediaservice.ops.v1.TenantUsageReservoir.
+ * Use `create(TenantUsageReservoirSchema)` to create a new message.
+ */
+export const TenantUsageReservoirSchema: GenMessage<TenantUsageReservoir> = /*@__PURE__*/
+  messageDesc(file_mediaservice_ops_v1_ops, 22);
+
+/**
+ * @generated from message mediaservice.ops.v1.GetTenantUsageRequest
+ */
+export type GetTenantUsageRequest = Message<"mediaservice.ops.v1.GetTenantUsageRequest"> & {
+  /**
+   * Empty defaults to the LOCAL_ONLY tenant.
+   *
+   * @generated from field: string tenant_id = 1;
+   */
+  tenantId: string;
+};
+
+/**
+ * Describes the message mediaservice.ops.v1.GetTenantUsageRequest.
+ * Use `create(GetTenantUsageRequestSchema)` to create a new message.
+ */
+export const GetTenantUsageRequestSchema: GenMessage<GetTenantUsageRequest> = /*@__PURE__*/
+  messageDesc(file_mediaservice_ops_v1_ops, 23);
+
+/**
+ * @generated from message mediaservice.ops.v1.GetTenantUsageResponse
+ */
+export type GetTenantUsageResponse = Message<"mediaservice.ops.v1.GetTenantUsageResponse"> & {
+  /**
+   * @generated from field: string tenant_id = 1;
+   */
+  tenantId: string;
+
+  /**
+   * @generated from field: string current_daily_period = 2;
+   */
+  currentDailyPeriod: string;
+
+  /**
+   * @generated from field: mediaservice.ops.v1.TenantUsageReservoir daily_cost = 3;
+   */
+  dailyCost?: TenantUsageReservoir;
+
+  /**
+   * @generated from field: repeated mediaservice.ops.v1.TenantUsageReservoir reservoirs = 4;
+   */
+  reservoirs: TenantUsageReservoir[];
+};
+
+/**
+ * Describes the message mediaservice.ops.v1.GetTenantUsageResponse.
+ * Use `create(GetTenantUsageResponseSchema)` to create a new message.
+ */
+export const GetTenantUsageResponseSchema: GenMessage<GetTenantUsageResponse> = /*@__PURE__*/
+  messageDesc(file_mediaservice_ops_v1_ops, 24);
+
+/**
  * S3Node is one entry in the S3 tree. is_prefix=true means it's a directory
  * node and size/etag are unset.
  *
@@ -997,7 +1137,7 @@ export type S3Node = Message<"mediaservice.ops.v1.S3Node"> & {
  * Use `create(S3NodeSchema)` to create a new message.
  */
 export const S3NodeSchema: GenMessage<S3Node> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 22);
+  messageDesc(file_mediaservice_ops_v1_ops, 25);
 
 /**
  * @generated from message mediaservice.ops.v1.ListS3Request
@@ -1027,7 +1167,7 @@ export type ListS3Request = Message<"mediaservice.ops.v1.ListS3Request"> & {
  * Use `create(ListS3RequestSchema)` to create a new message.
  */
 export const ListS3RequestSchema: GenMessage<ListS3Request> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 23);
+  messageDesc(file_mediaservice_ops_v1_ops, 26);
 
 /**
  * @generated from message mediaservice.ops.v1.ListS3Response
@@ -1044,7 +1184,7 @@ export type ListS3Response = Message<"mediaservice.ops.v1.ListS3Response"> & {
  * Use `create(ListS3ResponseSchema)` to create a new message.
  */
 export const ListS3ResponseSchema: GenMessage<ListS3Response> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 24);
+  messageDesc(file_mediaservice_ops_v1_ops, 27);
 
 /**
  * @generated from message mediaservice.ops.v1.PresignDownloadRequest
@@ -1061,7 +1201,7 @@ export type PresignDownloadRequest = Message<"mediaservice.ops.v1.PresignDownloa
  * Use `create(PresignDownloadRequestSchema)` to create a new message.
  */
 export const PresignDownloadRequestSchema: GenMessage<PresignDownloadRequest> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 25);
+  messageDesc(file_mediaservice_ops_v1_ops, 28);
 
 /**
  * @generated from message mediaservice.ops.v1.PresignDownloadResponse
@@ -1083,7 +1223,7 @@ export type PresignDownloadResponse = Message<"mediaservice.ops.v1.PresignDownlo
  * Use `create(PresignDownloadResponseSchema)` to create a new message.
  */
 export const PresignDownloadResponseSchema: GenMessage<PresignDownloadResponse> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 26);
+  messageDesc(file_mediaservice_ops_v1_ops, 29);
 
 /**
  * @generated from message mediaservice.ops.v1.StreamLogsRequest
@@ -1147,7 +1287,7 @@ export type StreamLogsRequest = Message<"mediaservice.ops.v1.StreamLogsRequest">
  * Use `create(StreamLogsRequestSchema)` to create a new message.
  */
 export const StreamLogsRequestSchema: GenMessage<StreamLogsRequest> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 27);
+  messageDesc(file_mediaservice_ops_v1_ops, 30);
 
 /**
  * @generated from message mediaservice.ops.v1.LogLine
@@ -1186,7 +1326,7 @@ export type LogLine = Message<"mediaservice.ops.v1.LogLine"> & {
  * Use `create(LogLineSchema)` to create a new message.
  */
 export const LogLineSchema: GenMessage<LogLine> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 28);
+  messageDesc(file_mediaservice_ops_v1_ops, 31);
 
 /**
  * @generated from message mediaservice.ops.v1.StreamLogsResponse
@@ -1203,7 +1343,7 @@ export type StreamLogsResponse = Message<"mediaservice.ops.v1.StreamLogsResponse
  * Use `create(StreamLogsResponseSchema)` to create a new message.
  */
 export const StreamLogsResponseSchema: GenMessage<StreamLogsResponse> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 29);
+  messageDesc(file_mediaservice_ops_v1_ops, 32);
 
 /**
  * @generated from message mediaservice.ops.v1.CancelJobRequest
@@ -1225,7 +1365,7 @@ export type CancelJobRequest = Message<"mediaservice.ops.v1.CancelJobRequest"> &
  * Use `create(CancelJobRequestSchema)` to create a new message.
  */
 export const CancelJobRequestSchema: GenMessage<CancelJobRequest> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 30);
+  messageDesc(file_mediaservice_ops_v1_ops, 33);
 
 /**
  * @generated from message mediaservice.ops.v1.CancelJobResponse
@@ -1238,7 +1378,7 @@ export type CancelJobResponse = Message<"mediaservice.ops.v1.CancelJobResponse">
  * Use `create(CancelJobResponseSchema)` to create a new message.
  */
 export const CancelJobResponseSchema: GenMessage<CancelJobResponse> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 31);
+  messageDesc(file_mediaservice_ops_v1_ops, 34);
 
 /**
  * @generated from message mediaservice.ops.v1.RetryJobRequest
@@ -1255,7 +1395,7 @@ export type RetryJobRequest = Message<"mediaservice.ops.v1.RetryJobRequest"> & {
  * Use `create(RetryJobRequestSchema)` to create a new message.
  */
 export const RetryJobRequestSchema: GenMessage<RetryJobRequest> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 32);
+  messageDesc(file_mediaservice_ops_v1_ops, 35);
 
 /**
  * @generated from message mediaservice.ops.v1.RetryJobResponse
@@ -1268,7 +1408,7 @@ export type RetryJobResponse = Message<"mediaservice.ops.v1.RetryJobResponse"> &
  * Use `create(RetryJobResponseSchema)` to create a new message.
  */
 export const RetryJobResponseSchema: GenMessage<RetryJobResponse> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 33);
+  messageDesc(file_mediaservice_ops_v1_ops, 36);
 
 /**
  * @generated from message mediaservice.ops.v1.ForceFailJobRequest
@@ -1295,7 +1435,7 @@ export type ForceFailJobRequest = Message<"mediaservice.ops.v1.ForceFailJobReque
  * Use `create(ForceFailJobRequestSchema)` to create a new message.
  */
 export const ForceFailJobRequestSchema: GenMessage<ForceFailJobRequest> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 34);
+  messageDesc(file_mediaservice_ops_v1_ops, 37);
 
 /**
  * @generated from message mediaservice.ops.v1.ForceFailJobResponse
@@ -1308,7 +1448,7 @@ export type ForceFailJobResponse = Message<"mediaservice.ops.v1.ForceFailJobResp
  * Use `create(ForceFailJobResponseSchema)` to create a new message.
  */
 export const ForceFailJobResponseSchema: GenMessage<ForceFailJobResponse> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 35);
+  messageDesc(file_mediaservice_ops_v1_ops, 38);
 
 /**
  * @generated from message mediaservice.ops.v1.ReplayOutboxRequest
@@ -1325,7 +1465,7 @@ export type ReplayOutboxRequest = Message<"mediaservice.ops.v1.ReplayOutboxReque
  * Use `create(ReplayOutboxRequestSchema)` to create a new message.
  */
 export const ReplayOutboxRequestSchema: GenMessage<ReplayOutboxRequest> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 36);
+  messageDesc(file_mediaservice_ops_v1_ops, 39);
 
 /**
  * @generated from message mediaservice.ops.v1.ReplayOutboxResponse
@@ -1338,7 +1478,7 @@ export type ReplayOutboxResponse = Message<"mediaservice.ops.v1.ReplayOutboxResp
  * Use `create(ReplayOutboxResponseSchema)` to create a new message.
  */
 export const ReplayOutboxResponseSchema: GenMessage<ReplayOutboxResponse> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 37);
+  messageDesc(file_mediaservice_ops_v1_ops, 40);
 
 /**
  * @generated from message mediaservice.ops.v1.PurgeQueueRequest
@@ -1355,7 +1495,7 @@ export type PurgeQueueRequest = Message<"mediaservice.ops.v1.PurgeQueueRequest">
  * Use `create(PurgeQueueRequestSchema)` to create a new message.
  */
 export const PurgeQueueRequestSchema: GenMessage<PurgeQueueRequest> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 38);
+  messageDesc(file_mediaservice_ops_v1_ops, 41);
 
 /**
  * @generated from message mediaservice.ops.v1.PurgeQueueResponse
@@ -1368,7 +1508,7 @@ export type PurgeQueueResponse = Message<"mediaservice.ops.v1.PurgeQueueResponse
  * Use `create(PurgeQueueResponseSchema)` to create a new message.
  */
 export const PurgeQueueResponseSchema: GenMessage<PurgeQueueResponse> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 39);
+  messageDesc(file_mediaservice_ops_v1_ops, 42);
 
 /**
  * @generated from message mediaservice.ops.v1.RedriveDlqRequest
@@ -1393,7 +1533,7 @@ export type RedriveDlqRequest = Message<"mediaservice.ops.v1.RedriveDlqRequest">
  * Use `create(RedriveDlqRequestSchema)` to create a new message.
  */
 export const RedriveDlqRequestSchema: GenMessage<RedriveDlqRequest> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 40);
+  messageDesc(file_mediaservice_ops_v1_ops, 43);
 
 /**
  * @generated from message mediaservice.ops.v1.RedriveDlqResponse
@@ -1415,7 +1555,7 @@ export type RedriveDlqResponse = Message<"mediaservice.ops.v1.RedriveDlqResponse
  * Use `create(RedriveDlqResponseSchema)` to create a new message.
  */
 export const RedriveDlqResponseSchema: GenMessage<RedriveDlqResponse> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 41);
+  messageDesc(file_mediaservice_ops_v1_ops, 44);
 
 /**
  * @generated from message mediaservice.ops.v1.PutDdbAttrRequest
@@ -1450,7 +1590,7 @@ export type PutDdbAttrRequest = Message<"mediaservice.ops.v1.PutDdbAttrRequest">
  * Use `create(PutDdbAttrRequestSchema)` to create a new message.
  */
 export const PutDdbAttrRequestSchema: GenMessage<PutDdbAttrRequest> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 42);
+  messageDesc(file_mediaservice_ops_v1_ops, 45);
 
 /**
  * @generated from message mediaservice.ops.v1.PutDdbAttrResponse
@@ -1463,7 +1603,7 @@ export type PutDdbAttrResponse = Message<"mediaservice.ops.v1.PutDdbAttrResponse
  * Use `create(PutDdbAttrResponseSchema)` to create a new message.
  */
 export const PutDdbAttrResponseSchema: GenMessage<PutDdbAttrResponse> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 43);
+  messageDesc(file_mediaservice_ops_v1_ops, 46);
 
 /**
  * @generated from message mediaservice.ops.v1.DeleteDdbRowRequest
@@ -1485,7 +1625,7 @@ export type DeleteDdbRowRequest = Message<"mediaservice.ops.v1.DeleteDdbRowReque
  * Use `create(DeleteDdbRowRequestSchema)` to create a new message.
  */
 export const DeleteDdbRowRequestSchema: GenMessage<DeleteDdbRowRequest> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 44);
+  messageDesc(file_mediaservice_ops_v1_ops, 47);
 
 /**
  * @generated from message mediaservice.ops.v1.DeleteDdbRowResponse
@@ -1498,7 +1638,7 @@ export type DeleteDdbRowResponse = Message<"mediaservice.ops.v1.DeleteDdbRowResp
  * Use `create(DeleteDdbRowResponseSchema)` to create a new message.
  */
 export const DeleteDdbRowResponseSchema: GenMessage<DeleteDdbRowResponse> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 45);
+  messageDesc(file_mediaservice_ops_v1_ops, 48);
 
 /**
  * @generated from message mediaservice.ops.v1.DeleteS3ObjectRequest
@@ -1515,7 +1655,7 @@ export type DeleteS3ObjectRequest = Message<"mediaservice.ops.v1.DeleteS3ObjectR
  * Use `create(DeleteS3ObjectRequestSchema)` to create a new message.
  */
 export const DeleteS3ObjectRequestSchema: GenMessage<DeleteS3ObjectRequest> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 46);
+  messageDesc(file_mediaservice_ops_v1_ops, 49);
 
 /**
  * @generated from message mediaservice.ops.v1.DeleteS3ObjectResponse
@@ -1528,7 +1668,7 @@ export type DeleteS3ObjectResponse = Message<"mediaservice.ops.v1.DeleteS3Object
  * Use `create(DeleteS3ObjectResponseSchema)` to create a new message.
  */
 export const DeleteS3ObjectResponseSchema: GenMessage<DeleteS3ObjectResponse> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 47);
+  messageDesc(file_mediaservice_ops_v1_ops, 50);
 
 /**
  * GenerationProviderModels describes the active provider for one output type
@@ -1573,7 +1713,7 @@ export type GenerationProviderModels = Message<"mediaservice.ops.v1.GenerationPr
  * Use `create(GenerationProviderModelsSchema)` to create a new message.
  */
 export const GenerationProviderModelsSchema: GenMessage<GenerationProviderModels> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 48);
+  messageDesc(file_mediaservice_ops_v1_ops, 51);
 
 /**
  * @generated from message mediaservice.ops.v1.ListGenerationModelsRequest
@@ -1586,7 +1726,7 @@ export type ListGenerationModelsRequest = Message<"mediaservice.ops.v1.ListGener
  * Use `create(ListGenerationModelsRequestSchema)` to create a new message.
  */
 export const ListGenerationModelsRequestSchema: GenMessage<ListGenerationModelsRequest> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 49);
+  messageDesc(file_mediaservice_ops_v1_ops, 52);
 
 /**
  * @generated from message mediaservice.ops.v1.ListGenerationModelsResponse
@@ -1603,7 +1743,7 @@ export type ListGenerationModelsResponse = Message<"mediaservice.ops.v1.ListGene
  * Use `create(ListGenerationModelsResponseSchema)` to create a new message.
  */
 export const ListGenerationModelsResponseSchema: GenMessage<ListGenerationModelsResponse> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 50);
+  messageDesc(file_mediaservice_ops_v1_ops, 53);
 
 /**
  * LOCAL_ONLY console identity. Returns the tenant + actor the API treats as
@@ -1621,7 +1761,7 @@ export type GetLocalIdentityRequest = Message<"mediaservice.ops.v1.GetLocalIdent
  * Use `create(GetLocalIdentityRequestSchema)` to create a new message.
  */
 export const GetLocalIdentityRequestSchema: GenMessage<GetLocalIdentityRequest> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 51);
+  messageDesc(file_mediaservice_ops_v1_ops, 54);
 
 /**
  * @generated from message mediaservice.ops.v1.GetLocalIdentityResponse
@@ -1643,7 +1783,7 @@ export type GetLocalIdentityResponse = Message<"mediaservice.ops.v1.GetLocalIden
  * Use `create(GetLocalIdentityResponseSchema)` to create a new message.
  */
 export const GetLocalIdentityResponseSchema: GenMessage<GetLocalIdentityResponse> = /*@__PURE__*/
-  messageDesc(file_mediaservice_ops_v1_ops, 52);
+  messageDesc(file_mediaservice_ops_v1_ops, 55);
 
 /**
  * @generated from service mediaservice.ops.v1.OpsService
@@ -1706,6 +1846,14 @@ export const OpsService: GenService<{
     methodKind: "unary";
     input: typeof QueueDepthsRequestSchema;
     output: typeof QueueDepthsResponseSchema;
+  },
+  /**
+   * @generated from rpc mediaservice.ops.v1.OpsService.GetTenantUsage
+   */
+  getTenantUsage: {
+    methodKind: "unary";
+    input: typeof GetTenantUsageRequestSchema;
+    output: typeof GetTenantUsageResponseSchema;
   },
   /**
    * @generated from rpc mediaservice.ops.v1.OpsService.ListS3

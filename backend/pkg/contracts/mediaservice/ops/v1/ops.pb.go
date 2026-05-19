@@ -1806,6 +1806,272 @@ func (x *QueueDepthsResponse) GetQueues() []*QueueStat {
 	return nil
 }
 
+// TenantUsageReservoir is the aggregate row for one tenant-scoped quota
+// reservoir. Cost values are stored in micro-USD; count and byte metrics use
+// their native unit.
+type TenantUsageReservoir struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	Metric        string                 `protobuf:"bytes,2,opt,name=metric,proto3" json:"metric,omitempty"`
+	Period        string                 `protobuf:"bytes,3,opt,name=period,proto3" json:"period,omitempty"`
+	Cap           int64                  `protobuf:"varint,4,opt,name=cap,proto3" json:"cap,omitempty"`
+	Available     int64                  `protobuf:"varint,5,opt,name=available,proto3" json:"available,omitempty"`
+	Reserved      int64                  `protobuf:"varint,6,opt,name=reserved,proto3" json:"reserved,omitempty"`
+	Committed     int64                  `protobuf:"varint,7,opt,name=committed,proto3" json:"committed,omitempty"`
+	Released      int64                  `protobuf:"varint,8,opt,name=released,proto3" json:"released,omitempty"`
+	State         string                 `protobuf:"bytes,9,opt,name=state,proto3" json:"state,omitempty"`
+	PolicyId      string                 `protobuf:"bytes,10,opt,name=policy_id,json=policyId,proto3" json:"policy_id,omitempty"`
+	PolicyVersion int64                  `protobuf:"varint,11,opt,name=policy_version,json=policyVersion,proto3" json:"policy_version,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// false when the API is returning the configured default for a reservoir
+	// that has not been materialized in DynamoDB yet.
+	Materialized  bool `protobuf:"varint,14,opt,name=materialized,proto3" json:"materialized,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TenantUsageReservoir) Reset() {
+	*x = TenantUsageReservoir{}
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TenantUsageReservoir) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TenantUsageReservoir) ProtoMessage() {}
+
+func (x *TenantUsageReservoir) ProtoReflect() protoreflect.Message {
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TenantUsageReservoir.ProtoReflect.Descriptor instead.
+func (*TenantUsageReservoir) Descriptor() ([]byte, []int) {
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *TenantUsageReservoir) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *TenantUsageReservoir) GetMetric() string {
+	if x != nil {
+		return x.Metric
+	}
+	return ""
+}
+
+func (x *TenantUsageReservoir) GetPeriod() string {
+	if x != nil {
+		return x.Period
+	}
+	return ""
+}
+
+func (x *TenantUsageReservoir) GetCap() int64 {
+	if x != nil {
+		return x.Cap
+	}
+	return 0
+}
+
+func (x *TenantUsageReservoir) GetAvailable() int64 {
+	if x != nil {
+		return x.Available
+	}
+	return 0
+}
+
+func (x *TenantUsageReservoir) GetReserved() int64 {
+	if x != nil {
+		return x.Reserved
+	}
+	return 0
+}
+
+func (x *TenantUsageReservoir) GetCommitted() int64 {
+	if x != nil {
+		return x.Committed
+	}
+	return 0
+}
+
+func (x *TenantUsageReservoir) GetReleased() int64 {
+	if x != nil {
+		return x.Released
+	}
+	return 0
+}
+
+func (x *TenantUsageReservoir) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *TenantUsageReservoir) GetPolicyId() string {
+	if x != nil {
+		return x.PolicyId
+	}
+	return ""
+}
+
+func (x *TenantUsageReservoir) GetPolicyVersion() int64 {
+	if x != nil {
+		return x.PolicyVersion
+	}
+	return 0
+}
+
+func (x *TenantUsageReservoir) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *TenantUsageReservoir) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+func (x *TenantUsageReservoir) GetMaterialized() bool {
+	if x != nil {
+		return x.Materialized
+	}
+	return false
+}
+
+type GetTenantUsageRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Empty defaults to the LOCAL_ONLY tenant.
+	TenantId      string `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetTenantUsageRequest) Reset() {
+	*x = GetTenantUsageRequest{}
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetTenantUsageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetTenantUsageRequest) ProtoMessage() {}
+
+func (x *GetTenantUsageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetTenantUsageRequest.ProtoReflect.Descriptor instead.
+func (*GetTenantUsageRequest) Descriptor() ([]byte, []int) {
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *GetTenantUsageRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+type GetTenantUsageResponse struct {
+	state              protoimpl.MessageState  `protogen:"open.v1"`
+	TenantId           string                  `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	CurrentDailyPeriod string                  `protobuf:"bytes,2,opt,name=current_daily_period,json=currentDailyPeriod,proto3" json:"current_daily_period,omitempty"`
+	DailyCost          *TenantUsageReservoir   `protobuf:"bytes,3,opt,name=daily_cost,json=dailyCost,proto3" json:"daily_cost,omitempty"`
+	Reservoirs         []*TenantUsageReservoir `protobuf:"bytes,4,rep,name=reservoirs,proto3" json:"reservoirs,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *GetTenantUsageResponse) Reset() {
+	*x = GetTenantUsageResponse{}
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetTenantUsageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetTenantUsageResponse) ProtoMessage() {}
+
+func (x *GetTenantUsageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetTenantUsageResponse.ProtoReflect.Descriptor instead.
+func (*GetTenantUsageResponse) Descriptor() ([]byte, []int) {
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *GetTenantUsageResponse) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *GetTenantUsageResponse) GetCurrentDailyPeriod() string {
+	if x != nil {
+		return x.CurrentDailyPeriod
+	}
+	return ""
+}
+
+func (x *GetTenantUsageResponse) GetDailyCost() *TenantUsageReservoir {
+	if x != nil {
+		return x.DailyCost
+	}
+	return nil
+}
+
+func (x *GetTenantUsageResponse) GetReservoirs() []*TenantUsageReservoir {
+	if x != nil {
+		return x.Reservoirs
+	}
+	return nil
+}
+
 // S3Node is one entry in the S3 tree. is_prefix=true means it's a directory
 // node and size/etag are unset.
 type S3Node struct {
@@ -1822,7 +2088,7 @@ type S3Node struct {
 
 func (x *S3Node) Reset() {
 	*x = S3Node{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[22]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1834,7 +2100,7 @@ func (x *S3Node) String() string {
 func (*S3Node) ProtoMessage() {}
 
 func (x *S3Node) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[22]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1847,7 +2113,7 @@ func (x *S3Node) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use S3Node.ProtoReflect.Descriptor instead.
 func (*S3Node) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{22}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *S3Node) GetKey() string {
@@ -1905,7 +2171,7 @@ type ListS3Request struct {
 
 func (x *ListS3Request) Reset() {
 	*x = ListS3Request{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[23]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1917,7 +2183,7 @@ func (x *ListS3Request) String() string {
 func (*ListS3Request) ProtoMessage() {}
 
 func (x *ListS3Request) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[23]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1930,7 +2196,7 @@ func (x *ListS3Request) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListS3Request.ProtoReflect.Descriptor instead.
 func (*ListS3Request) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{23}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ListS3Request) GetPrefix() string {
@@ -1963,7 +2229,7 @@ type ListS3Response struct {
 
 func (x *ListS3Response) Reset() {
 	*x = ListS3Response{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[24]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1975,7 +2241,7 @@ func (x *ListS3Response) String() string {
 func (*ListS3Response) ProtoMessage() {}
 
 func (x *ListS3Response) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[24]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1988,7 +2254,7 @@ func (x *ListS3Response) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListS3Response.ProtoReflect.Descriptor instead.
 func (*ListS3Response) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{24}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ListS3Response) GetNodes() []*S3Node {
@@ -2007,7 +2273,7 @@ type PresignDownloadRequest struct {
 
 func (x *PresignDownloadRequest) Reset() {
 	*x = PresignDownloadRequest{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[25]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2019,7 +2285,7 @@ func (x *PresignDownloadRequest) String() string {
 func (*PresignDownloadRequest) ProtoMessage() {}
 
 func (x *PresignDownloadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[25]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2032,7 +2298,7 @@ func (x *PresignDownloadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PresignDownloadRequest.ProtoReflect.Descriptor instead.
 func (*PresignDownloadRequest) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{25}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *PresignDownloadRequest) GetKey() string {
@@ -2052,7 +2318,7 @@ type PresignDownloadResponse struct {
 
 func (x *PresignDownloadResponse) Reset() {
 	*x = PresignDownloadResponse{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[26]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2064,7 +2330,7 @@ func (x *PresignDownloadResponse) String() string {
 func (*PresignDownloadResponse) ProtoMessage() {}
 
 func (x *PresignDownloadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[26]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2077,7 +2343,7 @@ func (x *PresignDownloadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PresignDownloadResponse.ProtoReflect.Descriptor instead.
 func (*PresignDownloadResponse) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{26}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *PresignDownloadResponse) GetUrl() string {
@@ -2120,7 +2386,7 @@ type StreamLogsRequest struct {
 
 func (x *StreamLogsRequest) Reset() {
 	*x = StreamLogsRequest{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[27]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2132,7 +2398,7 @@ func (x *StreamLogsRequest) String() string {
 func (*StreamLogsRequest) ProtoMessage() {}
 
 func (x *StreamLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[27]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2145,7 +2411,7 @@ func (x *StreamLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamLogsRequest.ProtoReflect.Descriptor instead.
 func (*StreamLogsRequest) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{27}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *StreamLogsRequest) GetService() string {
@@ -2211,7 +2477,7 @@ type LogLine struct {
 
 func (x *LogLine) Reset() {
 	*x = LogLine{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[28]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2223,7 +2489,7 @@ func (x *LogLine) String() string {
 func (*LogLine) ProtoMessage() {}
 
 func (x *LogLine) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[28]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2236,7 +2502,7 @@ func (x *LogLine) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogLine.ProtoReflect.Descriptor instead.
 func (*LogLine) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{28}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *LogLine) GetTs() *timestamppb.Timestamp {
@@ -2283,7 +2549,7 @@ type StreamLogsResponse struct {
 
 func (x *StreamLogsResponse) Reset() {
 	*x = StreamLogsResponse{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[29]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2295,7 +2561,7 @@ func (x *StreamLogsResponse) String() string {
 func (*StreamLogsResponse) ProtoMessage() {}
 
 func (x *StreamLogsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[29]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2308,7 +2574,7 @@ func (x *StreamLogsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamLogsResponse.ProtoReflect.Descriptor instead.
 func (*StreamLogsResponse) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{29}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *StreamLogsResponse) GetLine() *LogLine {
@@ -2328,7 +2594,7 @@ type CancelJobRequest struct {
 
 func (x *CancelJobRequest) Reset() {
 	*x = CancelJobRequest{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[30]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2340,7 +2606,7 @@ func (x *CancelJobRequest) String() string {
 func (*CancelJobRequest) ProtoMessage() {}
 
 func (x *CancelJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[30]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2353,7 +2619,7 @@ func (x *CancelJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelJobRequest.ProtoReflect.Descriptor instead.
 func (*CancelJobRequest) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{30}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *CancelJobRequest) GetJobId() string {
@@ -2378,7 +2644,7 @@ type CancelJobResponse struct {
 
 func (x *CancelJobResponse) Reset() {
 	*x = CancelJobResponse{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[31]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2390,7 +2656,7 @@ func (x *CancelJobResponse) String() string {
 func (*CancelJobResponse) ProtoMessage() {}
 
 func (x *CancelJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[31]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2403,7 +2669,7 @@ func (x *CancelJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelJobResponse.ProtoReflect.Descriptor instead.
 func (*CancelJobResponse) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{31}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{34}
 }
 
 type RetryJobRequest struct {
@@ -2415,7 +2681,7 @@ type RetryJobRequest struct {
 
 func (x *RetryJobRequest) Reset() {
 	*x = RetryJobRequest{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[32]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2427,7 +2693,7 @@ func (x *RetryJobRequest) String() string {
 func (*RetryJobRequest) ProtoMessage() {}
 
 func (x *RetryJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[32]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2440,7 +2706,7 @@ func (x *RetryJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetryJobRequest.ProtoReflect.Descriptor instead.
 func (*RetryJobRequest) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{32}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *RetryJobRequest) GetJobId() string {
@@ -2458,7 +2724,7 @@ type RetryJobResponse struct {
 
 func (x *RetryJobResponse) Reset() {
 	*x = RetryJobResponse{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[33]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2470,7 +2736,7 @@ func (x *RetryJobResponse) String() string {
 func (*RetryJobResponse) ProtoMessage() {}
 
 func (x *RetryJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[33]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2483,7 +2749,7 @@ func (x *RetryJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetryJobResponse.ProtoReflect.Descriptor instead.
 func (*RetryJobResponse) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{33}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{36}
 }
 
 type ForceFailJobRequest struct {
@@ -2497,7 +2763,7 @@ type ForceFailJobRequest struct {
 
 func (x *ForceFailJobRequest) Reset() {
 	*x = ForceFailJobRequest{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[34]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2509,7 +2775,7 @@ func (x *ForceFailJobRequest) String() string {
 func (*ForceFailJobRequest) ProtoMessage() {}
 
 func (x *ForceFailJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[34]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2522,7 +2788,7 @@ func (x *ForceFailJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ForceFailJobRequest.ProtoReflect.Descriptor instead.
 func (*ForceFailJobRequest) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{34}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ForceFailJobRequest) GetJobId() string {
@@ -2554,7 +2820,7 @@ type ForceFailJobResponse struct {
 
 func (x *ForceFailJobResponse) Reset() {
 	*x = ForceFailJobResponse{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[35]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2566,7 +2832,7 @@ func (x *ForceFailJobResponse) String() string {
 func (*ForceFailJobResponse) ProtoMessage() {}
 
 func (x *ForceFailJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[35]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2579,7 +2845,7 @@ func (x *ForceFailJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ForceFailJobResponse.ProtoReflect.Descriptor instead.
 func (*ForceFailJobResponse) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{35}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{38}
 }
 
 type ReplayOutboxRequest struct {
@@ -2591,7 +2857,7 @@ type ReplayOutboxRequest struct {
 
 func (x *ReplayOutboxRequest) Reset() {
 	*x = ReplayOutboxRequest{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[36]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2603,7 +2869,7 @@ func (x *ReplayOutboxRequest) String() string {
 func (*ReplayOutboxRequest) ProtoMessage() {}
 
 func (x *ReplayOutboxRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[36]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2616,7 +2882,7 @@ func (x *ReplayOutboxRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplayOutboxRequest.ProtoReflect.Descriptor instead.
 func (*ReplayOutboxRequest) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{36}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ReplayOutboxRequest) GetJobId() string {
@@ -2634,7 +2900,7 @@ type ReplayOutboxResponse struct {
 
 func (x *ReplayOutboxResponse) Reset() {
 	*x = ReplayOutboxResponse{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[37]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2646,7 +2912,7 @@ func (x *ReplayOutboxResponse) String() string {
 func (*ReplayOutboxResponse) ProtoMessage() {}
 
 func (x *ReplayOutboxResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[37]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2659,7 +2925,7 @@ func (x *ReplayOutboxResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplayOutboxResponse.ProtoReflect.Descriptor instead.
 func (*ReplayOutboxResponse) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{37}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{40}
 }
 
 type PurgeQueueRequest struct {
@@ -2671,7 +2937,7 @@ type PurgeQueueRequest struct {
 
 func (x *PurgeQueueRequest) Reset() {
 	*x = PurgeQueueRequest{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[38]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2683,7 +2949,7 @@ func (x *PurgeQueueRequest) String() string {
 func (*PurgeQueueRequest) ProtoMessage() {}
 
 func (x *PurgeQueueRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[38]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2696,7 +2962,7 @@ func (x *PurgeQueueRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PurgeQueueRequest.ProtoReflect.Descriptor instead.
 func (*PurgeQueueRequest) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{38}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *PurgeQueueRequest) GetQueueName() string {
@@ -2714,7 +2980,7 @@ type PurgeQueueResponse struct {
 
 func (x *PurgeQueueResponse) Reset() {
 	*x = PurgeQueueResponse{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[39]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2726,7 +2992,7 @@ func (x *PurgeQueueResponse) String() string {
 func (*PurgeQueueResponse) ProtoMessage() {}
 
 func (x *PurgeQueueResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[39]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2739,7 +3005,7 @@ func (x *PurgeQueueResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PurgeQueueResponse.ProtoReflect.Descriptor instead.
 func (*PurgeQueueResponse) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{39}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{42}
 }
 
 type RedriveDlqRequest struct {
@@ -2754,7 +3020,7 @@ type RedriveDlqRequest struct {
 
 func (x *RedriveDlqRequest) Reset() {
 	*x = RedriveDlqRequest{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[40]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2766,7 +3032,7 @@ func (x *RedriveDlqRequest) String() string {
 func (*RedriveDlqRequest) ProtoMessage() {}
 
 func (x *RedriveDlqRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[40]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2779,7 +3045,7 @@ func (x *RedriveDlqRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RedriveDlqRequest.ProtoReflect.Descriptor instead.
 func (*RedriveDlqRequest) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{40}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *RedriveDlqRequest) GetDlqName() string {
@@ -2806,7 +3072,7 @@ type RedriveDlqResponse struct {
 
 func (x *RedriveDlqResponse) Reset() {
 	*x = RedriveDlqResponse{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[41]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2818,7 +3084,7 @@ func (x *RedriveDlqResponse) String() string {
 func (*RedriveDlqResponse) ProtoMessage() {}
 
 func (x *RedriveDlqResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[41]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2831,7 +3097,7 @@ func (x *RedriveDlqResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RedriveDlqResponse.ProtoReflect.Descriptor instead.
 func (*RedriveDlqResponse) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{41}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *RedriveDlqResponse) GetMoved() int32 {
@@ -2862,7 +3128,7 @@ type PutDdbAttrRequest struct {
 
 func (x *PutDdbAttrRequest) Reset() {
 	*x = PutDdbAttrRequest{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[42]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2874,7 +3140,7 @@ func (x *PutDdbAttrRequest) String() string {
 func (*PutDdbAttrRequest) ProtoMessage() {}
 
 func (x *PutDdbAttrRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[42]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2887,7 +3153,7 @@ func (x *PutDdbAttrRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutDdbAttrRequest.ProtoReflect.Descriptor instead.
 func (*PutDdbAttrRequest) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{42}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *PutDdbAttrRequest) GetPk() string {
@@ -2926,7 +3192,7 @@ type PutDdbAttrResponse struct {
 
 func (x *PutDdbAttrResponse) Reset() {
 	*x = PutDdbAttrResponse{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[43]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2938,7 +3204,7 @@ func (x *PutDdbAttrResponse) String() string {
 func (*PutDdbAttrResponse) ProtoMessage() {}
 
 func (x *PutDdbAttrResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[43]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2951,7 +3217,7 @@ func (x *PutDdbAttrResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutDdbAttrResponse.ProtoReflect.Descriptor instead.
 func (*PutDdbAttrResponse) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{43}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{46}
 }
 
 type DeleteDdbRowRequest struct {
@@ -2964,7 +3230,7 @@ type DeleteDdbRowRequest struct {
 
 func (x *DeleteDdbRowRequest) Reset() {
 	*x = DeleteDdbRowRequest{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[44]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2976,7 +3242,7 @@ func (x *DeleteDdbRowRequest) String() string {
 func (*DeleteDdbRowRequest) ProtoMessage() {}
 
 func (x *DeleteDdbRowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[44]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2989,7 +3255,7 @@ func (x *DeleteDdbRowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteDdbRowRequest.ProtoReflect.Descriptor instead.
 func (*DeleteDdbRowRequest) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{44}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *DeleteDdbRowRequest) GetPk() string {
@@ -3014,7 +3280,7 @@ type DeleteDdbRowResponse struct {
 
 func (x *DeleteDdbRowResponse) Reset() {
 	*x = DeleteDdbRowResponse{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[45]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3026,7 +3292,7 @@ func (x *DeleteDdbRowResponse) String() string {
 func (*DeleteDdbRowResponse) ProtoMessage() {}
 
 func (x *DeleteDdbRowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[45]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3039,7 +3305,7 @@ func (x *DeleteDdbRowResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteDdbRowResponse.ProtoReflect.Descriptor instead.
 func (*DeleteDdbRowResponse) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{45}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{48}
 }
 
 type DeleteS3ObjectRequest struct {
@@ -3051,7 +3317,7 @@ type DeleteS3ObjectRequest struct {
 
 func (x *DeleteS3ObjectRequest) Reset() {
 	*x = DeleteS3ObjectRequest{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[46]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3063,7 +3329,7 @@ func (x *DeleteS3ObjectRequest) String() string {
 func (*DeleteS3ObjectRequest) ProtoMessage() {}
 
 func (x *DeleteS3ObjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[46]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3076,7 +3342,7 @@ func (x *DeleteS3ObjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteS3ObjectRequest.ProtoReflect.Descriptor instead.
 func (*DeleteS3ObjectRequest) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{46}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *DeleteS3ObjectRequest) GetKey() string {
@@ -3094,7 +3360,7 @@ type DeleteS3ObjectResponse struct {
 
 func (x *DeleteS3ObjectResponse) Reset() {
 	*x = DeleteS3ObjectResponse{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[47]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3106,7 +3372,7 @@ func (x *DeleteS3ObjectResponse) String() string {
 func (*DeleteS3ObjectResponse) ProtoMessage() {}
 
 func (x *DeleteS3ObjectResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[47]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3119,7 +3385,7 @@ func (x *DeleteS3ObjectResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteS3ObjectResponse.ProtoReflect.Descriptor instead.
 func (*DeleteS3ObjectResponse) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{47}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{50}
 }
 
 // GenerationProviderModels describes the active provider for one output type
@@ -3138,7 +3404,7 @@ type GenerationProviderModels struct {
 
 func (x *GenerationProviderModels) Reset() {
 	*x = GenerationProviderModels{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[48]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3150,7 +3416,7 @@ func (x *GenerationProviderModels) String() string {
 func (*GenerationProviderModels) ProtoMessage() {}
 
 func (x *GenerationProviderModels) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[48]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3163,7 +3429,7 @@ func (x *GenerationProviderModels) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerationProviderModels.ProtoReflect.Descriptor instead.
 func (*GenerationProviderModels) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{48}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *GenerationProviderModels) GetOutputType() string {
@@ -3202,7 +3468,7 @@ type ListGenerationModelsRequest struct {
 
 func (x *ListGenerationModelsRequest) Reset() {
 	*x = ListGenerationModelsRequest{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[49]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3214,7 +3480,7 @@ func (x *ListGenerationModelsRequest) String() string {
 func (*ListGenerationModelsRequest) ProtoMessage() {}
 
 func (x *ListGenerationModelsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[49]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3227,7 +3493,7 @@ func (x *ListGenerationModelsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGenerationModelsRequest.ProtoReflect.Descriptor instead.
 func (*ListGenerationModelsRequest) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{49}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{52}
 }
 
 type ListGenerationModelsResponse struct {
@@ -3239,7 +3505,7 @@ type ListGenerationModelsResponse struct {
 
 func (x *ListGenerationModelsResponse) Reset() {
 	*x = ListGenerationModelsResponse{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[50]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3251,7 +3517,7 @@ func (x *ListGenerationModelsResponse) String() string {
 func (*ListGenerationModelsResponse) ProtoMessage() {}
 
 func (x *ListGenerationModelsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[50]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3264,7 +3530,7 @@ func (x *ListGenerationModelsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGenerationModelsResponse.ProtoReflect.Descriptor instead.
 func (*ListGenerationModelsResponse) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{50}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *ListGenerationModelsResponse) GetProviders() []*GenerationProviderModels {
@@ -3286,7 +3552,7 @@ type GetLocalIdentityRequest struct {
 
 func (x *GetLocalIdentityRequest) Reset() {
 	*x = GetLocalIdentityRequest{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[51]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3298,7 +3564,7 @@ func (x *GetLocalIdentityRequest) String() string {
 func (*GetLocalIdentityRequest) ProtoMessage() {}
 
 func (x *GetLocalIdentityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[51]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3311,7 +3577,7 @@ func (x *GetLocalIdentityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLocalIdentityRequest.ProtoReflect.Descriptor instead.
 func (*GetLocalIdentityRequest) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{51}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{54}
 }
 
 type GetLocalIdentityResponse struct {
@@ -3324,7 +3590,7 @@ type GetLocalIdentityResponse struct {
 
 func (x *GetLocalIdentityResponse) Reset() {
 	*x = GetLocalIdentityResponse{}
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[52]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3336,7 +3602,7 @@ func (x *GetLocalIdentityResponse) String() string {
 func (*GetLocalIdentityResponse) ProtoMessage() {}
 
 func (x *GetLocalIdentityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[52]
+	mi := &file_mediaservice_ops_v1_ops_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3349,7 +3615,7 @@ func (x *GetLocalIdentityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLocalIdentityResponse.ProtoReflect.Descriptor instead.
 func (*GetLocalIdentityResponse) Descriptor() ([]byte, []int) {
-	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{52}
+	return file_mediaservice_ops_v1_ops_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *GetLocalIdentityResponse) GetTenantId() string {
@@ -3547,7 +3813,35 @@ const file_mediaservice_ops_v1_ops_proto_rawDesc = "" +
 	" \x01(\tR\ttierClass\"\x14\n" +
 	"\x12QueueDepthsRequest\"M\n" +
 	"\x13QueueDepthsResponse\x126\n" +
-	"\x06queues\x18\x01 \x03(\v2\x1e.mediaservice.ops.v1.QueueStatR\x06queues\"\xd6\x01\n" +
+	"\x06queues\x18\x01 \x03(\v2\x1e.mediaservice.ops.v1.QueueStatR\x06queues\"\xdd\x03\n" +
+	"\x14TenantUsageReservoir\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x16\n" +
+	"\x06metric\x18\x02 \x01(\tR\x06metric\x12\x16\n" +
+	"\x06period\x18\x03 \x01(\tR\x06period\x12\x10\n" +
+	"\x03cap\x18\x04 \x01(\x03R\x03cap\x12\x1c\n" +
+	"\tavailable\x18\x05 \x01(\x03R\tavailable\x12\x1a\n" +
+	"\breserved\x18\x06 \x01(\x03R\breserved\x12\x1c\n" +
+	"\tcommitted\x18\a \x01(\x03R\tcommitted\x12\x1a\n" +
+	"\breleased\x18\b \x01(\x03R\breleased\x12\x14\n" +
+	"\x05state\x18\t \x01(\tR\x05state\x12\x1b\n" +
+	"\tpolicy_id\x18\n" +
+	" \x01(\tR\bpolicyId\x12%\n" +
+	"\x0epolicy_version\x18\v \x01(\x03R\rpolicyVersion\x129\n" +
+	"\n" +
+	"created_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\"\n" +
+	"\fmaterialized\x18\x0e \x01(\bR\fmaterialized\"4\n" +
+	"\x15GetTenantUsageRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\"\xfc\x01\n" +
+	"\x16GetTenantUsageResponse\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x120\n" +
+	"\x14current_daily_period\x18\x02 \x01(\tR\x12currentDailyPeriod\x12H\n" +
+	"\n" +
+	"daily_cost\x18\x03 \x01(\v2).mediaservice.ops.v1.TenantUsageReservoirR\tdailyCost\x12I\n" +
+	"\n" +
+	"reservoirs\x18\x04 \x03(\v2).mediaservice.ops.v1.TenantUsageReservoirR\n" +
+	"reservoirs\"\xd6\x01\n" +
 	"\x06S3Node\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1b\n" +
@@ -3641,7 +3935,7 @@ const file_mediaservice_ops_v1_ops_proto_rawDesc = "" +
 	"\x17GetLocalIdentityRequest\"P\n" +
 	"\x18GetLocalIdentityResponse\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x17\n" +
-	"\auser_id\x18\x02 \x01(\tR\x06userId2\xfd\x0f\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId2\xe8\x10\n" +
 	"\n" +
 	"OpsService\x12W\n" +
 	"\bListJobs\x12$.mediaservice.ops.v1.ListJobsRequest\x1a%.mediaservice.ops.v1.ListJobsResponse\x12Q\n" +
@@ -3650,7 +3944,8 @@ const file_mediaservice_ops_v1_ops_proto_rawDesc = "" +
 	"\bGetMedia\x12$.mediaservice.ops.v1.GetMediaRequest\x1a%.mediaservice.ops.v1.GetMediaResponse\x12T\n" +
 	"\aScanDdb\x12#.mediaservice.ops.v1.ScanDdbRequest\x1a$.mediaservice.ops.v1.ScanDdbResponse\x12Z\n" +
 	"\tGetDdbRow\x12%.mediaservice.ops.v1.GetDdbRowRequest\x1a&.mediaservice.ops.v1.GetDdbRowResponse\x12`\n" +
-	"\vQueueDepths\x12'.mediaservice.ops.v1.QueueDepthsRequest\x1a(.mediaservice.ops.v1.QueueDepthsResponse\x12Q\n" +
+	"\vQueueDepths\x12'.mediaservice.ops.v1.QueueDepthsRequest\x1a(.mediaservice.ops.v1.QueueDepthsResponse\x12i\n" +
+	"\x0eGetTenantUsage\x12*.mediaservice.ops.v1.GetTenantUsageRequest\x1a+.mediaservice.ops.v1.GetTenantUsageResponse\x12Q\n" +
 	"\x06ListS3\x12\".mediaservice.ops.v1.ListS3Request\x1a#.mediaservice.ops.v1.ListS3Response\x12l\n" +
 	"\x0fPresignDownload\x12+.mediaservice.ops.v1.PresignDownloadRequest\x1a,.mediaservice.ops.v1.PresignDownloadResponse\x12_\n" +
 	"\n" +
@@ -3683,7 +3978,7 @@ func file_mediaservice_ops_v1_ops_proto_rawDescGZIP() []byte {
 	return file_mediaservice_ops_v1_ops_proto_rawDescData
 }
 
-var file_mediaservice_ops_v1_ops_proto_msgTypes = make([]protoimpl.MessageInfo, 55)
+var file_mediaservice_ops_v1_ops_proto_msgTypes = make([]protoimpl.MessageInfo, 58)
 var file_mediaservice_ops_v1_ops_proto_goTypes = []any{
 	(*JobSummary)(nil),                   // 0: mediaservice.ops.v1.JobSummary
 	(*ListJobsRequest)(nil),              // 1: mediaservice.ops.v1.ListJobsRequest
@@ -3707,126 +4002,135 @@ var file_mediaservice_ops_v1_ops_proto_goTypes = []any{
 	(*QueueStat)(nil),                    // 19: mediaservice.ops.v1.QueueStat
 	(*QueueDepthsRequest)(nil),           // 20: mediaservice.ops.v1.QueueDepthsRequest
 	(*QueueDepthsResponse)(nil),          // 21: mediaservice.ops.v1.QueueDepthsResponse
-	(*S3Node)(nil),                       // 22: mediaservice.ops.v1.S3Node
-	(*ListS3Request)(nil),                // 23: mediaservice.ops.v1.ListS3Request
-	(*ListS3Response)(nil),               // 24: mediaservice.ops.v1.ListS3Response
-	(*PresignDownloadRequest)(nil),       // 25: mediaservice.ops.v1.PresignDownloadRequest
-	(*PresignDownloadResponse)(nil),      // 26: mediaservice.ops.v1.PresignDownloadResponse
-	(*StreamLogsRequest)(nil),            // 27: mediaservice.ops.v1.StreamLogsRequest
-	(*LogLine)(nil),                      // 28: mediaservice.ops.v1.LogLine
-	(*StreamLogsResponse)(nil),           // 29: mediaservice.ops.v1.StreamLogsResponse
-	(*CancelJobRequest)(nil),             // 30: mediaservice.ops.v1.CancelJobRequest
-	(*CancelJobResponse)(nil),            // 31: mediaservice.ops.v1.CancelJobResponse
-	(*RetryJobRequest)(nil),              // 32: mediaservice.ops.v1.RetryJobRequest
-	(*RetryJobResponse)(nil),             // 33: mediaservice.ops.v1.RetryJobResponse
-	(*ForceFailJobRequest)(nil),          // 34: mediaservice.ops.v1.ForceFailJobRequest
-	(*ForceFailJobResponse)(nil),         // 35: mediaservice.ops.v1.ForceFailJobResponse
-	(*ReplayOutboxRequest)(nil),          // 36: mediaservice.ops.v1.ReplayOutboxRequest
-	(*ReplayOutboxResponse)(nil),         // 37: mediaservice.ops.v1.ReplayOutboxResponse
-	(*PurgeQueueRequest)(nil),            // 38: mediaservice.ops.v1.PurgeQueueRequest
-	(*PurgeQueueResponse)(nil),           // 39: mediaservice.ops.v1.PurgeQueueResponse
-	(*RedriveDlqRequest)(nil),            // 40: mediaservice.ops.v1.RedriveDlqRequest
-	(*RedriveDlqResponse)(nil),           // 41: mediaservice.ops.v1.RedriveDlqResponse
-	(*PutDdbAttrRequest)(nil),            // 42: mediaservice.ops.v1.PutDdbAttrRequest
-	(*PutDdbAttrResponse)(nil),           // 43: mediaservice.ops.v1.PutDdbAttrResponse
-	(*DeleteDdbRowRequest)(nil),          // 44: mediaservice.ops.v1.DeleteDdbRowRequest
-	(*DeleteDdbRowResponse)(nil),         // 45: mediaservice.ops.v1.DeleteDdbRowResponse
-	(*DeleteS3ObjectRequest)(nil),        // 46: mediaservice.ops.v1.DeleteS3ObjectRequest
-	(*DeleteS3ObjectResponse)(nil),       // 47: mediaservice.ops.v1.DeleteS3ObjectResponse
-	(*GenerationProviderModels)(nil),     // 48: mediaservice.ops.v1.GenerationProviderModels
-	(*ListGenerationModelsRequest)(nil),  // 49: mediaservice.ops.v1.ListGenerationModelsRequest
-	(*ListGenerationModelsResponse)(nil), // 50: mediaservice.ops.v1.ListGenerationModelsResponse
-	(*GetLocalIdentityRequest)(nil),      // 51: mediaservice.ops.v1.GetLocalIdentityRequest
-	(*GetLocalIdentityResponse)(nil),     // 52: mediaservice.ops.v1.GetLocalIdentityResponse
-	nil,                                  // 53: mediaservice.ops.v1.TraceSpan.AttributesEntry
-	nil,                                  // 54: mediaservice.ops.v1.LogLine.LabelsEntry
-	(*timestamppb.Timestamp)(nil),        // 55: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),              // 56: google.protobuf.Struct
+	(*TenantUsageReservoir)(nil),         // 22: mediaservice.ops.v1.TenantUsageReservoir
+	(*GetTenantUsageRequest)(nil),        // 23: mediaservice.ops.v1.GetTenantUsageRequest
+	(*GetTenantUsageResponse)(nil),       // 24: mediaservice.ops.v1.GetTenantUsageResponse
+	(*S3Node)(nil),                       // 25: mediaservice.ops.v1.S3Node
+	(*ListS3Request)(nil),                // 26: mediaservice.ops.v1.ListS3Request
+	(*ListS3Response)(nil),               // 27: mediaservice.ops.v1.ListS3Response
+	(*PresignDownloadRequest)(nil),       // 28: mediaservice.ops.v1.PresignDownloadRequest
+	(*PresignDownloadResponse)(nil),      // 29: mediaservice.ops.v1.PresignDownloadResponse
+	(*StreamLogsRequest)(nil),            // 30: mediaservice.ops.v1.StreamLogsRequest
+	(*LogLine)(nil),                      // 31: mediaservice.ops.v1.LogLine
+	(*StreamLogsResponse)(nil),           // 32: mediaservice.ops.v1.StreamLogsResponse
+	(*CancelJobRequest)(nil),             // 33: mediaservice.ops.v1.CancelJobRequest
+	(*CancelJobResponse)(nil),            // 34: mediaservice.ops.v1.CancelJobResponse
+	(*RetryJobRequest)(nil),              // 35: mediaservice.ops.v1.RetryJobRequest
+	(*RetryJobResponse)(nil),             // 36: mediaservice.ops.v1.RetryJobResponse
+	(*ForceFailJobRequest)(nil),          // 37: mediaservice.ops.v1.ForceFailJobRequest
+	(*ForceFailJobResponse)(nil),         // 38: mediaservice.ops.v1.ForceFailJobResponse
+	(*ReplayOutboxRequest)(nil),          // 39: mediaservice.ops.v1.ReplayOutboxRequest
+	(*ReplayOutboxResponse)(nil),         // 40: mediaservice.ops.v1.ReplayOutboxResponse
+	(*PurgeQueueRequest)(nil),            // 41: mediaservice.ops.v1.PurgeQueueRequest
+	(*PurgeQueueResponse)(nil),           // 42: mediaservice.ops.v1.PurgeQueueResponse
+	(*RedriveDlqRequest)(nil),            // 43: mediaservice.ops.v1.RedriveDlqRequest
+	(*RedriveDlqResponse)(nil),           // 44: mediaservice.ops.v1.RedriveDlqResponse
+	(*PutDdbAttrRequest)(nil),            // 45: mediaservice.ops.v1.PutDdbAttrRequest
+	(*PutDdbAttrResponse)(nil),           // 46: mediaservice.ops.v1.PutDdbAttrResponse
+	(*DeleteDdbRowRequest)(nil),          // 47: mediaservice.ops.v1.DeleteDdbRowRequest
+	(*DeleteDdbRowResponse)(nil),         // 48: mediaservice.ops.v1.DeleteDdbRowResponse
+	(*DeleteS3ObjectRequest)(nil),        // 49: mediaservice.ops.v1.DeleteS3ObjectRequest
+	(*DeleteS3ObjectResponse)(nil),       // 50: mediaservice.ops.v1.DeleteS3ObjectResponse
+	(*GenerationProviderModels)(nil),     // 51: mediaservice.ops.v1.GenerationProviderModels
+	(*ListGenerationModelsRequest)(nil),  // 52: mediaservice.ops.v1.ListGenerationModelsRequest
+	(*ListGenerationModelsResponse)(nil), // 53: mediaservice.ops.v1.ListGenerationModelsResponse
+	(*GetLocalIdentityRequest)(nil),      // 54: mediaservice.ops.v1.GetLocalIdentityRequest
+	(*GetLocalIdentityResponse)(nil),     // 55: mediaservice.ops.v1.GetLocalIdentityResponse
+	nil,                                  // 56: mediaservice.ops.v1.TraceSpan.AttributesEntry
+	nil,                                  // 57: mediaservice.ops.v1.LogLine.LabelsEntry
+	(*timestamppb.Timestamp)(nil),        // 58: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),              // 59: google.protobuf.Struct
 }
 var file_mediaservice_ops_v1_ops_proto_depIdxs = []int32{
-	55, // 0: mediaservice.ops.v1.JobSummary.created_at:type_name -> google.protobuf.Timestamp
-	55, // 1: mediaservice.ops.v1.JobSummary.updated_at:type_name -> google.protobuf.Timestamp
-	55, // 2: mediaservice.ops.v1.JobSummary.completed_at:type_name -> google.protobuf.Timestamp
+	58, // 0: mediaservice.ops.v1.JobSummary.created_at:type_name -> google.protobuf.Timestamp
+	58, // 1: mediaservice.ops.v1.JobSummary.updated_at:type_name -> google.protobuf.Timestamp
+	58, // 2: mediaservice.ops.v1.JobSummary.completed_at:type_name -> google.protobuf.Timestamp
 	0,  // 3: mediaservice.ops.v1.ListJobsResponse.jobs:type_name -> mediaservice.ops.v1.JobSummary
-	53, // 4: mediaservice.ops.v1.TraceSpan.attributes:type_name -> mediaservice.ops.v1.TraceSpan.AttributesEntry
-	55, // 5: mediaservice.ops.v1.TraceSpan.start_at:type_name -> google.protobuf.Timestamp
-	55, // 6: mediaservice.ops.v1.TraceSpan.end_at:type_name -> google.protobuf.Timestamp
-	55, // 7: mediaservice.ops.v1.GateDecision.decided_at:type_name -> google.protobuf.Timestamp
+	56, // 4: mediaservice.ops.v1.TraceSpan.attributes:type_name -> mediaservice.ops.v1.TraceSpan.AttributesEntry
+	58, // 5: mediaservice.ops.v1.TraceSpan.start_at:type_name -> google.protobuf.Timestamp
+	58, // 6: mediaservice.ops.v1.TraceSpan.end_at:type_name -> google.protobuf.Timestamp
+	58, // 7: mediaservice.ops.v1.GateDecision.decided_at:type_name -> google.protobuf.Timestamp
 	0,  // 8: mediaservice.ops.v1.FullJobView.summary:type_name -> mediaservice.ops.v1.JobSummary
-	56, // 9: mediaservice.ops.v1.FullJobView.job:type_name -> google.protobuf.Struct
-	56, // 10: mediaservice.ops.v1.FullJobView.media:type_name -> google.protobuf.Struct
-	56, // 11: mediaservice.ops.v1.FullJobView.result_asset:type_name -> google.protobuf.Struct
+	59, // 9: mediaservice.ops.v1.FullJobView.job:type_name -> google.protobuf.Struct
+	59, // 10: mediaservice.ops.v1.FullJobView.media:type_name -> google.protobuf.Struct
+	59, // 11: mediaservice.ops.v1.FullJobView.result_asset:type_name -> google.protobuf.Struct
 	3,  // 12: mediaservice.ops.v1.FullJobView.spans:type_name -> mediaservice.ops.v1.TraceSpan
 	4,  // 13: mediaservice.ops.v1.FullJobView.gate_decision:type_name -> mediaservice.ops.v1.GateDecision
-	55, // 14: mediaservice.ops.v1.FullJobView.first_event_at:type_name -> google.protobuf.Timestamp
-	55, // 15: mediaservice.ops.v1.FullJobView.last_event_at:type_name -> google.protobuf.Timestamp
+	58, // 14: mediaservice.ops.v1.FullJobView.first_event_at:type_name -> google.protobuf.Timestamp
+	58, // 15: mediaservice.ops.v1.FullJobView.last_event_at:type_name -> google.protobuf.Timestamp
 	5,  // 16: mediaservice.ops.v1.GetJobResponse.view:type_name -> mediaservice.ops.v1.FullJobView
-	55, // 17: mediaservice.ops.v1.MediaRow.created_at:type_name -> google.protobuf.Timestamp
-	55, // 18: mediaservice.ops.v1.MediaRow.updated_at:type_name -> google.protobuf.Timestamp
-	55, // 19: mediaservice.ops.v1.MediaRow.deleted_at:type_name -> google.protobuf.Timestamp
+	58, // 17: mediaservice.ops.v1.MediaRow.created_at:type_name -> google.protobuf.Timestamp
+	58, // 18: mediaservice.ops.v1.MediaRow.updated_at:type_name -> google.protobuf.Timestamp
+	58, // 19: mediaservice.ops.v1.MediaRow.deleted_at:type_name -> google.protobuf.Timestamp
 	8,  // 20: mediaservice.ops.v1.ListMediaResponse.items:type_name -> mediaservice.ops.v1.MediaRow
 	8,  // 21: mediaservice.ops.v1.FullMediaView.row:type_name -> mediaservice.ops.v1.MediaRow
-	56, // 22: mediaservice.ops.v1.FullMediaView.media:type_name -> google.protobuf.Struct
-	56, // 23: mediaservice.ops.v1.FullMediaView.assets:type_name -> google.protobuf.Struct
+	59, // 22: mediaservice.ops.v1.FullMediaView.media:type_name -> google.protobuf.Struct
+	59, // 23: mediaservice.ops.v1.FullMediaView.assets:type_name -> google.protobuf.Struct
 	11, // 24: mediaservice.ops.v1.GetMediaResponse.view:type_name -> mediaservice.ops.v1.FullMediaView
-	56, // 25: mediaservice.ops.v1.DdbRow.attributes:type_name -> google.protobuf.Struct
+	59, // 25: mediaservice.ops.v1.DdbRow.attributes:type_name -> google.protobuf.Struct
 	14, // 26: mediaservice.ops.v1.ScanDdbResponse.rows:type_name -> mediaservice.ops.v1.DdbRow
 	14, // 27: mediaservice.ops.v1.GetDdbRowResponse.row:type_name -> mediaservice.ops.v1.DdbRow
 	19, // 28: mediaservice.ops.v1.QueueDepthsResponse.queues:type_name -> mediaservice.ops.v1.QueueStat
-	55, // 29: mediaservice.ops.v1.S3Node.last_modified:type_name -> google.protobuf.Timestamp
-	22, // 30: mediaservice.ops.v1.ListS3Response.nodes:type_name -> mediaservice.ops.v1.S3Node
-	55, // 31: mediaservice.ops.v1.PresignDownloadResponse.expires_at:type_name -> google.protobuf.Timestamp
-	55, // 32: mediaservice.ops.v1.LogLine.ts:type_name -> google.protobuf.Timestamp
-	54, // 33: mediaservice.ops.v1.LogLine.labels:type_name -> mediaservice.ops.v1.LogLine.LabelsEntry
-	28, // 34: mediaservice.ops.v1.StreamLogsResponse.line:type_name -> mediaservice.ops.v1.LogLine
-	48, // 35: mediaservice.ops.v1.ListGenerationModelsResponse.providers:type_name -> mediaservice.ops.v1.GenerationProviderModels
-	1,  // 36: mediaservice.ops.v1.OpsService.ListJobs:input_type -> mediaservice.ops.v1.ListJobsRequest
-	6,  // 37: mediaservice.ops.v1.OpsService.GetJob:input_type -> mediaservice.ops.v1.GetJobRequest
-	9,  // 38: mediaservice.ops.v1.OpsService.ListMedia:input_type -> mediaservice.ops.v1.ListMediaRequest
-	12, // 39: mediaservice.ops.v1.OpsService.GetMedia:input_type -> mediaservice.ops.v1.GetMediaRequest
-	15, // 40: mediaservice.ops.v1.OpsService.ScanDdb:input_type -> mediaservice.ops.v1.ScanDdbRequest
-	17, // 41: mediaservice.ops.v1.OpsService.GetDdbRow:input_type -> mediaservice.ops.v1.GetDdbRowRequest
-	20, // 42: mediaservice.ops.v1.OpsService.QueueDepths:input_type -> mediaservice.ops.v1.QueueDepthsRequest
-	23, // 43: mediaservice.ops.v1.OpsService.ListS3:input_type -> mediaservice.ops.v1.ListS3Request
-	25, // 44: mediaservice.ops.v1.OpsService.PresignDownload:input_type -> mediaservice.ops.v1.PresignDownloadRequest
-	27, // 45: mediaservice.ops.v1.OpsService.StreamLogs:input_type -> mediaservice.ops.v1.StreamLogsRequest
-	30, // 46: mediaservice.ops.v1.OpsService.CancelJob:input_type -> mediaservice.ops.v1.CancelJobRequest
-	32, // 47: mediaservice.ops.v1.OpsService.RetryJob:input_type -> mediaservice.ops.v1.RetryJobRequest
-	34, // 48: mediaservice.ops.v1.OpsService.ForceFailJob:input_type -> mediaservice.ops.v1.ForceFailJobRequest
-	36, // 49: mediaservice.ops.v1.OpsService.ReplayOutbox:input_type -> mediaservice.ops.v1.ReplayOutboxRequest
-	38, // 50: mediaservice.ops.v1.OpsService.PurgeQueue:input_type -> mediaservice.ops.v1.PurgeQueueRequest
-	40, // 51: mediaservice.ops.v1.OpsService.RedriveDlq:input_type -> mediaservice.ops.v1.RedriveDlqRequest
-	42, // 52: mediaservice.ops.v1.OpsService.PutDdbAttr:input_type -> mediaservice.ops.v1.PutDdbAttrRequest
-	44, // 53: mediaservice.ops.v1.OpsService.DeleteDdbRow:input_type -> mediaservice.ops.v1.DeleteDdbRowRequest
-	46, // 54: mediaservice.ops.v1.OpsService.DeleteS3Object:input_type -> mediaservice.ops.v1.DeleteS3ObjectRequest
-	49, // 55: mediaservice.ops.v1.OpsService.ListGenerationModels:input_type -> mediaservice.ops.v1.ListGenerationModelsRequest
-	51, // 56: mediaservice.ops.v1.OpsService.GetLocalIdentity:input_type -> mediaservice.ops.v1.GetLocalIdentityRequest
-	2,  // 57: mediaservice.ops.v1.OpsService.ListJobs:output_type -> mediaservice.ops.v1.ListJobsResponse
-	7,  // 58: mediaservice.ops.v1.OpsService.GetJob:output_type -> mediaservice.ops.v1.GetJobResponse
-	10, // 59: mediaservice.ops.v1.OpsService.ListMedia:output_type -> mediaservice.ops.v1.ListMediaResponse
-	13, // 60: mediaservice.ops.v1.OpsService.GetMedia:output_type -> mediaservice.ops.v1.GetMediaResponse
-	16, // 61: mediaservice.ops.v1.OpsService.ScanDdb:output_type -> mediaservice.ops.v1.ScanDdbResponse
-	18, // 62: mediaservice.ops.v1.OpsService.GetDdbRow:output_type -> mediaservice.ops.v1.GetDdbRowResponse
-	21, // 63: mediaservice.ops.v1.OpsService.QueueDepths:output_type -> mediaservice.ops.v1.QueueDepthsResponse
-	24, // 64: mediaservice.ops.v1.OpsService.ListS3:output_type -> mediaservice.ops.v1.ListS3Response
-	26, // 65: mediaservice.ops.v1.OpsService.PresignDownload:output_type -> mediaservice.ops.v1.PresignDownloadResponse
-	29, // 66: mediaservice.ops.v1.OpsService.StreamLogs:output_type -> mediaservice.ops.v1.StreamLogsResponse
-	31, // 67: mediaservice.ops.v1.OpsService.CancelJob:output_type -> mediaservice.ops.v1.CancelJobResponse
-	33, // 68: mediaservice.ops.v1.OpsService.RetryJob:output_type -> mediaservice.ops.v1.RetryJobResponse
-	35, // 69: mediaservice.ops.v1.OpsService.ForceFailJob:output_type -> mediaservice.ops.v1.ForceFailJobResponse
-	37, // 70: mediaservice.ops.v1.OpsService.ReplayOutbox:output_type -> mediaservice.ops.v1.ReplayOutboxResponse
-	39, // 71: mediaservice.ops.v1.OpsService.PurgeQueue:output_type -> mediaservice.ops.v1.PurgeQueueResponse
-	41, // 72: mediaservice.ops.v1.OpsService.RedriveDlq:output_type -> mediaservice.ops.v1.RedriveDlqResponse
-	43, // 73: mediaservice.ops.v1.OpsService.PutDdbAttr:output_type -> mediaservice.ops.v1.PutDdbAttrResponse
-	45, // 74: mediaservice.ops.v1.OpsService.DeleteDdbRow:output_type -> mediaservice.ops.v1.DeleteDdbRowResponse
-	47, // 75: mediaservice.ops.v1.OpsService.DeleteS3Object:output_type -> mediaservice.ops.v1.DeleteS3ObjectResponse
-	50, // 76: mediaservice.ops.v1.OpsService.ListGenerationModels:output_type -> mediaservice.ops.v1.ListGenerationModelsResponse
-	52, // 77: mediaservice.ops.v1.OpsService.GetLocalIdentity:output_type -> mediaservice.ops.v1.GetLocalIdentityResponse
-	57, // [57:78] is the sub-list for method output_type
-	36, // [36:57] is the sub-list for method input_type
-	36, // [36:36] is the sub-list for extension type_name
-	36, // [36:36] is the sub-list for extension extendee
-	0,  // [0:36] is the sub-list for field type_name
+	58, // 29: mediaservice.ops.v1.TenantUsageReservoir.created_at:type_name -> google.protobuf.Timestamp
+	58, // 30: mediaservice.ops.v1.TenantUsageReservoir.updated_at:type_name -> google.protobuf.Timestamp
+	22, // 31: mediaservice.ops.v1.GetTenantUsageResponse.daily_cost:type_name -> mediaservice.ops.v1.TenantUsageReservoir
+	22, // 32: mediaservice.ops.v1.GetTenantUsageResponse.reservoirs:type_name -> mediaservice.ops.v1.TenantUsageReservoir
+	58, // 33: mediaservice.ops.v1.S3Node.last_modified:type_name -> google.protobuf.Timestamp
+	25, // 34: mediaservice.ops.v1.ListS3Response.nodes:type_name -> mediaservice.ops.v1.S3Node
+	58, // 35: mediaservice.ops.v1.PresignDownloadResponse.expires_at:type_name -> google.protobuf.Timestamp
+	58, // 36: mediaservice.ops.v1.LogLine.ts:type_name -> google.protobuf.Timestamp
+	57, // 37: mediaservice.ops.v1.LogLine.labels:type_name -> mediaservice.ops.v1.LogLine.LabelsEntry
+	31, // 38: mediaservice.ops.v1.StreamLogsResponse.line:type_name -> mediaservice.ops.v1.LogLine
+	51, // 39: mediaservice.ops.v1.ListGenerationModelsResponse.providers:type_name -> mediaservice.ops.v1.GenerationProviderModels
+	1,  // 40: mediaservice.ops.v1.OpsService.ListJobs:input_type -> mediaservice.ops.v1.ListJobsRequest
+	6,  // 41: mediaservice.ops.v1.OpsService.GetJob:input_type -> mediaservice.ops.v1.GetJobRequest
+	9,  // 42: mediaservice.ops.v1.OpsService.ListMedia:input_type -> mediaservice.ops.v1.ListMediaRequest
+	12, // 43: mediaservice.ops.v1.OpsService.GetMedia:input_type -> mediaservice.ops.v1.GetMediaRequest
+	15, // 44: mediaservice.ops.v1.OpsService.ScanDdb:input_type -> mediaservice.ops.v1.ScanDdbRequest
+	17, // 45: mediaservice.ops.v1.OpsService.GetDdbRow:input_type -> mediaservice.ops.v1.GetDdbRowRequest
+	20, // 46: mediaservice.ops.v1.OpsService.QueueDepths:input_type -> mediaservice.ops.v1.QueueDepthsRequest
+	23, // 47: mediaservice.ops.v1.OpsService.GetTenantUsage:input_type -> mediaservice.ops.v1.GetTenantUsageRequest
+	26, // 48: mediaservice.ops.v1.OpsService.ListS3:input_type -> mediaservice.ops.v1.ListS3Request
+	28, // 49: mediaservice.ops.v1.OpsService.PresignDownload:input_type -> mediaservice.ops.v1.PresignDownloadRequest
+	30, // 50: mediaservice.ops.v1.OpsService.StreamLogs:input_type -> mediaservice.ops.v1.StreamLogsRequest
+	33, // 51: mediaservice.ops.v1.OpsService.CancelJob:input_type -> mediaservice.ops.v1.CancelJobRequest
+	35, // 52: mediaservice.ops.v1.OpsService.RetryJob:input_type -> mediaservice.ops.v1.RetryJobRequest
+	37, // 53: mediaservice.ops.v1.OpsService.ForceFailJob:input_type -> mediaservice.ops.v1.ForceFailJobRequest
+	39, // 54: mediaservice.ops.v1.OpsService.ReplayOutbox:input_type -> mediaservice.ops.v1.ReplayOutboxRequest
+	41, // 55: mediaservice.ops.v1.OpsService.PurgeQueue:input_type -> mediaservice.ops.v1.PurgeQueueRequest
+	43, // 56: mediaservice.ops.v1.OpsService.RedriveDlq:input_type -> mediaservice.ops.v1.RedriveDlqRequest
+	45, // 57: mediaservice.ops.v1.OpsService.PutDdbAttr:input_type -> mediaservice.ops.v1.PutDdbAttrRequest
+	47, // 58: mediaservice.ops.v1.OpsService.DeleteDdbRow:input_type -> mediaservice.ops.v1.DeleteDdbRowRequest
+	49, // 59: mediaservice.ops.v1.OpsService.DeleteS3Object:input_type -> mediaservice.ops.v1.DeleteS3ObjectRequest
+	52, // 60: mediaservice.ops.v1.OpsService.ListGenerationModels:input_type -> mediaservice.ops.v1.ListGenerationModelsRequest
+	54, // 61: mediaservice.ops.v1.OpsService.GetLocalIdentity:input_type -> mediaservice.ops.v1.GetLocalIdentityRequest
+	2,  // 62: mediaservice.ops.v1.OpsService.ListJobs:output_type -> mediaservice.ops.v1.ListJobsResponse
+	7,  // 63: mediaservice.ops.v1.OpsService.GetJob:output_type -> mediaservice.ops.v1.GetJobResponse
+	10, // 64: mediaservice.ops.v1.OpsService.ListMedia:output_type -> mediaservice.ops.v1.ListMediaResponse
+	13, // 65: mediaservice.ops.v1.OpsService.GetMedia:output_type -> mediaservice.ops.v1.GetMediaResponse
+	16, // 66: mediaservice.ops.v1.OpsService.ScanDdb:output_type -> mediaservice.ops.v1.ScanDdbResponse
+	18, // 67: mediaservice.ops.v1.OpsService.GetDdbRow:output_type -> mediaservice.ops.v1.GetDdbRowResponse
+	21, // 68: mediaservice.ops.v1.OpsService.QueueDepths:output_type -> mediaservice.ops.v1.QueueDepthsResponse
+	24, // 69: mediaservice.ops.v1.OpsService.GetTenantUsage:output_type -> mediaservice.ops.v1.GetTenantUsageResponse
+	27, // 70: mediaservice.ops.v1.OpsService.ListS3:output_type -> mediaservice.ops.v1.ListS3Response
+	29, // 71: mediaservice.ops.v1.OpsService.PresignDownload:output_type -> mediaservice.ops.v1.PresignDownloadResponse
+	32, // 72: mediaservice.ops.v1.OpsService.StreamLogs:output_type -> mediaservice.ops.v1.StreamLogsResponse
+	34, // 73: mediaservice.ops.v1.OpsService.CancelJob:output_type -> mediaservice.ops.v1.CancelJobResponse
+	36, // 74: mediaservice.ops.v1.OpsService.RetryJob:output_type -> mediaservice.ops.v1.RetryJobResponse
+	38, // 75: mediaservice.ops.v1.OpsService.ForceFailJob:output_type -> mediaservice.ops.v1.ForceFailJobResponse
+	40, // 76: mediaservice.ops.v1.OpsService.ReplayOutbox:output_type -> mediaservice.ops.v1.ReplayOutboxResponse
+	42, // 77: mediaservice.ops.v1.OpsService.PurgeQueue:output_type -> mediaservice.ops.v1.PurgeQueueResponse
+	44, // 78: mediaservice.ops.v1.OpsService.RedriveDlq:output_type -> mediaservice.ops.v1.RedriveDlqResponse
+	46, // 79: mediaservice.ops.v1.OpsService.PutDdbAttr:output_type -> mediaservice.ops.v1.PutDdbAttrResponse
+	48, // 80: mediaservice.ops.v1.OpsService.DeleteDdbRow:output_type -> mediaservice.ops.v1.DeleteDdbRowResponse
+	50, // 81: mediaservice.ops.v1.OpsService.DeleteS3Object:output_type -> mediaservice.ops.v1.DeleteS3ObjectResponse
+	53, // 82: mediaservice.ops.v1.OpsService.ListGenerationModels:output_type -> mediaservice.ops.v1.ListGenerationModelsResponse
+	55, // 83: mediaservice.ops.v1.OpsService.GetLocalIdentity:output_type -> mediaservice.ops.v1.GetLocalIdentityResponse
+	62, // [62:84] is the sub-list for method output_type
+	40, // [40:62] is the sub-list for method input_type
+	40, // [40:40] is the sub-list for extension type_name
+	40, // [40:40] is the sub-list for extension extendee
+	0,  // [0:40] is the sub-list for field type_name
 }
 
 func init() { file_mediaservice_ops_v1_ops_proto_init() }
@@ -3838,14 +4142,14 @@ func file_mediaservice_ops_v1_ops_proto_init() {
 	file_mediaservice_ops_v1_ops_proto_msgTypes[5].OneofWrappers = []any{}
 	file_mediaservice_ops_v1_ops_proto_msgTypes[8].OneofWrappers = []any{}
 	file_mediaservice_ops_v1_ops_proto_msgTypes[11].OneofWrappers = []any{}
-	file_mediaservice_ops_v1_ops_proto_msgTypes[22].OneofWrappers = []any{}
+	file_mediaservice_ops_v1_ops_proto_msgTypes[25].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_mediaservice_ops_v1_ops_proto_rawDesc), len(file_mediaservice_ops_v1_ops_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   55,
+			NumMessages:   58,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

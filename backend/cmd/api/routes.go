@@ -131,6 +131,7 @@ func buildOpsService(a *bootstrap.AWS) *opsapp.Service {
 	}
 	svc.LocalTenantID = envOr("LOCAL_TENANT_ID", "tenant_local")
 	svc.LocalUserID = envOr("LOCAL_USER_ID", "user_local")
+	svc.TenantCostCapMicroUSD = a.TenantCostCapMicroUSD
 	// Default logger so audit-write failures aren't silent. cmd/api/main
 	// initialised slog.Default() during runtime.Init.
 	svc.Logger = slog.Default()

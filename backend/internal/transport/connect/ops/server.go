@@ -161,6 +161,22 @@ func (s *Server) QueueDepths(ctx context.Context, _ *connect.Request[opsv1.Queue
 	return connect.NewResponse(out), nil
 }
 
+func (s *Server) GetTenantUsage(ctx context.Context, req *connect.Request[opsv1.GetTenantUsageRequest]) (*connect.Response[opsv1.GetTenantUsageResponse], error) {
+	view, err := s.svc.GetTenantUsage(ctx, req.Msg.GetTenantId())
+	if err != nil {
+		return nil, toConnect(err)
+	}
+	out := &opsv1.GetTenantUsageResponse{
+		TenantId:           view.TenantID,
+		CurrentDailyPeriod: view.CurrentDailyPeriod,
+		DailyCost:          tenantUsageReservoirToProto(*view.DailyCost),
+	}
+	for _, r := range view.Reservoirs {
+		out.Reservoirs = append(out.Reservoirs, tenantUsageReservoirToProto(r))
+	}
+	return connect.NewResponse(out), nil
+}
+
 func (s *Server) ListS3(ctx context.Context, req *connect.Request[opsv1.ListS3Request]) (*connect.Response[opsv1.ListS3Response], error) {
 	nodes, err := s.svc.ListS3(ctx, req.Msg.GetPrefix(), req.Msg.GetDelimiter(), req.Msg.GetLimit())
 	if err != nil {

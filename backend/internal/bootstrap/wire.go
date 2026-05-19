@@ -189,8 +189,9 @@ type AWS struct {
 	// keyed today on (TENANT, COST_MICRO_USD, yyyyMMdd). The same Reservoir
 	// primitive backs API-key cost, vendor cost, and request-count
 	// reservoirs once their call sites land.
-	QuotaAdapter *quotaapp.WorkflowAdapter
-	QuotaMeter   *quotaapp.Meter
+	QuotaAdapter          *quotaapp.WorkflowAdapter
+	QuotaMeter            *quotaapp.Meter
+	TenantCostCapMicroUSD int64
 
 	// Moderator is the safety-port the INPUT_MODERATION and
 	// OUTPUT_MODERATION stages call. Wired to a local SimulatedModerator
@@ -339,6 +340,7 @@ func Wire(ctx context.Context, cfg app.Config) (*AWS, error) {
 	// MEDIA_CLEANUP, or GEN stream draining.
 
 	quotaRepo := quotaapp.NewRepo(kvDriver)
+	out.TenantCostCapMicroUSD = cfg.Quota.TenantCostCapMicroUSD
 	out.QuotaAdapter = quotaapp.NewWorkflowAdapter(quotaRepo, cfg.Quota.TenantCostCapMicroUSD)
 	out.QuotaMeter = quotaapp.NewMeter(quotaRepo)
 	out.JobRepo.QuotaLedger = out.QuotaAdapter

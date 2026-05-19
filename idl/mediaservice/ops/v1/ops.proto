@@ -257,6 +257,40 @@ message QueueDepthsResponse {
   repeated QueueStat queues = 1;
 }
 
+// TenantUsageReservoir is the aggregate row for one tenant-scoped quota
+// reservoir. Cost values are stored in micro-USD; count and byte metrics use
+// their native unit.
+message TenantUsageReservoir {
+  string tenant_id = 1;
+  string metric = 2;
+  string period = 3;
+  int64 cap = 4;
+  int64 available = 5;
+  int64 reserved = 6;
+  int64 committed = 7;
+  int64 released = 8;
+  string state = 9;
+  string policy_id = 10;
+  int64 policy_version = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+  // false when the API is returning the configured default for a reservoir
+  // that has not been materialized in DynamoDB yet.
+  bool materialized = 14;
+}
+
+message GetTenantUsageRequest {
+  // Empty defaults to the LOCAL_ONLY tenant.
+  string tenant_id = 1;
+}
+
+message GetTenantUsageResponse {
+  string tenant_id = 1;
+  string current_daily_period = 2;
+  TenantUsageReservoir daily_cost = 3;
+  repeated TenantUsageReservoir reservoirs = 4;
+}
+
 // S3Node is one entry in the S3 tree. is_prefix=true means it's a directory
 // node and size/etag are unset.
 message S3Node {
@@ -422,6 +456,7 @@ service OpsService {
   rpc ScanDdb(ScanDdbRequest) returns (ScanDdbResponse);
   rpc GetDdbRow(GetDdbRowRequest) returns (GetDdbRowResponse);
   rpc QueueDepths(QueueDepthsRequest) returns (QueueDepthsResponse);
+  rpc GetTenantUsage(GetTenantUsageRequest) returns (GetTenantUsageResponse);
   rpc ListS3(ListS3Request) returns (ListS3Response);
   rpc PresignDownload(PresignDownloadRequest) returns (PresignDownloadResponse);
   rpc StreamLogs(StreamLogsRequest) returns (stream StreamLogsResponse);

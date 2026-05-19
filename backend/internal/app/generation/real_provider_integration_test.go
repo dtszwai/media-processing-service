@@ -4,6 +4,9 @@ package generation_test
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"mime"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,6 +72,64 @@ func TestRealProviderE2E_NotebookLMAudioWorkflow(t *testing.T) {
 	}
 }
 
+func TestSaveGeneratedReferenceArtifact(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("TEST_GENERATED_ASSET_DIR", root)
+
+	in := realProviderWorkflowInput{
+		jobID:        "gen_reference_asset",
+		mediaID:      "med_reference_asset",
+		assetID:      "ast_reference_asset",
+		providerName: "codex",
+		model:        "gpt-test",
+		outputType:   generation.OutputImage,
+		prompt:       "test prompt",
+	}
+	artifact := generation.Artifact{
+		Bytes:       []byte("image-bytes"),
+		ContentType: "image/png",
+		Extension:   "png",
+		SHA256:      "sha256-reference",
+		Metadata: map[string]string{
+			genprovider.MetaProviderKey: "codex",
+		},
+	}
+	saveGeneratedReferenceArtifact(t, in, artifact)
+
+	dir := filepath.Join(root, "codex-image-gen_reference_asset")
+	gotBytes, err := os.ReadFile(filepath.Join(dir, "artifact.png"))
+	if err != nil {
+		t.Fatalf("read artifact reference: %v", err)
+	}
+	if string(gotBytes) != "image-bytes" {
+		t.Fatalf("artifact reference = %q, want image-bytes", string(gotBytes))
+	}
+
+	manifestBytes, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	var manifest struct {
+		Artifact string `json:"artifact"`
+		Bytes    int    `json:"bytes"`
+		SHA256   string `json:"sha256"`
+		Job      struct {
+			ID       string `json:"id"`
+			AssetID  string `json:"assetId"`
+			Provider string `json:"provider"`
+		} `json:"job"`
+	}
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		t.Fatalf("unmarshal manifest: %v", err)
+	}
+	if manifest.Artifact != "artifact.png" || manifest.Bytes != len(artifact.Bytes) || manifest.SHA256 != artifact.SHA256 {
+		t.Fatalf("manifest artifact summary = %+v, want artifact.png/%d/%s", manifest, len(artifact.Bytes), artifact.SHA256)
+	}
+	if manifest.Job.ID != in.jobID || manifest.Job.AssetID != in.assetID || manifest.Job.Provider != in.providerName {
+		t.Fatalf("manifest job = %+v, want input job identity", manifest.Job)
+	}
+}
+
 type realProviderWorkflowInput struct {
 	jobID           string
 	mediaID         string
@@ -130,6 +191,7 @@ func runRealProviderWorkflow(t *testing.T, provider genprovider.Provider, in rea
 		t.Fatalf("stored artifacts = %d, want 1", len(sink.Stored))
 	}
 	artifact := sink.Stored[0]
+	saveGeneratedReferenceArtifact(t, in, artifact)
 	if len(artifact.Bytes) < in.minBytes {
 		t.Fatalf("artifact bytes = %d, want at least %d", len(artifact.Bytes), in.minBytes)
 	}
@@ -146,6 +208,85 @@ func runRealProviderWorkflow(t *testing.T, provider genprovider.Provider, in rea
 		t.Fatalf("publish gate rejected real provider artifact: %v", err)
 	}
 	return artifact
+}
+
+func saveGeneratedReferenceArtifact(t *testing.T, in realProviderWorkflowInput, artifact generation.Artifact) {
+	t.Helper()
+	root := strings.TrimSpace(os.Getenv("TEST_GENERATED_ASSET_DIR"))
+	if root == "" {
+		return
+	}
+
+	dir := filepath.Join(root, safeArtifactPathPart(fmt.Sprintf("%s-%s-%s", in.providerName, in.outputType, in.jobID)))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("create generated asset reference dir: %v", err)
+	}
+
+	assetName := "artifact." + artifactFileExtension(artifact)
+	if err := os.WriteFile(filepath.Join(dir, assetName), artifact.Bytes, 0o644); err != nil {
+		t.Fatalf("write generated asset reference: %v", err)
+	}
+
+	manifest := map[string]any{
+		"generatedAt": time.Now().UTC().Format(time.RFC3339),
+		"artifact":    assetName,
+		"bytes":       len(artifact.Bytes),
+		"sha256":      artifact.SHA256,
+		"contentType": artifact.ContentType,
+		"extension":   artifact.Extension,
+		"metadata":    artifact.Metadata,
+		"job": map[string]any{
+			"id":         in.jobID,
+			"mediaId":    in.mediaID,
+			"assetId":    in.assetID,
+			"provider":   in.providerName,
+			"model":      in.model,
+			"outputType": in.outputType,
+			"prompt":     in.prompt,
+		},
+	}
+	body, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal generated asset manifest: %v", err)
+	}
+	body = append(body, '\n')
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), body, 0o644); err != nil {
+		t.Fatalf("write generated asset manifest: %v", err)
+	}
+	t.Logf("saved generated asset reference to %s", dir)
+}
+
+func artifactFileExtension(artifact generation.Artifact) string {
+	ext := strings.Trim(strings.TrimSpace(artifact.Extension), ".")
+	if ext != "" {
+		return safeArtifactPathPart(ext)
+	}
+	if extensions, err := mime.ExtensionsByType(artifact.ContentType); err == nil && len(extensions) > 0 {
+		return safeArtifactPathPart(strings.TrimPrefix(extensions[0], "."))
+	}
+	return "bin"
+}
+
+func safeArtifactPathPart(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_' || r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-.")
+	if out == "" {
+		return "artifact"
+	}
+	return out
 }
 
 func requireRealProviderGate(t *testing.T, providerGate string) {

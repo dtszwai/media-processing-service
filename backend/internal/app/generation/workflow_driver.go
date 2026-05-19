@@ -10,8 +10,6 @@ import (
 
 const retryExhaustedCode = "RETRY_EXHAUSTED"
 
-// Run drives the FSM to a terminal status. It is idempotent at the stage
-// level via the IdempotencyStore.
 func (w *Workflow) Run(ctx context.Context, jobID string) error {
 	// First lookup uses empty tenant; mem repo allows it. Production callers
 	// dispatching from SQS pass the tenant id in the stage message and use
@@ -157,9 +155,6 @@ func (w *Workflow) AdvanceOneStage(ctx context.Context, job *generation.Job) err
 	return nil
 }
 
-// terminalFailResult builds a terminal-failed StageResult, attaching a
-// budget-ledger release when the current stage held a reservation. Shared
-// between Run (driver loop) and AdvanceOneStage (per-message worker entry).
 func (w *Workflow) terminalFailResult(ctx context.Context, job *generation.Job, err *generation.Error) StageResult {
 	r := StageResult{NextStage: StageTerminal, TerminalError: err}
 	if BudgetReleaseAllowed(job.CurrentStage) {
