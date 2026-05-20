@@ -80,28 +80,15 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 14px 22px 12px;
+    padding: 14px 22px 14px;
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
-    position: relative;
-  }
-
-  /* A 2px ink-cobalt rule under the header gives the otherwise calm
-     paper canvas a single confident edge — the brand stripe. */
-  .app-header::after {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: -1px;
-    height: 1px;
-    background: linear-gradient(90deg, var(--accent) 0, var(--accent) 88px, var(--border) 88px, var(--border) 100%);
   }
 
   .brand {
     display: flex;
-    align-items: baseline;
-    gap: 14px;
+    align-items: center;
+    gap: 12px;
   }
 
   .logo {
@@ -109,20 +96,15 @@
     height: 14px;
     background: var(--accent);
     display: inline-block;
-    align-self: center;
-    box-shadow:
-      2px 2px 0 0 var(--bg-base),
-      2px 2px 0 1px var(--accent);
+    border-radius: 2px;
   }
 
   .name {
-    font-family: var(--font-display);
+    font-family: var(--font-sans);
     color: var(--fg-bright);
-    font-size: 22px;
+    font-size: 15px;
     line-height: 1;
-    letter-spacing: -0.01em;
     font-weight: 600;
-    font-feature-settings: "ss01";
   }
 
   .name em {
@@ -134,9 +116,7 @@
   .sub {
     color: var(--fg-dim);
     font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    font-family: var(--font-sans);
+font-family: var(--font-sans);
   }
 
   .tab-row {

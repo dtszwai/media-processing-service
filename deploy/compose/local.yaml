@@ -92,8 +92,8 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://grafana:4317
       OTEL_SERVICE_NAME: media-service-api
       MSG_ENV: local
-      # Operator console (frontend/apps/web). Mounts the OpsService Connect
-      # handler — production deploys MUST leave this unset.
+      # Local web console auth stub for unauthenticated generation calls.
+      # Production deploys MUST leave this unset.
       LOCAL_ONLY: "true"
       LOKI_URL: "http://grafana:3100"
       LOCAL_TENANT_ID: ${LOCAL_TENANT_ID:-tenant_local}

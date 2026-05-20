@@ -1,12 +1,6 @@
 <script lang="ts">
-  import { create } from "@bufbuild/protobuf";
-  import {
-    QueueDepthsRequestSchema,
-    PurgeQueueRequestSchema,
-    RedriveDlqRequestSchema,
-    type QueueStat,
-  } from "@media-service/api-client/gen/mediaservice/ops/v1/ops_pb.js";
-  import { opsClient } from "../../shared/ops";
+  import { localOpsClient } from "../../shared/local-ops/client";
+  import type { QueueStat } from "../../shared/local-ops/types";
   import { fmtClock } from "../../shared/time";
   import EmptyState from "../../lib/EmptyState.svelte";
   import MutationButton from "../../lib/MutationButton.svelte";
@@ -97,8 +91,7 @@
     loading = true;
     lastError = null;
     try {
-      const req = create(QueueDepthsRequestSchema, {});
-      const res = await opsClient.queueDepths(req);
+      const res = await localOpsClient.queueDepths();
       rows = res.queues;
       lastRefreshAt = Date.now();
     } catch (err) {
@@ -152,14 +145,12 @@
   let hiddenDlqCount = $derived(dlqs.length - dlqVisibleRows.length);
 
   async function doPurge(name: string) {
-    await opsClient.purgeQueue(create(PurgeQueueRequestSchema, { queueName: name }));
+    await localOpsClient.purgeQueue({ queueName: name });
     await load();
   }
 
   async function doRedrive(name: string) {
-    const res = await opsClient.redriveDlq(
-      create(RedriveDlqRequestSchema, { dlqName: name, limit: 10 }),
-    );
+    const res = await localOpsClient.redriveDlq({ dlqName: name, limit: 10 });
     redriveResult = { ...redriveResult, [name]: { moved: res.moved, failed: res.failed } };
     await load();
   }
@@ -464,9 +455,7 @@
     border: 1px solid var(--border);
     font-family: var(--font-sans);
     font-size: 11.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    cursor: pointer;
+cursor: pointer;
     border-radius: 2px;
   }
   .toggle .dot {
@@ -517,9 +506,7 @@
     grid-column: 1;
     grid-row: 1;
     font-size: 10.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    color: var(--fg-dim);
+color: var(--fg-dim);
     font-family: var(--font-sans);
     font-weight: 500;
   }
@@ -579,9 +566,7 @@
 
   .section-title {
     font-size: 11.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
-    font-weight: 500;
+font-weight: 500;
   }
 
   .section-note {
@@ -601,8 +586,7 @@
     border: 1px solid var(--err);
     color: var(--err);
     background: var(--err-dim);
-    letter-spacing: 0.10em;
-    border-radius: 2px;
+border-radius: 2px;
     font-weight: 600;
   }
 

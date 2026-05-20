@@ -1,37 +1,37 @@
 :root {
-  --bg-base: #f6f1e7;
-  --bg-panel: #ffffff;
-  --bg-panel-hover: #f1ead8;
-  --bg-elevated: #fffaef;
-  --bg-input: #fffdf7;
+  --bg-base: #fef7f0;
+  --bg-panel: #fffbf5;
+  --bg-panel-hover: #f5eedf;
+  --bg-elevated: #ffffff;
+  --bg-input: #ffffff;
 
-  --fg-default: #2a241d;
-  --fg-dim: #6e6457;
-  --fg-muted: #a39685;
-  --fg-bright: #14110d;
+  --fg-default: #453c38;
+  --fg-dim: #7d7068;
+  --fg-muted: #b5a89e;
+  --fg-bright: #292524;
 
-  --border: #e6decf;
-  --border-strong: #cdc1a8;
+  --border: #e6dfd3;
+  --border-strong: #c2b5a3;
 
-  --accent: #1f3fbf;
-  --accent-strong: #14309a;
-  --accent-dim: rgba(31, 63, 191, 0.10);
-  --warn: #b56313;
-  --warn-dim: rgba(181, 99, 19, 0.10);
-  --err: #b03325;
-  --err-dim: rgba(176, 51, 37, 0.10);
-  --ok: #1f3fbf;
-  --pending: #8c8170;
-  --pending-dim: rgba(140, 129, 112, 0.10);
+  --accent: #d97706;
+  --accent-strong: #b45309;
+  --accent-dim: #fef3c7;
+  --warn: #ea580c;
+  --warn-dim: #ffedd5;
+  --err: #dc2626;
+  --err-dim: #fef2f2;
+  --ok: #059669;
+  --pending: #7d7068;
+  --pending-dim: #f5eedf;
 
   --font-mono: "IBM Plex Mono", ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-  --font-display: "Fraunces", "Iowan Old Style", "Palatino", Georgia, serif;
+  --font-display: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
 
-  --row-h: 34px;
-  --row-h-tight: 28px;
+  --row-h: 36px;
+  --row-h-tight: 32px;
 
-  --shadow-paper: 0 1px 0 rgba(31, 30, 26, 0.04), 0 12px 32px rgba(31, 30, 26, 0.08);
+  --shadow-paper: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.03);
 }
 
 * {
@@ -44,23 +44,12 @@ html, body {
   background: var(--bg-base);
   color: var(--fg-default);
   font-family: var(--font-mono);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.55;
   font-feature-settings: "tnum", "calt" 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-}
-
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: -1;
-  background:
-    radial-gradient(1200px 800px at 100% 0%, rgba(31, 63, 191, 0.03), transparent 60%),
-    radial-gradient(900px 700px at 0% 100%, rgba(181, 99, 19, 0.025), transparent 55%);
 }
 
 #app {
@@ -96,7 +85,6 @@ button.primary {
   color: #fdfbf3;
   border-color: var(--accent);
   font-weight: 600;
-  letter-spacing: 0.01em;
 }
 
 button.primary:hover:not(:disabled) {
@@ -206,11 +194,11 @@ a:focus:not(:focus-visible) {
 
 .panel-header {
   border-bottom: 1px solid var(--border);
-  padding: 10px 16px;
-  font-size: 12px;
-  color: var(--fg-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  padding: 12px 16px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg-default);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -255,8 +243,6 @@ a:focus:not(:focus-visible) {
   gap: 6px;
   font-size: 12px;
   color: var(--fg-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
 }
 
 .table-host {
@@ -281,9 +267,7 @@ table.dense thead th {
   border-bottom: 1px solid var(--border-strong);
   text-align: left;
   color: var(--fg-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.10em;
-  font-size: 11.5px;
+font-size: 11.5px;
   font-weight: 500;
   padding: 10px 14px;
   font-family: var(--font-sans);

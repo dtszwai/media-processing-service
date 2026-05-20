@@ -2,7 +2,7 @@
 // mapping in one place lets the jobs table and the trace header agree on
 // what colour each status renders as.
 
-import type { TraceSpan } from "@media-service/api-client/gen/mediaservice/ops/v1/ops_pb.js";
+import type { TraceSpan } from "../../shared/local-ops/types";
 
 type Variant = "ok" | "warn" | "err" | "pending" | "neutral" | "accent";
 

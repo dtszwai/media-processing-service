@@ -2,9 +2,8 @@
 //
 // Given a (tenantId, mediaId) tuple, resolve the primary asset under
 // `{tenantId}/{mediaId}/assets/` and produce a short-lived presigned
-// URL. Composed from the existing ops endpoints (`listS3` +
-// `presignDownload`) so the operator console doesn't need a dedicated
-// backend RPC yet.
+// URL. Composed from the frontend-local ops adapter (`listS3` +
+// `presignDownload`) so the playground does not need a Go debug RPC.
 //
 // A small in-memory cache de-duplicates concurrent resolutions for the
 // same media and reuses presigned URLs within their effective lifetime.
@@ -12,12 +11,7 @@
 // leave headroom for clock skew + paint latency before the asset
 // finally renders.
 
-import { create } from "@bufbuild/protobuf";
-import {
-  ListS3RequestSchema,
-  PresignDownloadRequestSchema,
-} from "@media-service/api-client/gen/mediaservice/ops/v1/ops_pb.js";
-import { opsClient } from "./ops";
+import { localOpsClient } from "./local-ops/client";
 
 export type AssetKind = "image" | "audio" | "other";
 
@@ -68,20 +62,16 @@ export function invalidatePreview(tenantId: string, mediaId: string): void {
 }
 
 async function resolve(tenantId: string, mediaId: string): Promise<Asset | null> {
-  const list = await opsClient.listS3(
-    create(ListS3RequestSchema, {
-      prefix: `${tenantId}/${mediaId}/assets/`,
-      limit: 10,
-    }),
-  );
+  const list = await localOpsClient.listS3({
+    prefix: `${tenantId}/${mediaId}/assets/`,
+    limit: 10,
+  });
   // Pick the first non-prefix node. If multiple assets exist (image +
   // thumbnail variants) the caller can switch to a richer selector
   // later; for v1 the first one is the primary output.
   const first = list.nodes.find((n) => !n.isPrefix);
   if (!first) return null;
-  const presigned = await opsClient.presignDownload(
-    create(PresignDownloadRequestSchema, { key: first.key }),
-  );
+  const presigned = await localOpsClient.presignDownload({ key: first.key });
   if (!presigned.url) return null;
   const contentType = contentTypeFromKey(first.key);
   return {
@@ -141,9 +131,7 @@ export async function presignKey(key: string): Promise<Asset | null> {
   const cached = cache.get(`key:${key}`);
   if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.promise;
   const promise = (async () => {
-    const res = await opsClient.presignDownload(
-      create(PresignDownloadRequestSchema, { key }),
-    );
+    const res = await localOpsClient.presignDownload({ key });
     if (!res.url) return null;
     const contentType = contentTypeFromKey(key);
     return {

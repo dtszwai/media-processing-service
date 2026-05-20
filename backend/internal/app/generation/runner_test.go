@@ -49,7 +49,7 @@ func TestStageRunner_ProviderUnavailableTerminatesJob(t *testing.T) {
 	}
 
 	runner := gen.StageRunner{Repo: repo, Pickers: registry}
-	if err := runner.ProcessMessage(context.Background(), body); err != nil {
+	if err := runner.ProcessMessage(context.Background(), body, nil); err != nil {
 		t.Fatalf("ProcessMessage: %v", err)
 	}
 	got, err := repo.GetJob(context.Background(), job.TenantID, job.ID)
@@ -84,7 +84,7 @@ func TestStageRunner_TransientFailureEnqueuesFreshRetryMessage(t *testing.T) {
 	prov.InjectFailures(job.ID, simulated.FailurePlan{TransientFailures: 1})
 	originalBody := mustStageMessage(t, job, job.StageVersion)
 
-	if err := runner.ProcessMessage(ctx, originalBody); err != nil {
+	if err := runner.ProcessMessage(ctx, originalBody, nil); err != nil {
 		t.Fatalf("transient ProcessMessage should ack the originating message after durably enqueuing the retry, got err = %v", err)
 	}
 	got, err := repo.GetJob(ctx, job.TenantID, job.ID)
@@ -111,7 +111,7 @@ func TestStageRunner_TransientFailureEnqueuesFreshRetryMessage(t *testing.T) {
 		t.Fatalf("retry version = %d, want 2", retryMsg.StageVersion)
 	}
 
-	if err := runner.ProcessMessage(ctx, originalBody); err != nil {
+	if err := runner.ProcessMessage(ctx, originalBody, nil); err != nil {
 		t.Fatalf("stale original redelivery should be acknowledged: %v", err)
 	}
 	got, err = repo.GetJob(ctx, job.TenantID, job.ID)
@@ -122,7 +122,7 @@ func TestStageRunner_TransientFailureEnqueuesFreshRetryMessage(t *testing.T) {
 		t.Fatalf("stale redelivery mutated job: stage=%s version=%d attempts=%d", got.CurrentStage, got.StageVersion, got.Attempts)
 	}
 
-	if err := runner.ProcessMessage(ctx, outboxBodies[0]); err != nil {
+	if err := runner.ProcessMessage(ctx, outboxBodies[0], nil); err != nil {
 		t.Fatalf("retry ProcessMessage: %v", err)
 	}
 	got, err = repo.GetJob(ctx, job.TenantID, job.ID)
@@ -158,7 +158,7 @@ func TestStageRunner_TransientFailureExhaustsRetries(t *testing.T) {
 
 	body := mustStageMessage(t, job, job.StageVersion)
 	for attempt := 1; attempt <= 2; attempt++ {
-		if err := runner.ProcessMessage(ctx, body); err != nil {
+		if err := runner.ProcessMessage(ctx, body, nil); err != nil {
 			t.Fatalf("attempt %d transient should ack: %v", attempt, err)
 		}
 		if len(outboxBodies) != attempt {
@@ -167,7 +167,7 @@ func TestStageRunner_TransientFailureExhaustsRetries(t *testing.T) {
 		body = outboxBodies[len(outboxBodies)-1]
 	}
 
-	if err := runner.ProcessMessage(ctx, body); err != nil {
+	if err := runner.ProcessMessage(ctx, body, nil); err != nil {
 		t.Fatalf("exhausting attempt should persist terminal failure and ack: %v", err)
 	}
 	got, err := repo.GetJob(ctx, job.TenantID, job.ID)

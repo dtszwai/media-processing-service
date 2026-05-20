@@ -66,10 +66,6 @@ func (m *memStorage) PresignPut(_ context.Context, key, _ string, _ time.Duratio
 	return "memstorage-put://" + key, nil
 }
 
-func (m *memStorage) HeadMetadata(_ context.Context, _ string) (map[string]string, error) {
-	return map[string]string{}, nil
-}
-
 func (m *memStorage) GetObjectAttributes(_ context.Context, key string) (storage.ObjectAttrs, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

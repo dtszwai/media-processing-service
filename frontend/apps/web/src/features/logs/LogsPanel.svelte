@@ -1,10 +1,6 @@
 <script lang="ts">
-  import { create } from "@bufbuild/protobuf";
-  import {
-    StreamLogsRequestSchema,
-    type LogLine,
-  } from "@media-service/api-client/gen/mediaservice/ops/v1/ops_pb.js";
-  import { opsClient } from "../../shared/ops";
+  import { localOpsClient } from "../../shared/local-ops/client";
+  import type { LogLine } from "../../shared/local-ops/types";
   import { fmtTimeMs } from "../../shared/time";
   import Pill from "../../lib/Pill.svelte";
   import EmptyState from "../../lib/EmptyState.svelte";
@@ -71,7 +67,7 @@
     totalReceived = 0;
 
     try {
-      const req = create(StreamLogsRequestSchema, {
+      const stream = localOpsClient.streamLogs({
         service: service === "all" ? "" : service,
         jobId,
         mediaId,
@@ -79,8 +75,7 @@
         contains,
         tailLines: clampTailLines(tailLines),
         lookbackSeconds,
-      });
-      const stream = opsClient.streamLogs(req, { signal: controller.signal });
+      }, { signal: controller.signal });
       for await (const msg of stream) {
         if (controller.signal.aborted) return;
         const line = msg.line;
@@ -339,9 +334,7 @@
     gap: 6px;
     font-size: 12px;
     color: var(--fg-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
-    font-family: var(--font-sans);
+font-family: var(--font-sans);
     font-weight: 500;
   }
 
@@ -433,9 +426,7 @@
   .svc {
     color: var(--fg-dim);
     font-size: 11.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    white-space: nowrap;
+white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     font-family: var(--font-sans);
@@ -470,9 +461,7 @@
 
   .lbl-k {
     color: var(--fg-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    font-size: 11px;
+font-size: 11px;
     font-family: var(--font-sans);
     font-weight: 500;
   }

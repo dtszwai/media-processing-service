@@ -196,7 +196,7 @@ func (a *AWS) ensureGenerationQueues(ctx context.Context, snsClient *sns.Client,
 			if err != nil {
 				return fmt.Errorf("bootstrap: gen queue %s: %w", name, err)
 			}
-			if _, err := snsdrv.Subscribe(gctx, snsClient, topicARN, qARN, genFilterPolicy(name)); err != nil {
+			if _, err := snsdrv.SubscribeRaw(gctx, snsClient, topicARN, qARN, genFilterPolicy(name)); err != nil {
 				return fmt.Errorf("bootstrap: subscribe %s: %w", name, err)
 			}
 			results[i] = result{name, qURL, dlqURL}

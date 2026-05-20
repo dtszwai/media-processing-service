@@ -317,8 +317,7 @@
     opacity: 0;
     transition: opacity 160ms ease;
     pointer-events: none;
-    letter-spacing: 0.04em;
-  }
+}
 
   .image-btn:hover .zoom-hint {
     opacity: 1;

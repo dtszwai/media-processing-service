@@ -51,9 +51,7 @@
   .codebox-label {
     font-size: 11.5px;
     color: var(--fg-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    margin-bottom: 6px;
+margin-bottom: 6px;
     font-family: var(--font-sans);
     font-weight: 500;
   }

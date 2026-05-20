@@ -39,17 +39,15 @@
     border-bottom: none;
     background: transparent;
     color: var(--fg-dim);
-    padding: 0 18px;
+    padding: 0 16px;
     height: 40px;
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 14px;
-    text-transform: lowercase;
-    letter-spacing: 0.01em;
     cursor: pointer;
-    font-feature-settings: "calt" 0;
     transition: color 120ms ease, background 120ms ease;
     position: relative;
     top: 1px;
+    text-transform: capitalize;
   }
 
   .tab:hover {

@@ -137,6 +137,11 @@ func (r *Relay) drainOne(ctx context.Context, pk string, row kv.Row) error {
 		r.emitPublished(ctx, eventType, obs.OutboxResultPoisoned, 0)
 		return r.movePoison(ctx, pk, sk, row, "routing_policy_failed: "+perr.Error())
 	}
+	if r.Stream == StreamGeneration {
+		if enqueuedAt := enqueuedAtFromSK(sk); enqueuedAt != "" {
+			attrs["x-enqueued-at"] = enqueuedAt
+		}
+	}
 
 	body := bodyBytes(row)
 	pubStart := r.Now()
@@ -163,8 +168,7 @@ func (r *Relay) drainOne(ctx context.Context, pk string, row kv.Row) error {
 }
 
 func (r *Relay) emitPendingAge(ctx context.Context, sk string, now time.Time) {
-	prefix, _, _ := strings.Cut(sk, "#")
-	createdAt, err := time.Parse(time.RFC3339Nano, prefix)
+	createdAt, err := parseOutboxSKTimestamp(sk)
 	if err != nil {
 		return
 	}
@@ -173,6 +177,19 @@ func (r *Relay) emitPendingAge(ctx context.Context, sk string, now time.Time) {
 		return
 	}
 	r.Instruments.OutboxPendingAge.Record(ctx, age.Seconds())
+}
+
+func enqueuedAtFromSK(sk string) string {
+	createdAt, err := parseOutboxSKTimestamp(sk)
+	if err != nil {
+		return ""
+	}
+	return createdAt.Format(time.RFC3339Nano)
+}
+
+func parseOutboxSKTimestamp(sk string) (time.Time, error) {
+	prefix, _, _ := strings.Cut(sk, "#")
+	return time.Parse(time.RFC3339Nano, prefix)
 }
 
 // emitPublished increments outbox.published_total and records

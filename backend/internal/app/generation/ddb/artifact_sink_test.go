@@ -182,7 +182,3 @@ func (s *artifactSinkStorage) PresignPut(context.Context, string, string, time.D
 func (s *artifactSinkStorage) GetObjectAttributes(context.Context, string) (storage.ObjectAttrs, error) {
 	return storage.ObjectAttrs{}, nil
 }
-
-func (s *artifactSinkStorage) HeadMetadata(context.Context, string) (map[string]string, error) {
-	return nil, nil
-}

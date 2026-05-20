@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,8 +36,8 @@ const (
 	defaultSmokeAWSRegion    = "us-east-1"
 	defaultSmokeDDBTable     = "media-v1"
 	defaultSmokeS3Bucket     = "media-service-local"
-	defaultSmokeTenantID     = "tenant_smoke_local"
-	defaultSmokeUserID       = "user_smoke_local"
+	defaultSmokeTenantID     = "tenant_local"
+	defaultSmokeUserID       = "user_local"
 	defaultSmokePromQueryURL = "http://localhost:3000/api/datasources/proxy/uid/prometheus/api/v1/query"
 )
 
@@ -176,11 +177,31 @@ func preflight(t *testing.T, ctx context.Context, cfg smokeConfig) {
 		"ps", "--status", "running",
 		"api", "outbox-relay", "generation-worker", "localstack", "grafana",
 	}
-	out, err := exec.CommandContext(cmdCtx, "docker", args...).CombinedOutput()
+	cmd := exec.CommandContext(cmdCtx, "docker", args...)
+	cmd.Dir = repoRoot(t)
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("preflight: docker %s: %v\n%s", strings.Join(args, " "), err, string(out))
 	}
 	assertComposeServicesRunning(t, string(out), []string{"api", "outbox-relay", "generation-worker", "localstack", "grafana"})
+}
+
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("repo root: getwd: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(wd, "deploy", "compose", "local.yaml")); err == nil {
+			return wd
+		}
+		parent := filepath.Dir(wd)
+		if parent == wd {
+			t.Fatalf("repo root: deploy/compose/local.yaml not found from %s", wd)
+		}
+		wd = parent
+	}
 }
 
 func assertComposeServicesRunning(t *testing.T, psOutput string, services []string) {

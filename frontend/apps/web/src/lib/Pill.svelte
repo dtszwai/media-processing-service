@@ -19,9 +19,7 @@
     padding: 2px 10px;
     font-size: 11.5px;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    line-height: 18px;
+line-height: 18px;
     border: 1px solid var(--border);
     background: var(--bg-panel);
     color: var(--fg-default);

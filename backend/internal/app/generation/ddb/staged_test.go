@@ -115,9 +115,5 @@ func (b *stagingBlob) GetObjectAttributes(context.Context, string) (storage.Obje
 	return storage.ObjectAttrs{}, errors.New("stagingBlob: GetObjectAttributes not supported")
 }
 
-func (b *stagingBlob) HeadMetadata(context.Context, string) (map[string]string, error) {
-	return nil, errors.New("stagingBlob: HeadMetadata not supported")
-}
-
 var _ kv.KV = (*stagingKV)(nil)
 var _ storage.Storage = (*stagingBlob)(nil)

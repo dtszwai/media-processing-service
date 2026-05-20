@@ -96,8 +96,8 @@ func buildCancelledTerminalItem(job generation.Job, reason string, now time.Time
 // GateDecision. Caller (AdvanceStageAndEnqueue) only invokes this when the
 // gate actually ran — non-gate terminal failures (RETRY_EXHAUSTED,
 // BUDGET_EXHAUSTED, …) intentionally have no gate audit row so the
-// AUDIT#GATE partition doesn't accumulate placeholders that mislead the
-// operator console into reading "gate failed" when the gate never ran.
+// AUDIT#GATE partition doesn't accumulate placeholders that mislead local
+// debug views into reading "gate failed" when the gate never ran.
 func buildAuditItem(job *generation.Job, d genapp.GateDecision, now time.Time) map[string]any {
 	if d.JobID == "" {
 		d.JobID = job.ID

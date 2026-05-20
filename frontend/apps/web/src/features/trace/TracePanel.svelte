@@ -1,11 +1,6 @@
 <script lang="ts">
-  import { create } from "@bufbuild/protobuf";
-  import {
-    GetJobRequestSchema,
-    type FullJobView,
-    type TraceSpan,
-  } from "@media-service/api-client/gen/mediaservice/ops/v1/ops_pb.js";
-  import { opsClient } from "../../shared/ops";
+  import { localOpsClient } from "../../shared/local-ops/client";
+  import type { FullJobView, TraceSpan } from "../../shared/local-ops/types";
   import { fmtClock, fmtDateTime, fmtDuration, tsToMs } from "../../shared/time";
   import Pill from "../../lib/Pill.svelte";
   import EmptyState from "../../lib/EmptyState.svelte";
@@ -195,8 +190,7 @@
     if (!jobId) return;
     polling = true;
     try {
-      const req = create(GetJobRequestSchema, { jobId });
-      const res = await opsClient.getJob(req);
+      const res = await localOpsClient.getJob({ jobId });
       const fetchedAt = Date.now();
       view = res.view;
       lastError = null;
@@ -411,6 +405,11 @@
       {#if nodes.length === 0}
         <EmptyState title="no spans yet" hint="waiting for first stage row to land…" />
       {:else}
+        <div class="trace-legend" aria-label="trace row legend">
+          <span><i class="legend-mark legend-event"></i>event</span>
+          <span><i class="legend-mark legend-stage"></i>stage</span>
+          <span><i class="legend-mark legend-wait"></i>wait</span>
+        </div>
         <div class="rows">
           <div class="axis" aria-hidden="true">
             <span class="axis-title">span</span>
@@ -616,9 +615,7 @@
     font-family: var(--font-sans);
     font-size: 10.5px;
     font-weight: 600;
-    letter-spacing: 0.10em;
-    text-transform: uppercase;
-    padding: 5px 9px;
+padding: 5px 9px;
     border-right: 1px solid var(--border);
   }
 
@@ -630,8 +627,7 @@
     font-size: 12.5px;
     font-weight: 600;
     padding: 5px 11px;
-    letter-spacing: 0.04em;
-  }
+}
 
   .meta-chip-v-mono {
     font-family: var(--font-mono);
@@ -649,9 +645,7 @@
   .muted-cap {
     font-size: 11.5px;
     color: var(--fg-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
-    font-family: var(--font-sans);
+font-family: var(--font-sans);
     font-weight: 500;
   }
 
@@ -681,9 +675,7 @@
     font-family: var(--font-sans);
     font-size: 10.5px;
     color: var(--fg-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    margin-left: 1px;
+margin-left: 1px;
   }
 
   .elapsed-split .split-sep {
@@ -717,9 +709,7 @@
     font-family: var(--font-sans);
     font-size: 10px;
     color: var(--fg-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
-    font-weight: 500;
+font-weight: 500;
     line-height: 1;
   }
 
@@ -820,9 +810,7 @@
     color: var(--err);
     font-size: 11.5px;
     font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-  }
+}
 
   .source-summary code {
     color: var(--err);
@@ -877,9 +865,7 @@
     color: var(--accent-strong);
     font-size: 11.5px;
     font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-  }
+}
 
   .hotspot-summary code {
     color: var(--accent-strong);
@@ -902,6 +888,50 @@
     font-size: 12px;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+  }
+
+  .trace-legend {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    padding: 7px 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-panel);
+    color: var(--fg-dim);
+    font-family: var(--font-sans);
+    font-size: 11.5px;
+  }
+
+  .trace-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .legend-mark {
+    display: inline-block;
+    width: 18px;
+    height: 8px;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+
+  .legend-event {
+    width: 3px;
+    background: var(--accent);
+  }
+
+  .legend-wait {
+    background:
+      repeating-linear-gradient(
+        135deg,
+        transparent 0 4px,
+        rgba(141, 130, 109, 0.3) 4px 5px
+      ),
+      color-mix(in srgb, var(--fg-muted) 18%, transparent);
+    border-top: 1px dashed var(--border-strong);
+    border-bottom: 1px dashed var(--border-strong);
   }
 
   .rows {
@@ -936,9 +966,7 @@
     font-family: var(--font-sans);
     font-size: 11.5px;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-  }
+}
 
   .axis-status {
     text-align: right;
@@ -1064,14 +1092,10 @@
     font-family: var(--font-sans);
     font-size: 10.5px;
     font-weight: 700;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-  }
+}
   .kind {
     font-size: 11.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-family: var(--font-sans);
+font-family: var(--font-sans);
     color: var(--fg-dim);
   }
   .branch { color: var(--fg-muted); margin-right: 4px; }
@@ -1103,11 +1127,8 @@
      work; record markers (OUTPUT/VARIANT) and audits are neutral. Failure
      states still take precedence, in their own colour family. */
   .bar.bar-stage    { background: var(--accent); }
-  /* Synthesized stage end: no observable child event pinned the real end of
-     work, so closeStageEnds projected the bar to the next stage's start.
-     Most of that time is usually queue handoff to a different worker.
-     Hatched fill signals "this isn't all observed work" without hiding the
-     stage entirely. */
+  /* Synthesized stage end now means an open tail, usually an in-flight stage
+     whose exact end is not known yet. Completed handoffs render as wait rows. */
   .bar.bar-stage-synthesized {
     background:
       repeating-linear-gradient(
@@ -1115,6 +1136,17 @@
         var(--accent) 0 6px,
         color-mix(in srgb, var(--accent) 35%, transparent) 6px 9px
       );
+  }
+  .bar.bar-wait {
+    background:
+      repeating-linear-gradient(
+        135deg,
+        transparent 0 4px,
+        rgba(141, 130, 109, 0.26) 4px 5px
+      ),
+      color-mix(in srgb, var(--fg-muted) 20%, transparent);
+    border-top: 1px dashed var(--border-strong);
+    border-bottom: 1px dashed var(--border-strong);
   }
   .bar.bar-attempt  { background: color-mix(in srgb, var(--accent) 55%, transparent); }
   .bar.bar-provider {
@@ -1168,8 +1200,7 @@
     background: var(--bg-panel);
     padding: 1px 8px;
     border-radius: 2px;
-    letter-spacing: 0.02em;
-    white-space: nowrap;
+white-space: nowrap;
     pointer-events: none;
   }
 
@@ -1232,9 +1263,7 @@
     font-size: 11px;
     font-weight: 500;
     color: var(--fg-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
-    font-variant-numeric: tabular-nums;
+font-variant-numeric: tabular-nums;
   }
 
   .err-panel {

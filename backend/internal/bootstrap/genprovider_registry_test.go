@@ -53,27 +53,6 @@ func TestProviderRegistry_CodexConstructedWhenCLIPresent(t *testing.T) {
 	}
 }
 
-func TestGenerationCatalogIsStatic(t *testing.T) {
-	got := GenerationCatalog()
-	want := map[string]bool{
-		"image/simulated":  false,
-		"image/codex":      false,
-		"audio/simulated":  false,
-		"audio/notebooklm": false,
-	}
-	for _, entry := range got {
-		key := entry.OutputType + "/" + entry.Provider
-		if _, ok := want[key]; ok {
-			want[key] = true
-		}
-	}
-	for key, found := range want {
-		if !found {
-			t.Fatalf("GenerationCatalog missing %s in %#v", key, got)
-		}
-	}
-}
-
 func providerNameForTest(p genprovider.Provider) string {
 	if p == nil {
 		return ""

@@ -1,4 +1,4 @@
-import type { TraceSpan } from "@media-service/api-client/gen/mediaservice/ops/v1/ops_pb.js";
+import type { TraceSpan } from "../../shared/local-ops/types";
 import { fmtDateTime, fmtDuration } from "../../shared/time";
 
 type Entry = {

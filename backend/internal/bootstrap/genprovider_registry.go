@@ -37,8 +37,8 @@ func NewProviderRegistry(cfg app.GenerationConfig) (ProviderRegistry, error) {
 }
 
 // PickForJob returns the named adapter for the job. The provider name is
-// required: jobs must commit to a specific adapter at submit time (clients
-// pick from ListGenerationModels). An empty or unknown name surfaces as a
+// required: jobs must commit to a specific adapter at submit time. An empty
+// or unknown name surfaces as a
 // terminal PROVIDER_UNAVAILABLE so the FSM gives up instead of silently
 // swapping to a different vendor.
 func (r ProviderRegistry) PickForJob(o generation.OutputType, providerName string) (genprovider.Provider, error) {
@@ -73,69 +73,6 @@ func imageProviders() map[string]genprovider.Provider {
 		out["codex"] = p
 	}
 	return out
-}
-
-// GenerationModelInfo is one row in the catalog the operator console reads to
-// render the submit form's model picker. The list of models is intentionally
-// closed-set: free-text would let operators submit identifiers the configured
-// provider does not understand. When a provider adds a new selectable model,
-// extend the per-provider switch below.
-type GenerationModelInfo struct {
-	OutputType   string // "image" | "audio"
-	Provider     string // "simulated" | "codex" | "notebooklm"
-	Models       []string
-	DefaultModel string
-}
-
-// GenerationCatalog returns the static catalog of defined provider/model pairs.
-// Ordering is intentional — the first entry per output type is what the
-// operator console pre-selects in the dropdown. Host capability is ignored
-// here; workers reject unavailable providers at job time.
-func GenerationCatalog() []GenerationModelInfo {
-	return []GenerationModelInfo{
-		imageCatalog("codex"),
-		imageCatalog("simulated"),
-		audioCatalog("notebooklm"),
-		audioCatalog("simulated"),
-	}
-}
-
-func imageCatalog(provider string) GenerationModelInfo {
-	switch provider {
-	case "codex":
-		return GenerationModelInfo{
-			OutputType:   "image",
-			Provider:     "codex",
-			Models:       []string{"gpt-5.5"},
-			DefaultModel: "gpt-5.5",
-		}
-	default:
-		return GenerationModelInfo{
-			OutputType:   "image",
-			Provider:     "simulated",
-			Models:       []string{"simulated-v1"},
-			DefaultModel: "simulated-v1",
-		}
-	}
-}
-
-func audioCatalog(provider string) GenerationModelInfo {
-	switch provider {
-	case "notebooklm":
-		return GenerationModelInfo{
-			OutputType:   "audio",
-			Provider:     "notebooklm",
-			Models:       []string{"notebooklm-default"},
-			DefaultModel: "notebooklm-default",
-		}
-	default:
-		return GenerationModelInfo{
-			OutputType:   "audio",
-			Provider:     "simulated",
-			Models:       []string{"simulated-v1"},
-			DefaultModel: "simulated-v1",
-		}
-	}
 }
 
 func audioProviders(cfg app.GenerationConfig) map[string]genprovider.Provider {

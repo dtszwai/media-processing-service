@@ -1,18 +1,26 @@
-import { create, type MessageInitShape } from "@bufbuild/protobuf";
 import { timestampFromMs } from "@bufbuild/protobuf/wkt";
-import {
-  TraceSpanSchema,
-  type TraceSpan,
-} from "@media-service/api-client/gen/mediaservice/ops/v1/ops_pb.js";
 import { describe, expect, it } from "vitest";
+import type { TraceSpan } from "../../shared/local-ops/types";
 import { buildNodes } from "./waterfall";
 
-function traceSpan(init: MessageInitShape<typeof TraceSpanSchema>): TraceSpan {
-  return create(TraceSpanSchema, {
-    durationMs: 0n,
+function traceSpan(init: Partial<TraceSpan>): TraceSpan {
+  return {
+    id: "",
+    parentId: "",
+    kind: "",
+    label: "",
+    status: "",
+    stage: "",
+    resourceClass: "",
+    attemptNo: 0,
+    errorCode: "",
+    errorMessage: "",
     attributes: {},
+    durationMs: 0,
+    pk: "",
+    sk: "",
     ...init,
-  });
+  };
 }
 
 function at(ms: number) {
@@ -82,6 +90,99 @@ describe("buildNodes", () => {
     const skipped = nodes.find((n) => n.span.stage === "PROVIDER_WAIT");
     expect(skipped?.skipped).toBe(true);
     expect(skipped?.span.status).toBe("SKIPPED");
+  });
+
+  it("interleaves a handoff wait before skipped stages and the destination stage", () => {
+    const nodes = buildNodes([
+      traceSpan({
+        id: "stage:PROVIDER_SUBMIT",
+        kind: "STAGE",
+        label: "PROVIDER_SUBMIT",
+        status: "OK",
+        stage: "PROVIDER_SUBMIT",
+        startAt: at(1_000),
+        endAt: at(1_010),
+      }),
+      traceSpan({
+        id: "attempt:PROVIDER_SUBMIT:v1:a1",
+        parentId: "stage:PROVIDER_SUBMIT",
+        kind: "ATTEMPT",
+        label: "attempt #1",
+        status: "OK",
+        stage: "PROVIDER_SUBMIT",
+        startAt: at(1_010),
+        endAt: at(1_010),
+        attributes: { next_stage: "OUTPUT_MODERATION" },
+      }),
+      traceSpan({
+        id: "handoff:PROVIDER_SUBMIT:v1:a1:to:OUTPUT_MODERATION",
+        kind: "HANDOFF_WAIT",
+        label: "handoff wait",
+        status: "OK",
+        stage: "OUTPUT_MODERATION",
+        startAt: at(1_010),
+        endAt: at(2_000),
+        attributes: {
+          from_stage: "PROVIDER_SUBMIT",
+          to_stage: "OUTPUT_MODERATION",
+          reason: "normal_handoff",
+          confidence: "observed",
+        },
+      }),
+      traceSpan({
+        id: "stage:OUTPUT_MODERATION",
+        kind: "STAGE",
+        label: "OUTPUT_MODERATION",
+        status: "OK",
+        stage: "OUTPUT_MODERATION",
+        startAt: at(2_000),
+        endAt: at(2_100),
+      }),
+    ], 2_100);
+
+    expect(nodes.map((n) => n.span.id)).toEqual([
+      "stage:PROVIDER_SUBMIT",
+      "handoff:PROVIDER_SUBMIT:v1:a1:to:OUTPUT_MODERATION",
+      "skipped:PROVIDER_WAIT",
+      "stage:OUTPUT_MODERATION",
+    ]);
+    expect(nodes[1].depth).toBe(0);
+    expect(nodes[3].gapFromPreviousEndMs).toBe(0);
+  });
+
+  it("places an initial handoff wait before input moderation", () => {
+    const nodes = buildNodes([
+      traceSpan({
+        id: "handoff:JOB_CREATED:to:INPUT_MODERATION",
+        kind: "HANDOFF_WAIT",
+        label: "handoff wait",
+        status: "OK",
+        stage: "INPUT_MODERATION",
+        startAt: at(1_000),
+        endAt: at(2_000),
+        attributes: {
+          from_stage: "JOB_CREATED",
+          to_stage: "INPUT_MODERATION",
+          reason: "initial_dispatch",
+          confidence: "observed",
+        },
+      }),
+      traceSpan({
+        id: "stage:INPUT_MODERATION",
+        kind: "STAGE",
+        label: "INPUT_MODERATION",
+        status: "OK",
+        stage: "INPUT_MODERATION",
+        startAt: at(2_000),
+        endAt: at(2_100),
+      }),
+    ], 2_100);
+
+    expect(nodes.map((n) => n.span.id)).toEqual([
+      "handoff:JOB_CREATED:to:INPUT_MODERATION",
+      "stage:INPUT_MODERATION",
+    ]);
+    expect(nodes[1].gapFromPreviousEndMs).toBe(0);
   });
 
   it("marks business stages skipped when worker precheck terminates before the FSM handler", () => {

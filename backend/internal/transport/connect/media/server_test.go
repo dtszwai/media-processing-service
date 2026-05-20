@@ -257,7 +257,3 @@ func (fakeStorage) PresignPut(context.Context, string, string, time.Duration) (s
 func (fakeStorage) GetObjectAttributes(context.Context, string) (storage.ObjectAttrs, error) {
 	return storage.ObjectAttrs{}, errors.New("not implemented")
 }
-
-func (fakeStorage) HeadMetadata(context.Context, string) (map[string]string, error) {
-	return map[string]string{}, nil
-}

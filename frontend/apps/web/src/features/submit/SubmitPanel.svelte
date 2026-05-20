@@ -5,11 +5,9 @@
     CreateAudioOverviewRequestSchema,
     OutputType,
   } from "@media-service/api-client/gen/mediaservice/generation/v1/generation_pb.js";
-  import {
-    ListGenerationModelsRequestSchema,
-    type GenerationProviderModels,
-  } from "@media-service/api-client/gen/mediaservice/ops/v1/ops_pb.js";
-  import { generationClient, opsClient } from "../../shared/ops";
+  import { generationClient } from "../../shared/api";
+  import { localOpsClient } from "../../shared/local-ops/client";
+  import type { GenerationProviderModels } from "../../shared/local-ops/types";
   import { navigate } from "../../shared/route.svelte";
   import { idempotencyKey } from "../../shared/time";
   import Pill from "../../lib/Pill.svelte";
@@ -45,9 +43,7 @@
 
   async function loadCatalog() {
     try {
-      const res = await opsClient.listGenerationModels(
-        create(ListGenerationModelsRequestSchema, {}),
-      );
+      const res = await localOpsClient.listGenerationModels();
       const next: Record<string, GenerationProviderModels[]> = {};
       for (const p of res.providers) {
         next[p.outputType] ??= [];
@@ -132,9 +128,9 @@
 </script>
 
 <section class="submit">
-  <div class="panel-header">
-    <span>submit · enqueue a generation job</span>
-    <span class="dim">tier × class fanout via SNS filter policy</span>
+  <div class="submit-header">
+    <h2 class="title">Submit generation job</h2>
+    <span class="meta">Enqueue a text-to-image or audio overview generation</span>
   </div>
   <form onsubmit={onSubmit}>
     <fieldset>
@@ -229,8 +225,24 @@
     margin: 32px auto;
     background: var(--bg-panel);
     border: 1px solid var(--border);
-    box-shadow: var(--shadow-paper);
-    border-radius: 4px;
+    border-radius: 6px;
+  }
+
+  .submit-header {
+    padding: 24px 26px 0;
+    font-family: var(--font-sans);
+  }
+
+  .title {
+    margin: 0 0 4px;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--fg-bright);
+  }
+
+  .meta {
+    font-size: 13px;
+    color: var(--fg-dim);
   }
 
   form {
@@ -253,9 +265,7 @@
     padding: 0;
     font-size: 12px;
     color: var(--fg-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
-    font-family: var(--font-sans);
+font-family: var(--font-sans);
     font-weight: 500;
   }
 
@@ -334,10 +344,4 @@
   }
   .fixed-model.dim { color: var(--fg-dim); }
   .mono { font-family: var(--font-mono); }
-
-  /* Panel-header tweak inside the submit card. */
-  :global(.submit .panel-header) {
-    padding: 14px 20px;
-    font-family: var(--font-sans);
-  }
 </style>

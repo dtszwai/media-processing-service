@@ -1,7 +1,7 @@
 // Human-friendly metadata for the generation-pipeline stages.
 //
 // The backend pipeline marches each job through a fixed FSM in
-// internal/app/generation/workflow_*.go. The operator console surfaces
+// internal/app/generation/workflow_*.go. The local console surfaces
 // only stage names + attempt counts; this module supplies the narrative
 // — what the stage is for, what it checks, and which span attributes
 // the operator most likely wants to see when debugging one.

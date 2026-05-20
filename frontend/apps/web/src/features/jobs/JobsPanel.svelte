@@ -1,10 +1,6 @@
 <script lang="ts">
-  import { create } from "@bufbuild/protobuf";
-  import {
-    ListJobsRequestSchema,
-    type JobSummary,
-  } from "@media-service/api-client/gen/mediaservice/ops/v1/ops_pb.js";
-  import { opsClient } from "../../shared/ops";
+  import { localOpsClient } from "../../shared/local-ops/client";
+  import type { JobSummary } from "../../shared/local-ops/types";
   import { navigate } from "../../shared/route.svelte";
   import { fmtClock, fmtDateTime } from "../../shared/time";
   import { jobStatusVariant } from "../trace/status";
@@ -22,12 +18,11 @@
     loading = true;
     lastError = null;
     try {
-      const req = create(ListJobsRequestSchema, {
+      const res = await localOpsClient.listJobs({
         status,
         outputType,
         limit: 200,
       });
-      const res = await opsClient.listJobs(req);
       rows = res.jobs;
       lastRefreshAt = Date.now();
     } catch (err) {

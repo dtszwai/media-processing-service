@@ -48,9 +48,7 @@
 
   dt {
     color: var(--fg-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    font-size: 11.5px;
+font-size: 11.5px;
     align-self: baseline;
     padding-top: 2px;
     font-family: var(--font-sans);

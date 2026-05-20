@@ -44,7 +44,8 @@ type Instruments struct {
 	// classes consistent — a histogram of seconds would lose resolution on
 	// fast stages (claim acquire, validation) that complete in single-digit
 	// milliseconds.
-	WorkflowStageLatency metric.Float64Histogram
+	WorkflowStageLatency    metric.Float64Histogram
+	WorkflowDispatchLatency metric.Float64Histogram
 
 	// Provider call counters + latency.
 	ProviderRequests       metric.Int64Counter
@@ -170,6 +171,14 @@ func NewInstruments(meter metric.Meter) (*Instruments, error) {
 		metric.WithUnit("ms"),
 	); err != nil {
 		return nil, fmt.Errorf("obs: workflow.stage_latency_ms: %w", err)
+	}
+
+	if i.WorkflowDispatchLatency, err = meter.Float64Histogram(
+		"workflow.dispatch_latency_ms",
+		metric.WithDescription("Generation stage dispatch latency from outbox enqueue to worker stage span start. Missing enqueue timestamps are skipped rather than recorded as zero."),
+		metric.WithUnit("ms"),
+	); err != nil {
+		return nil, fmt.Errorf("obs: workflow.dispatch_latency_ms: %w", err)
 	}
 
 	if i.ProviderRequests, err = meter.Int64Counter(

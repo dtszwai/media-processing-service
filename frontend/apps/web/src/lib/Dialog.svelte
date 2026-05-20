@@ -98,9 +98,7 @@
     border-bottom: 1px solid var(--border);
     font-size: 12.5px;
     color: var(--fg-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
-    font-family: var(--font-sans);
+font-family: var(--font-sans);
     font-weight: 500;
   }
 

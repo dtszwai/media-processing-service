@@ -1,13 +1,6 @@
 <script lang="ts">
-  import { create } from "@bufbuild/protobuf";
-  import {
-    CancelJobRequestSchema,
-    RetryJobRequestSchema,
-    ForceFailJobRequestSchema,
-    ReplayOutboxRequestSchema,
-  } from "@media-service/api-client/gen/mediaservice/ops/v1/ops_pb.js";
   import MutationButton from "../../lib/MutationButton.svelte";
-  import { opsClient } from "../../shared/ops";
+  import { localOpsClient } from "../../shared/local-ops/client";
   import { isJobTerminal } from "../trace/status";
 
   let {
@@ -28,26 +21,26 @@
   }
 
   async function cancel() {
-    await opsClient.cancelJob(create(CancelJobRequestSchema, { jobId, reason: "operator cancel" }));
+    await localOpsClient.cancelJob({ jobId, reason: "operator cancel" });
     await refresh();
   }
 
   async function retry() {
-    await opsClient.retryJob(create(RetryJobRequestSchema, { jobId }));
+    await localOpsClient.retryJob({ jobId });
     await refresh();
   }
 
   async function forceFail() {
-    await opsClient.forceFailJob(create(ForceFailJobRequestSchema, {
+    await localOpsClient.forceFailJob({
       jobId,
       errorCode: "OPERATOR_FORCED_FAIL",
       errorMessage: "manual force-fail",
-    }));
+    });
     await refresh();
   }
 
   async function replayOutbox() {
-    await opsClient.replayOutbox(create(ReplayOutboxRequestSchema, { jobId }));
+    await localOpsClient.replayOutbox({ jobId });
     await refresh();
   }
 </script>

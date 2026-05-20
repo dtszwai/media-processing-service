@@ -191,7 +191,7 @@ func TestSimulatedLifecycle_SubmitQueueRunnerStoresGatedAssetAndChargesOnce(t *t
 			if providerSubmitBody == nil {
 				t.Fatal("provider submit message was not observed")
 			}
-			if err := runner.ProcessMessage(ctx, providerSubmitBody); err != nil {
+			if err := runner.ProcessMessage(ctx, providerSubmitBody, nil); err != nil {
 				t.Fatalf("stale provider redelivery: %v", err)
 			}
 			if provider.calls.Load() != 1 {
@@ -218,7 +218,7 @@ func drainLifecycleQueue(t *testing.T, ctx context.Context, runner *gen.StageRun
 		if msg.Stage == generation.StageProviderSubmit {
 			providerSubmitBody = append([]byte(nil), body...)
 		}
-		if err := runner.ProcessMessage(ctx, body); err != nil {
+		if err := runner.ProcessMessage(ctx, body, nil); err != nil {
 			t.Fatalf("ProcessMessage(%s v%d): %v", msg.Stage, msg.StageVersion, err)
 		}
 		got, err := runner.Repo.GetJob(ctx, job.TenantID, job.ID)

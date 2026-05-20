@@ -143,9 +143,6 @@ func (s *fakeStorage) PresignPut(context.Context, string, string, time.Duration)
 func (s *fakeStorage) GetObjectAttributes(context.Context, string) (storage.ObjectAttrs, error) {
 	panic("not used")
 }
-func (s *fakeStorage) HeadMetadata(context.Context, string) (map[string]string, error) {
-	return map[string]string{}, nil
-}
 
 type processRepo struct {
 	mu       sync.Mutex
@@ -295,9 +292,6 @@ func (s *processStorage) PresignPut(context.Context, string, string, time.Durati
 }
 func (s *processStorage) GetObjectAttributes(context.Context, string) (storage.ObjectAttrs, error) {
 	panic("not used")
-}
-func (s *processStorage) HeadMetadata(context.Context, string) (map[string]string, error) {
-	return map[string]string{}, nil
 }
 
 func pngBytes(t *testing.T, w, h int) []byte {

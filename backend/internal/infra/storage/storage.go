@@ -48,10 +48,4 @@ type Storage interface {
 	PresignGet(ctx context.Context, key string, ttl time.Duration) (string, error)
 	PresignPut(ctx context.Context, key, contentType string, ttl time.Duration) (string, error)
 	GetObjectAttributes(ctx context.Context, key string) (ObjectAttrs, error)
-	// HeadMetadata returns the user-defined object metadata (x-amz-meta-*)
-	// without downloading the body. Used by the ops console to surface the
-	// watermark fingerprint persisted on the result asset; production
-	// callers should treat the map as opaque since key names depend on the
-	// writer's convention.
-	HeadMetadata(ctx context.Context, key string) (map[string]string, error)
 }

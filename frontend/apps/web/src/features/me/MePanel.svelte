@@ -1,24 +1,18 @@
 <!--
   MePanel — the operator's current-tenant overview.
 
-  Composed from the same LOCAL_ONLY ops reads that power the deeper tabs:
+  Composed from the same frontend-local ops reads that power the deeper tabs:
   listJobs, listMedia, queueDepths, and tenant usage. In local single-tenant
   mode every record traces back to the same tenant.
 -->
 <script lang="ts">
-  import { create } from "@bufbuild/protobuf";
-  import {
-    GetLocalIdentityRequestSchema,
-    GetTenantUsageRequestSchema,
-    ListJobsRequestSchema,
-    ListMediaRequestSchema,
-    QueueDepthsRequestSchema,
-    type JobSummary,
-    type MediaRow,
-    type QueueStat,
-    type TenantUsageReservoir,
-  } from "@media-service/api-client/gen/mediaservice/ops/v1/ops_pb.js";
-  import { opsClient } from "../../shared/ops";
+  import { localOpsClient } from "../../shared/local-ops/client";
+  import type {
+    JobSummary,
+    MediaRow,
+    QueueStat,
+    TenantUsageReservoir,
+  } from "../../shared/local-ops/types";
   import { navigate } from "../../shared/route.svelte";
   import { fmtAge, fmtDateTime } from "../../shared/time";
   import Pill from "../../lib/Pill.svelte";
@@ -33,8 +27,8 @@
   let loading = $state(true);
   let lastError = $state<string | null>(null);
   let refreshedAt = $state<number>(Date.now());
-  // Authoritative tenant for the LOCAL_ONLY console, read from
-  // OpsService.GetLocalIdentity so the hero is correct on an empty database.
+  // Authoritative tenant for the local playground, read from the Vite
+  // adapter so the hero is correct on an empty database.
   let tenantId = $state<string>("…");
 
   async function loadAll() {
@@ -42,11 +36,11 @@
     lastError = null;
     try {
       const [idRes, jobsRes, mediaRes, queuesRes, usageRes] = await Promise.all([
-        opsClient.getLocalIdentity(create(GetLocalIdentityRequestSchema, {})),
-        opsClient.listJobs(create(ListJobsRequestSchema, { limit: 200 })),
-        opsClient.listMedia(create(ListMediaRequestSchema, { limit: 200, includeDeleted: false })),
-        opsClient.queueDepths(create(QueueDepthsRequestSchema, {})),
-        opsClient.getTenantUsage(create(GetTenantUsageRequestSchema, {})),
+        localOpsClient.getLocalIdentity(),
+        localOpsClient.listJobs({ limit: 200 }),
+        localOpsClient.listMedia({ limit: 200, includeDeleted: false }),
+        localOpsClient.queueDepths(),
+        localOpsClient.getTenantUsage({}),
       ]);
       tenantId = idRes.tenantId;
       jobs = jobsRes.jobs;
@@ -143,18 +137,15 @@
 </script>
 
 <div class="page">
-  <header class="hero">
-    <div class="hero-left">
-      <div class="eyebrow">tenant</div>
-      <h1 class="tenant-id">{tenantId}</h1>
-      <p class="hero-lead">
-        Local single-tenant view. Composed live from the same DDB partition the
-        other tabs read. Auto-refreshes every 10s — last refresh
-        <span class="mono">{fmtAge(refreshedAt)}</span>.
+  <header class="page-header">
+    <div class="header-left">
+      <h1 class="page-title">{tenantId}</h1>
+      <p class="page-meta">
+        Single-tenant view. Auto-refreshes every 10s (last <span class="mono">{fmtAge(refreshedAt)}</span>).
       </p>
     </div>
-    <div class="hero-right">
-      <button onclick={loadAll} disabled={loading}>{loading ? "…" : "refresh"}</button>
+    <div class="header-right">
+      <button class="primary" onclick={loadAll} disabled={loading}>{loading ? "…" : "Refresh"}</button>
     </div>
   </header>
 
@@ -164,236 +155,197 @@
 
   <section class="grid">
     <article class="card stat">
-      <div class="stat-label">daily cost</div>
-      <div class="stat-value cost-value">{fmtMicroUSD(dailyCost?.committed)}</div>
+      <div class="stat-header">Daily cost</div>
+      <div class="stat-value">{fmtMicroUSD(dailyCost?.committed)}</div>
       <div class="stat-detail">
-        <span class="qline">held <strong class="tnum">{fmtMicroUSD(dailyCost?.reserved)}</strong></span>
-        <span class="qline">remaining <strong class="tnum">{fmtMicroUSD(dailyCost?.available)}</strong></span>
-        <span class="qline">cap <strong class="tnum">{fmtMicroUSD(dailyCost?.cap)}</strong></span>
-        <span class="cost-period mono">
-          {dailyCostPeriod}{dailyCost && !dailyCost.materialized ? " · unopened" : ""}
-        </span>
+        <div class="qline"><span>Held</span> <strong class="mono">{fmtMicroUSD(dailyCost?.reserved)}</strong></div>
+        <div class="qline"><span>Remaining</span> <strong class="mono">{fmtMicroUSD(dailyCost?.available)}</strong></div>
+        <div class="qline"><span>Cap</span> <strong class="mono">{fmtMicroUSD(dailyCost?.cap)}</strong></div>
+        <div class="cost-period mono">
+          {dailyCostPeriod}{dailyCost && !dailyCost.materialized ? " (unopened)" : ""}
+        </div>
       </div>
     </article>
 
     <article class="card stat">
-      <div class="stat-label">today's jobs</div>
+      <div class="stat-header">Jobs today</div>
       <div class="stat-value">{jobsToday.length}</div>
       <div class="stat-detail">
         {#each Object.entries(jobsByStatus) as [status, count] (status)}
-          <span class="status-row">
+          <div class="status-row">
             <Pill variant={jobStatusVariant(status)}>{status}</Pill>
-            <span class="tnum">{count}</span>
-          </span>
+            <span class="mono">{count}</span>
+          </div>
         {/each}
       </div>
     </article>
 
     <article class="card stat">
-      <div class="stat-label">in-flight</div>
+      <div class="stat-header">In-flight</div>
       <div class="stat-value">{activeJobs}</div>
       <div class="stat-detail dim">
-        active = QUEUED + RUNNING + BLOCKED. Watch the
-        <a href="#/trace">trace</a> tab for live status.
+        QUEUED + RUNNING + BLOCKED.
       </div>
     </article>
 
     <article class="card stat">
-      <div class="stat-label">today's media</div>
+      <div class="stat-header">Media today</div>
       <div class="stat-value">{mediaToday.length}</div>
       <div class="stat-detail">
         {#each Object.entries(mediaByType) as [type, count] (type)}
-          <span class="type-row">
+          <div class="type-row">
             <span class="type-tag">{type}</span>
-            <span class="tnum">{count}</span>
-          </span>
+            <span class="mono">{count}</span>
+          </div>
         {/each}
       </div>
     </article>
 
     <article class="card stat" class:alert={dlqAlerts.length > 0}>
-      <div class="stat-label">queue health</div>
+      <div class="stat-header">Queue health</div>
       <div class="stat-value">
         {#if dlqAlerts.length > 0}
           <span class="alert-num">{dlqAlerts.length}</span>
-          <span class="alert-sub">dlq with messages</span>
+          <span class="alert-sub">DLQ stuck</span>
         {:else}
-          <span class="ok-mark">✓</span>
-          <span class="ok-sub">healthy</span>
+          <span class="ok-mark">Healthy</span>
         {/if}
       </div>
       <div class="stat-detail">
-        <span class="qline">backlog <strong class="tnum">{queuesBacklog}</strong></span>
-        <span class="qline">sqs messages in flight <strong class="tnum">{queuesInFlight}</strong></span>
+        <div class="qline"><span>Backlog</span> <strong class="mono">{queuesBacklog}</strong></div>
+        <div class="qline"><span>In flight</span> <strong class="mono">{queuesInFlight}</strong></div>
         {#if dlqAlerts.length > 0}
-          <a class="alert-link" href="#/queues">view dlq →</a>
+          <a class="alert-link" href="#/queues">View DLQ →</a>
         {/if}
       </div>
     </article>
   </section>
 
-  <section class="recent">
-    <h2 class="section-h">recently published</h2>
-    {#if recentAssets.length === 0}
-      <div class="muted-card">no completed generations yet — try the <a href="#/submit">submit</a> tab.</div>
-    {:else}
-      <div class="recent-grid">
-        {#each recentAssets as m (m.mediaId)}
-          <article class="asset-card">
-            <div class="asset-preview-slot">
-              <AssetPreview
-                tenantId={m.tenantId}
-                mediaId={m.mediaId}
-                mediaType={m.mediaType}
-                size="card"
-                lazy={true}
-              />
-            </div>
-            <div class="asset-meta">
-              <div class="asset-row">
-                <span class="type-tag">{m.mediaType}</span>
-                <span class="muted-cap mono">{fmtAge(tsMs(m.createdAt))}</span>
+  <div class="layout-main">
+    <section class="recent">
+      <h2 class="section-h">Recently published</h2>
+      {#if recentAssets.length === 0}
+        <div class="muted-card">No completed generations yet.</div>
+      {:else}
+        <div class="recent-grid">
+          {#each recentAssets as m (m.mediaId)}
+            <article class="asset-card">
+              <div class="asset-preview-slot">
+                <AssetPreview
+                  tenantId={m.tenantId}
+                  mediaId={m.mediaId}
+                  mediaType={m.mediaType}
+                  size="card"
+                  lazy={true}
+                />
               </div>
-              <code class="asset-id" title={m.mediaId}>{m.mediaId}</code>
-              {#if m.jobId}
-                <a class="asset-link" href={`#/trace/${m.jobId}`}>open trace →</a>
-              {/if}
-            </div>
-          </article>
-        {/each}
-      </div>
-    {/if}
-  </section>
+              <div class="asset-meta">
+                <div class="asset-row">
+                  <span class="type-tag">{m.mediaType}</span>
+                  <span class="muted-cap mono">{fmtAge(tsMs(m.createdAt))}</span>
+                </div>
+                <code class="asset-id" title={m.mediaId}>{m.mediaId}</code>
+                {#if m.jobId}
+                  <a class="asset-link" href={`#/trace/${m.jobId}`}>View Trace</a>
+                {/if}
+              </div>
+            </article>
+          {/each}
+        </div>
+      {/if}
+    </section>
 
-  <section class="recent">
-    <h2 class="section-h">recent activity</h2>
-    {#if jobs.length === 0}
-      <div class="muted-card">no jobs yet.</div>
-    {:else}
-      <ul class="activity">
-        {#each jobs.slice(0, 8) as j (j.jobId)}
-          <li>
+    <section class="recent">
+      <h2 class="section-h">Recent activity</h2>
+      {#if jobs.length === 0}
+        <div class="muted-card">No jobs yet.</div>
+      {:else}
+        <div class="activity">
+          {#each jobs.slice(0, 8) as j (j.jobId)}
             <button type="button" class="activity-row" onclick={() => navigate(`/trace/${j.jobId}`)}>
-              <Pill variant={jobStatusVariant(j.status)}>{j.status || "—"}</Pill>
-              <code class="row-id" title={j.jobId}>{j.jobId}</code>
-              <span class="row-type">{j.outputType || "—"}</span>
-              <span class="row-stage mono">{j.currentStage || "—"}</span>
-              <span class="row-age tnum">{fmtAge(tsMs(j.createdAt))}</span>
+              <div class="activity-left">
+                <Pill variant={jobStatusVariant(j.status)}>{j.status || "—"}</Pill>
+                <code class="row-id" title={j.jobId}>{j.jobId}</code>
+                <span class="row-type">{j.outputType || "—"}</span>
+              </div>
+              <div class="activity-right">
+                <span class="row-stage mono">{j.currentStage || "—"}</span>
+                <span class="row-age mono">{fmtAge(tsMs(j.createdAt))}</span>
+              </div>
             </button>
-          </li>
-        {/each}
-      </ul>
-    {/if}
-  </section>
+          {/each}
+        </div>
+      {/if}
+    </section>
+  </div>
 </div>
 
 <style>
   .page {
-    max-width: 1080px;
+    max-width: 1200px;
     margin: 0 auto;
-    padding: 30px 28px 56px;
+    padding: 32px 32px 64px;
     display: flex;
     flex-direction: column;
-    gap: 28px;
+    gap: 32px;
   }
 
-  .hero {
+  .page-header {
     display: flex;
     justify-content: space-between;
-    align-items: flex-end;
-    gap: 24px;
-    padding: 20px 24px 22px;
-    background: var(--bg-panel);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    border-left: 3px solid var(--accent);
+    align-items: flex-start;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border);
   }
 
-  .eyebrow {
+  .page-title {
     font-family: var(--font-sans);
-    font-size: 11.5px;
-    color: var(--fg-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    margin-bottom: 4px;
-    font-weight: 500;
-  }
-
-  .tenant-id {
-    font-family: var(--font-display);
-    font-size: 40px;
+    font-size: 20px;
     font-weight: 600;
     color: var(--fg-bright);
-    margin: 0 0 10px;
-    letter-spacing: -0.015em;
-    line-height: 1.05;
-    font-feature-settings: "ss01";
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
   }
 
-  .hero-lead {
+  .page-meta {
     margin: 0;
     font-family: var(--font-sans);
     font-size: 14px;
-    line-height: 1.55;
-    color: var(--fg-default);
-    max-width: 540px;
+    color: var(--fg-dim);
   }
 
   .mono { font-family: var(--font-mono); }
 
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 14px;
-  }
-
-  /* Below ~760px the stat cards can no longer breathe in a single row, so
-     collapse to two columns; below ~480px collapse to a stack. */
-  @media (max-width: 760px) {
-    .grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-  }
-
-  @media (max-width: 480px) {
-    .grid {
-      grid-template-columns: 1fr;
-    }
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
   }
 
   .card {
     background: var(--bg-panel);
     border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 18px 20px;
+    border-radius: 6px;
+    padding: 20px;
     display: flex;
     flex-direction: column;
     gap: 12px;
   }
 
-  .stat-label {
+  .stat-header {
     font-family: var(--font-sans);
-    font-size: 11.5px;
+    font-size: 13px;
     color: var(--fg-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
     font-weight: 500;
   }
 
   .stat-value {
-    font-family: var(--font-display);
-    font-size: 44px;
+    font-family: var(--font-sans);
+    font-size: 28px;
     font-weight: 600;
     color: var(--fg-bright);
     line-height: 1;
-    letter-spacing: -0.02em;
-    font-variant-numeric: tabular-nums;
-    font-feature-settings: "ss01";
-  }
-
-  .cost-value {
-    font-size: 34px;
-    line-height: 1.08;
+    letter-spacing: -0.01em;
   }
 
   .stat-detail {
@@ -402,15 +354,16 @@
     color: var(--fg-default);
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
+    margin-top: 4px;
   }
 
   .stat-detail.dim { color: var(--fg-dim); line-height: 1.5; }
 
   .cost-period {
-    color: var(--fg-dim);
-    font-size: 11.5px;
-    margin-top: 2px;
+    color: var(--fg-muted);
+    font-size: 12px;
+    margin-top: 4px;
   }
 
   .status-row,
@@ -425,14 +378,8 @@
   .type-tag {
     display: inline-block;
     font-family: var(--font-sans);
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--accent-strong);
-    background: var(--accent-dim);
-    padding: 2px 8px;
-    border-radius: 2px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
+    font-size: 12px;
+    color: var(--fg-default);
   }
 
   .card.alert {
@@ -442,74 +389,76 @@
 
   .alert-num {
     color: var(--err);
-    font-size: 44px;
+    font-size: 28px;
     font-weight: 600;
   }
 
   .alert-sub {
     display: inline-block;
-    margin-left: 10px;
+    margin-left: 8px;
     font-family: var(--font-sans);
-    font-size: 14px;
+    font-size: 13px;
     color: var(--err);
-    vertical-align: 0.6em;
+    font-weight: 500;
+    vertical-align: 4px;
   }
 
   .alert-link {
     color: var(--err);
     font-family: var(--font-sans);
-    font-size: 12.5px;
+    font-size: 13px;
     margin-top: 4px;
   }
 
   .ok-mark {
-    color: var(--accent);
-    font-size: 44px;
+    color: var(--ok);
+    font-size: 28px;
     font-weight: 600;
   }
 
-  .ok-sub {
-    display: inline-block;
-    margin-left: 10px;
-    font-family: var(--font-sans);
-    font-size: 14px;
-    color: var(--accent);
-    vertical-align: 0.6em;
+  .layout-main {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 32px;
+    align-items: start;
+  }
+
+  @media (max-width: 900px) {
+    .layout-main {
+      grid-template-columns: 1fr;
+    }
   }
 
   .section-h {
-    margin: 0 0 14px;
-    font-family: var(--font-display);
-    font-size: 22px;
+    margin: 0 0 16px;
+    font-family: var(--font-sans);
+    font-size: 16px;
     font-weight: 600;
     color: var(--fg-bright);
-    letter-spacing: -0.01em;
-    font-feature-settings: "ss01";
   }
 
   .muted-card {
-    padding: 28px;
-    text-align: center;
+    padding: 24px;
     color: var(--fg-dim);
     font-family: var(--font-sans);
     font-size: 14px;
-    background: var(--bg-panel);
-    border: 1px dashed var(--border);
-    border-radius: 4px;
+    background: var(--bg-panel-hover);
+    border: 1px solid var(--border);
+    border-radius: 6px;
   }
 
   .muted-card a { color: var(--accent); }
 
   .recent-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 16px;
   }
 
   .asset-card {
     background: var(--bg-panel);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 6px;
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -517,14 +466,15 @@
 
   .asset-preview-slot {
     aspect-ratio: 4 / 3;
-    background: var(--bg-base);
+    background: var(--bg-panel-hover);
+    border-bottom: 1px solid var(--border);
   }
 
   .asset-meta {
-    padding: 12px 14px;
+    padding: 14px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
   }
 
   .asset-row {
@@ -535,13 +485,13 @@
 
   .muted-cap {
     font-family: var(--font-mono);
-    font-size: 11.5px;
+    font-size: 12px;
     color: var(--fg-dim);
   }
 
   .asset-id {
     font-family: var(--font-mono);
-    font-size: 12.5px;
+    font-size: 13px;
     color: var(--fg-default);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -550,48 +500,60 @@
 
   .asset-link {
     font-family: var(--font-sans);
-    font-size: 12.5px;
+    font-size: 13px;
     color: var(--accent);
+    font-weight: 500;
   }
 
   .activity {
-    list-style: none;
-    margin: 0;
-    padding: 0;
+    display: flex;
+    flex-direction: column;
     background: var(--bg-panel);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 6px;
     overflow: hidden;
   }
 
-  .activity li {
-    border-bottom: 1px solid var(--border);
-  }
-  .activity li:last-child { border-bottom: none; }
-
   .activity-row {
-    display: grid;
-    grid-template-columns: 110px minmax(0, 1fr) 90px minmax(0, 1fr) 110px;
+    display: flex;
+    justify-content: space-between;
     align-items: center;
-    gap: 14px;
-    padding: 12px 18px;
+    padding: 12px 16px;
     width: 100%;
     background: transparent;
     border: none;
+    border-bottom: 1px solid var(--border);
     text-align: left;
     cursor: pointer;
     font-family: inherit;
-    font-size: inherit;
-    color: inherit;
     transition: background 120ms ease;
   }
 
+  .activity-row:last-child {
+    border-bottom: none;
+  }
+
   .activity-row:hover { background: var(--bg-panel-hover); }
+
+  .activity-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .activity-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-shrink: 0;
+  }
 
   .row-id {
     font-family: var(--font-mono);
     font-size: 13px;
     color: var(--fg-bright);
+    max-width: 140px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -604,24 +566,24 @@
   }
 
   .row-stage {
-    font-size: 12.5px;
+    font-size: 12px;
     color: var(--fg-dim);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .row-age {
-    font-family: var(--font-mono);
-    font-size: 12.5px;
+    font-size: 13px;
     color: var(--fg-dim);
     text-align: right;
+    min-width: 50px;
   }
 
-  /* MePanel surfaces err-bar inline in a card grid; drop the global
-     bottom border and round the corners so it reads as a banner card. */
   .err-bar {
-    border-bottom: none;
-    border-radius: 3px;
+    border-radius: 4px;
+    background: var(--err-dim);
+    color: var(--err);
+    padding: 12px 16px;
+    border: 1px solid var(--err);
+    font-family: var(--font-sans);
+    font-size: 14px;
   }
 </style>

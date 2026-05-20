@@ -24,12 +24,6 @@ func New(c *dynamodb.Client, name string) *Table {
 	return &Table{c: c, name: name}
 }
 
-// Client exposes the underlying DynamoDB client so the LOCAL_ONLY ops
-// console can run raw SDK operations (Scan, etc.) that the kv.KV port
-// intentionally doesn't expose. Reached via a structural interface
-// assertion in cmd/api/routes.go::opsAWSClient.
-func (t *Table) Client() *dynamodb.Client { return t.c }
-
 func (t *Table) Put(ctx context.Context, item kv.Item, opts kv.PutOptions) error {
 	av, err := attributevalue.MarshalMap(item)
 	if err != nil {
@@ -307,4 +301,3 @@ func marshalValues(in kv.Values) (map[string]types.AttributeValue, error) {
 	}
 	return out, nil
 }
-

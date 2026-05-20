@@ -5,10 +5,12 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
 	auditapp "github.com/dtszwai/media-processing-service/backend/internal/app/audit"
@@ -58,9 +60,10 @@ type workflowCacheKey struct {
 var stageTracer = otel.Tracer("github.com/dtszwai/media-processing-service/backend/internal/app/generation")
 
 // ProcessMessage runs one stage for the (tenant, job, stage) tuple described
-// by body (already-unwrapped SNS payload). Idempotent: a stage message whose
-// stage no longer matches the persisted CurrentStage is a no-op.
-func (r *StageRunner) ProcessMessage(ctx context.Context, body []byte) (err error) {
+// by body (already-unwrapped SNS payload). attrs are SQS message attributes.
+// Idempotent: a stage message whose stage no longer matches the persisted
+// CurrentStage is a no-op.
+func (r *StageRunner) ProcessMessage(ctx context.Context, body []byte, attrs map[string]string) (err error) {
 	msg, err := UnmarshalStageMessage(body)
 	if err != nil {
 		return err
@@ -84,10 +87,12 @@ func (r *StageRunner) ProcessMessage(ctx context.Context, body []byte) (err erro
 		}
 		span.End()
 	}()
+	stageSpanStartedAt := time.Now().UTC()
 	job, err := r.Repo.GetJob(ctx, msg.TenantID, msg.JobID)
 	if err != nil {
 		return err
 	}
+	r.recordDispatchLatency(ctx, msg, job, attrs, stageSpanStartedAt)
 	if job.CurrentStage != msg.Stage {
 		slog.InfoContext(ctx, "dropping stale generation stage", "job_id", msg.JobID, "message_stage", msg.Stage, "current_stage", job.CurrentStage)
 		return nil
@@ -113,6 +118,34 @@ func (r *StageRunner) ProcessMessage(ctx context.Context, body []byte) (err erro
 		return err
 	}
 	return wf.AdvanceOneStage(ctx, job)
+}
+
+func (r *StageRunner) recordDispatchLatency(ctx context.Context, msg StageMessage, job *generation.Job, attrs map[string]string, observedAt time.Time) {
+	if r.Instruments == nil || job == nil || observedAt.IsZero() {
+		return
+	}
+	raw := attrs["x-enqueued-at"]
+	if raw == "" {
+		return
+	}
+	enqueuedAt, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		return
+	}
+	elapsed := observedAt.Sub(enqueuedAt)
+	if elapsed < 0 {
+		return
+	}
+	workClass := string(msg.ResourceClass)
+	if workClass == "" {
+		workClass = string(stageWorkClass(job))
+	}
+	r.Instruments.WorkflowDispatchLatency.Record(ctx, float64(elapsed)/float64(time.Millisecond), metric.WithAttributes(
+		attribute.String("stage", string(msg.Stage)),
+		attribute.String("work_class", workClass),
+		attribute.String("tier", string(job.Tier)),
+		attribute.String("output_type", string(job.OutputType)),
+	))
 }
 
 // workflowFor returns the cached *Workflow for outputType, constructing it on

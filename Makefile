@@ -38,9 +38,7 @@ help:
 	@echo "  build          - go build ./... in backend/"
 	@echo "  test           - go test ./... in backend/"
 	@echo "  test-all       - test plus real provider E2Es; saves outputs under .local/test-all/generated-assets"
-	@echo "  smoke-local    - run local compose generation smoke test"
-	@echo "  smoke-local-prompt-enhancer - run smoke test expecting simulated prompt enhancer"
-	@echo "  smoke-local-clean - remove local smoke rows and objects"
+	@echo "  smoke          - run local compose generation smoke tests"
 	@echo
 	@echo "Provider auth (run on host; container reads via bind-mount):"
 	@echo "  notebooklm-import - refresh ~/.notebooklm/state.json from Chrome cookies (quit Chrome first)"
@@ -63,17 +61,36 @@ test-all:
 	echo "Saving real provider artifacts under $$run_dir"; \
 	TEST_GENERATED_ASSET_DIR="$$run_dir" TEST_INTEGRATION=1 TEST_CODEX_REAL=1 TEST_NOTEBOOKLM_REAL=1 CODEX_TIMEOUT="$${CODEX_TIMEOUT:-10m}" $(GO) -C backend test -tags=integration ./internal/app/generation -run '^TestRealProviderE2E_' -count=1 -timeout=20m
 
-.PHONY: smoke-local
-smoke-local:
-	$(GO) -C backend test -tags=smoke ./internal/smoke -run '^TestGenerationLocalSmoke$$' -count=1 -timeout=3m
-
-.PHONY: smoke-local-prompt-enhancer
-smoke-local-prompt-enhancer:
+.PHONY: smoke
+smoke:
+	@set -e; \
+	restore_default() { \
+		$(COMPOSE) up -d --no-build api generation-worker >/dev/null; \
+	}; \
+	wait_health() { \
+		ok=0; \
+		for i in $$(seq 1 30); do \
+			if curl -fsS http://localhost:9000/healthz >/dev/null 2>&1; then ok=1; break; fi; \
+			sleep 2; \
+		done; \
+		if [ $$ok -ne 1 ]; then echo "api did not become healthy"; $(COMPOSE) logs api; exit 1; fi; \
+	}; \
+	purge_generation_queues() { \
+		$(COMPOSE) exec -T localstack awslocal sqs list-queues --query 'QueueUrls[]' --output text | tr '\t' '\n' | grep '/generation-jobs-' | while read -r url; do \
+			$(COMPOSE) exec -T localstack awslocal sqs purge-queue --queue-url "$$url" >/dev/null 2>&1 || true; \
+		done; \
+	}; \
+	restore_default; \
+	trap restore_default EXIT; \
+	wait_health; \
+	echo "==> smoke: default prompt path"; \
+	$(GO) -C backend test -tags=smoke ./internal/smoke -run '^TestGenerationLocalSmoke$$' -count=1 -timeout=3m; \
+	$(COMPOSE) stop generation-worker; \
+	purge_generation_queues; \
+	$(COMPOSE) -f deploy/compose/prompt-enhancer.override.yaml up -d --no-build api generation-worker; \
+	wait_health; \
+	echo "==> smoke: simulated prompt enhancer"; \
 	SMOKE_EXPECT_PROMPT_ENHANCER=simulated $(GO) -C backend test -tags=smoke ./internal/smoke -run '^TestGenerationLocalSmoke$$' -count=1 -timeout=3m
-
-.PHONY: smoke-local-clean
-smoke-local-clean:
-	$(GO) -C backend test -tags=smoke ./internal/smoke -run '^TestGenerationLocalCleanup$$' -count=1 -timeout=2m
 
 .PHONY: up
 up: proto

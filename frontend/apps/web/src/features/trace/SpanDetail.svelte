@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { GateDecision, TraceSpan } from "@media-service/api-client/gen/mediaservice/ops/v1/ops_pb.js";
+  import type { GateDecision, TraceSpan } from "../../shared/local-ops/types";
   import KeyValueGrid from "../../lib/KeyValueGrid.svelte";
   import Pill from "../../lib/Pill.svelte";
   import AssetPreview from "../../lib/AssetPreview.svelte";
@@ -474,9 +474,7 @@
   .kind {
     font-size: 11.5px;
     color: var(--fg-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
-    font-family: var(--font-sans);
+font-family: var(--font-sans);
     font-weight: 500;
   }
 
@@ -520,9 +518,7 @@
   .block-label {
     font-size: 11.5px;
     color: var(--fg-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
-    margin-bottom: 10px;
+margin-bottom: 10px;
     font-family: var(--font-sans);
     font-weight: 500;
   }
@@ -579,9 +575,7 @@
     font-family: var(--font-sans);
     font-size: 11.5px;
     color: var(--fg-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    font-weight: 500;
+font-weight: 500;
     padding-top: 2px;
   }
 
@@ -616,8 +610,7 @@
     border: 1px solid var(--border);
     padding: 2px 10px;
     border-radius: 2px;
-    letter-spacing: 0.02em;
-  }
+}
 
   .stage-tag {
     display: inline-block;
@@ -628,9 +621,7 @@
     border: 1px solid var(--accent);
     padding: 1px 8px;
     border-radius: 2px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    font-weight: 600;
+font-weight: 600;
   }
 
   .code {
@@ -755,8 +746,7 @@
     font-family: var(--font-mono);
     font-size: 11.5px;
     color: var(--fg-dim);
-    letter-spacing: 0.04em;
-    font-variant-numeric: tabular-nums;
+font-variant-numeric: tabular-nums;
   }
 
   .copy-btn {

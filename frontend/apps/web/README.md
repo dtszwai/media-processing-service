@@ -1,8 +1,8 @@
 # Media Processing Service Web Console
 
-This app is the local `LOCAL_ONLY` operator console for the media-processing service. It is a Svelte 5 test harness for submitting generation jobs, inspecting traces, draining queues, browsing local S3/DDB state, and checking logs against the compose stack; it is not a production product surface.
+This app is the local web console for the media-processing service. It is a Svelte 5 test harness for submitting generation jobs, inspecting traces, draining queues, browsing local S3/DDB state, and checking logs against the compose stack; it is not a production product surface.
 
-The console is a playground for exercising backend-owned use cases. Do not use ops UI convenience flows as architectural input, and do not move service invariants into this app or the ops transport layer just because a local testing button needs to trigger them.
+The console is a playground for exercising backend-owned use cases. Do not use UI convenience flows as architectural input, and do not move service invariants into this app just because a local testing button needs to trigger them.
 
 ## Run
 
@@ -25,9 +25,10 @@ The Vite server listens on `http://localhost:3001`.
 ```bash
 VITE_API_URL=http://localhost:9000
 VITE_GRAFANA_URL=http://localhost:3000
+VITE_LOKI_URL=http://localhost:3000/api/datasources/proxy/uid/loki/loki
 ```
 
-The defaults match `make up`. The backend must be running with `LOCAL_ONLY=true` for the ops Connect service to be mounted.
+The defaults match `make up`. The backend uses `LOCAL_ONLY=true` only for unauthenticated local generation calls; inspection and mutation helpers are served by the Vite-local adapter.
 
 ## Tabs
 
@@ -55,7 +56,7 @@ pnpm test:e2e:ui
 pnpm build
 ```
 
-`pnpm test` runs Vitest unit coverage such as trace waterfall logic. `pnpm test:e2e` runs Playwright against the Vite dev server and currently keeps a smoke check for the LOCAL_ONLY console shell.
+`pnpm test` runs Vitest unit coverage such as trace waterfall logic. `pnpm test:e2e` runs Playwright against the Vite dev server and currently keeps a smoke check for the local console shell.
 
 ## Structure
 
@@ -77,4 +78,4 @@ src/
 └── shared/
 ```
 
-Feature folders own their panel components and local helpers. `shared/ops.ts` creates the Connect clients, `shared/route.svelte.ts` owns hash routing, and generated protobuf clients come from `frontend/packages/api-client`.
+Feature folders own their panel components and local helpers. `shared/api.ts` creates product Connect clients, `shared/local-ops` owns browser calls to the Vite-local adapter, `shared/route.svelte.ts` owns hash routing, and generated protobuf clients come from `frontend/packages/api-client`.

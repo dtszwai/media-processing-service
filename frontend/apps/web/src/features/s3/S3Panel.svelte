@@ -1,12 +1,6 @@
 <script lang="ts">
-  import { create } from "@bufbuild/protobuf";
-  import {
-    ListS3RequestSchema,
-    PresignDownloadRequestSchema,
-    DeleteS3ObjectRequestSchema,
-    type S3Node,
-  } from "@media-service/api-client/gen/mediaservice/ops/v1/ops_pb.js";
-  import { opsClient } from "../../shared/ops";
+  import { localOpsClient } from "../../shared/local-ops/client";
+  import type { S3Node } from "../../shared/local-ops/types";
   import { navigate, route } from "../../shared/route.svelte";
   import { fmtBytes, fmtDateTime } from "../../shared/time";
   import EmptyState from "../../lib/EmptyState.svelte";
@@ -40,12 +34,11 @@
     loading = true;
     lastError = null;
     try {
-      const req = create(ListS3RequestSchema, {
+      const res = await localOpsClient.listS3({
         prefix: s3Prefix,
         delimiter: "/",
         limit: 200,
       });
-      const res = await opsClient.listS3(req);
       nodes = res.nodes;
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
@@ -80,8 +73,7 @@
   async function presignAndOpen(key: string) {
     presigning = key;
     try {
-      const req = create(PresignDownloadRequestSchema, { key });
-      const res = await opsClient.presignDownload(req);
+      const res = await localOpsClient.presignDownload({ key });
       if (res.url) window.open(res.url, "_blank", "noopener");
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
@@ -105,7 +97,7 @@
   let objectCount = $derived(nodes.filter((n) => !n.isPrefix).length);
 
   async function doDelete(key: string) {
-    await opsClient.deleteS3Object(create(DeleteS3ObjectRequestSchema, { key }));
+    await localOpsClient.deleteS3Object({ key });
     await load();
   }
 </script>
@@ -312,9 +304,7 @@
     font-size: 12px;
     font-weight: 500;
     cursor: pointer;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
   }
   .dl-btn:hover:not(:disabled) {
     border-color: var(--accent);

@@ -80,7 +80,7 @@ func handleSQSEvent(ctx context.Context, evt events.SQSEvent) (events.SQSEventRe
 		if isGenerationDLQARN(record.EventSourceARN) {
 			process = worker.processDLQBody
 		}
-		if err := process(ctx, []byte(record.Body)); err != nil {
+		if err := process(ctx, []byte(record.Body), lambdaMessageAttributes(record.MessageAttributes)); err != nil {
 			slog.ErrorContext(ctx, "generation stage failed", "message_id", record.MessageId, "err", err)
 			resp.BatchItemFailures = append(resp.BatchItemFailures, events.SQSBatchItemFailure{ItemIdentifier: record.MessageId})
 		}
@@ -132,11 +132,13 @@ func newStageWorker(ctx context.Context) (*stageWorker, error) {
 	}, nil
 }
 
-func (w *stageWorker) processBody(ctx context.Context, body []byte) error {
-	return w.runner.ProcessMessage(ctx, sqsdrv.UnwrapSNS(body))
+type messageHandler func(context.Context, []byte, map[string]string) error
+
+func (w *stageWorker) processBody(ctx context.Context, body []byte, attrs map[string]string) error {
+	return w.runner.ProcessMessage(ctx, sqsdrv.UnwrapSNS(body), attrs)
 }
 
-func (w *stageWorker) processDLQBody(ctx context.Context, body []byte) error {
+func (w *stageWorker) processDLQBody(ctx context.Context, body []byte, _ map[string]string) error {
 	return w.dlqConsumer.ProcessMessage(ctx, sqsdrv.UnwrapSNS(body))
 }
 
@@ -185,7 +187,7 @@ func runLongLived(ctx context.Context, worker *stageWorker, logger *slog.Logger)
 // runPoller spawns one polling goroutine that drains queueURL until ctx is
 // cancelled. Used for both live queues and DLQs — they differ only in
 // handler and log tag.
-func (w *stageWorker) runPoller(ctx context.Context, wg *sync.WaitGroup, queueName, queueURL string, maxMsgs int32, handler func(context.Context, []byte) error, logTag string, logger *slog.Logger) {
+func (w *stageWorker) runPoller(ctx context.Context, wg *sync.WaitGroup, queueName, queueURL string, maxMsgs int32, handler messageHandler, logTag string, logger *slog.Logger) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -212,18 +214,19 @@ func (w *stageWorker) runPoller(ctx context.Context, wg *sync.WaitGroup, queueNa
 // deletes the messages that fn handled successfully. Used for both live
 // generation queues and their DLQs — they differ only in the per-message
 // handler.
-func (w *stageWorker) drain(ctx context.Context, queueURL string, maxMessages int32, fn func(context.Context, []byte) error) (int, error) {
+func (w *stageWorker) drain(ctx context.Context, queueURL string, maxMessages int32, fn messageHandler) (int, error) {
 	out, err := w.sqs.ReceiveMessage(ctx, &awssqs.ReceiveMessageInput{
-		QueueUrl:            aws.String(queueURL),
-		MaxNumberOfMessages: maxMessages,
-		WaitTimeSeconds:     10,
+		QueueUrl:              aws.String(queueURL),
+		MaxNumberOfMessages:   maxMessages,
+		WaitTimeSeconds:       10,
+		MessageAttributeNames: []string{"All"},
 	})
 	if err != nil {
 		return 0, err
 	}
 	deletes := make([]sqstypes.DeleteMessageBatchRequestEntry, 0, len(out.Messages))
 	for _, msg := range out.Messages {
-		if err := fn(ctx, []byte(aws.ToString(msg.Body))); err != nil {
+		if err := fn(ctx, []byte(aws.ToString(msg.Body)), sqsMessageAttributes(msg.MessageAttributes)); err != nil {
 			slog.ErrorContext(ctx, "generation stage failed", "message_id", aws.ToString(msg.MessageId), "err", err)
 			continue
 		}
@@ -253,6 +256,26 @@ func formatBatchFailures(failed []sqstypes.BatchResultErrorEntry) string {
 		parts = append(parts, fmt.Sprintf("%s:%s:%s", aws.ToString(f.Id), aws.ToString(f.Code), aws.ToString(f.Message)))
 	}
 	return strings.Join(parts, ", ")
+}
+
+func sqsMessageAttributes(in map[string]sqstypes.MessageAttributeValue) map[string]string {
+	out := map[string]string{}
+	for k, v := range in {
+		if v.StringValue != nil {
+			out[k] = *v.StringValue
+		}
+	}
+	return out
+}
+
+func lambdaMessageAttributes(in map[string]events.SQSMessageAttribute) map[string]string {
+	out := map[string]string{}
+	for k, v := range in {
+		if v.StringValue != nil {
+			out[k] = *v.StringValue
+		}
+	}
+	return out
 }
 
 func generationDLQURLs(dlqs map[string]bootstrap.DLQInfo) map[string]string {

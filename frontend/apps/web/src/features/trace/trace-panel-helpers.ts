@@ -1,4 +1,4 @@
-import type { TraceSpan } from "@media-service/api-client/gen/mediaservice/ops/v1/ops_pb.js";
+import type { TraceSpan } from "../../shared/local-ops/types";
 import { fmtDuration, tsToMs } from "../../shared/time";
 import { traceStatusLabel } from "./status";
 import { timePointLeft, type SpanNode, type Window } from "./waterfall";
@@ -23,6 +23,7 @@ export function fmtAbsoluteMs(ms: number): string {
 }
 
 export function rowLabel(span: TraceSpan): string {
+  if (span.kind === "HANDOFF_WAIT") return "handoff wait";
   if (span.kind === "STAGE" && span.stage === "WORKER_PRECHECK") return "worker precheck";
   if (span.status === "SKIPPED") return lowerStageLabel(span.stage);
   if (span.kind === "TERMINAL") return "terminal";
@@ -42,6 +43,7 @@ export function rowKind(span: TraceSpan): string {
 
 function rawRowKind(span: TraceSpan): string {
   if (span.status === "SKIPPED") return "";
+  if (span.kind === "HANDOFF_WAIT") return "wait";
   if (span.kind === "STAGE") {
     return span.stage === "WORKER_PRECHECK" ? "precheck" : "";
   }
@@ -61,6 +63,9 @@ function normalizedRowText(value: string): string {
 }
 
 export function rowSummary(n: SpanNode): string {
+  if (n.span.kind === "HANDOFF_WAIT") {
+    return handoffWaitSummary(n);
+  }
   const parts = [
     rowLabel(n.span),
     `status ${traceStatusLabel(n.span)}`,
@@ -69,19 +74,29 @@ export function rowSummary(n: SpanNode): string {
   ];
   if (n.durationMs > 0) parts.push(`end ${fmtAbsoluteMs(n.endMs)}`);
   if (isSynthesizedStageEnd(n.span)) {
-    parts.push("end synthesized from next stage — bar includes queue handoff, not just observed work");
+    parts.push("end synthesized for an open or legacy stage interval");
   }
   if (n.span.errorCode) parts.push(`error ${n.span.errorCode}`);
   return parts.join("; ");
 }
 
-// A stage carries end_synthesized when closeStageEnds had no observable
-// child event (PROVIDER_REQUEST.completed_at, OUTPUT/VARIANT.updated_at) to
-// pin the real end-of-work, and fell back to projecting the bar out to the
-// next stage's StartAt. Operators need this distinction: a 2-minute solid
-// bar means 2 minutes of observed work; a 2-minute hatched bar means the
-// FSM was *nominally* in this stage for 2 minutes but most of it was idle
-// queue handoff to a different worker.
+function handoffWaitSummary(n: SpanNode): string {
+  const reason = n.span.attributes?.reason?.replaceAll("_", " ") || "handoff";
+  const confidence = n.span.attributes?.confidence?.replaceAll("_", " ") || "inferred";
+  return [
+    "handoff wait",
+    "outbox → queue → worker pickup",
+    reason,
+    confidence,
+    `start ${fmtAbsoluteMs(n.startMs)}`,
+    `duration ${fmtDuration(n.durationMs)}`,
+    `end ${fmtAbsoluteMs(n.endMs)}`,
+  ].join("; ");
+}
+
+// A stage carries end_synthesized only for open-ended tail cases now. Completed
+// inter-stage handoff time renders as its own HANDOFF_WAIT row instead of being
+// projected into the prior stage's bar.
 export function isSynthesizedStageEnd(span: TraceSpan): boolean {
   return span.kind === "STAGE" && !!span.attributes?.end_synthesized;
 }
@@ -114,6 +129,7 @@ export function isDerivedRow(span: TraceSpan): boolean {
 
 export function barKindClass(span: TraceSpan): string {
   if (span.status === "SKIPPED") return "skipped";
+  if (span.kind === "HANDOFF_WAIT") return "wait";
   if (span.status === "TERMINAL_FAIL") return "fail";
   if (span.status === "TRANSIENT_FAIL") return "transient";
   if (span.status === "PENDING") return "pending";

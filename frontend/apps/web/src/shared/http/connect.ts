@@ -1,8 +1,8 @@
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { API_URL } from "../config/env";
 
-// Shared Connect transport. The console is LOCAL_ONLY and unauthenticated —
-// the API process is gated by env, not by request-side credentials.
+// Shared Connect transport. The local console is unauthenticated in compose;
+// the API process injects local tenant/user claims when LOCAL_ONLY=true.
 export const connectTransport = createConnectTransport({
   baseUrl: API_URL,
   useBinaryFormat: false,

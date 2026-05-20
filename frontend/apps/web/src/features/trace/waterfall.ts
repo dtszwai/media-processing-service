@@ -2,11 +2,7 @@
 // the waterfall renders. Kept out of the .svelte component so they are easy
 // to reason about and (eventually) test.
 
-import { create } from "@bufbuild/protobuf";
-import {
-  TraceSpanSchema,
-  type TraceSpan,
-} from "@media-service/api-client/gen/mediaservice/ops/v1/ops_pb.js";
+import type { TraceSpan } from "../../shared/local-ops/types";
 import { tsToMs } from "../../shared/time";
 
 export type SpanNode = {
@@ -82,6 +78,26 @@ function spanEndMs(span: TraceSpan, fallbackNow: number): number {
   return fallbackNow;
 }
 
+function compareTopLevelRows(a: TraceSpan, b: TraceSpan): number {
+  const [ra, sa] = topLevelSortKey(a);
+  const [rb, sb] = topLevelSortKey(b);
+  if (ra !== rb) return ra - rb;
+  if (sa !== sb) return sa - sb;
+  return spanStartMs(a) - spanStartMs(b);
+}
+
+function topLevelSortKey(span: TraceSpan): [number, number] {
+  if (span.kind === "HANDOFF_WAIT") {
+    const from = span.attributes?.from_stage;
+    const to = span.attributes?.to_stage;
+    if (from === "JOB_CREATED") {
+      return [stageRank.get(to ?? "") ?? 999, -1];
+    }
+    return [stageRank.get(from ?? "") ?? 999, 1];
+  }
+  return [stageRank.get(span.stage) ?? 999, 0];
+}
+
 export function computeWindow(spans: TraceSpan[], now: number): Window {
   if (spans.length === 0) {
     return { start: now, end: now, span: 1 };
@@ -120,12 +136,7 @@ export function buildNodes(
   const stages = spans
     .filter((s) => s.kind === "STAGE")
     .slice()
-    .sort((a, b) => {
-      const ra = stageRank.get(a.stage) ?? 999;
-      const rb = stageRank.get(b.stage) ?? 999;
-      if (ra !== rb) return ra - rb;
-      return spanStartMs(a) - spanStartMs(b);
-    });
+    .sort(compareTopLevelRows);
 
   const presentStages = new Set(stages.map((s) => s.stage));
   const stageEndByStage = new Map<string, number>();
@@ -139,27 +150,17 @@ export function buildNodes(
     stages.push(createSkippedStage(stage, anchorMs));
   }
 
-  stages.sort((a, b) => {
-    const ra = stageRank.get(a.stage) ?? 999;
-    const rb = stageRank.get(b.stage) ?? 999;
-    if (ra !== rb) return ra - rb;
-    return spanStartMs(a) - spanStartMs(b);
-  });
+  const waits = spans.filter((s) => s.kind === "HANDOFF_WAIT");
+  const topLevel = [...stages, ...waits].sort(compareTopLevelRows);
 
   const byParent = new Map<string, TraceSpan[]>();
   for (const s of spans) {
-    if (s.kind === "STAGE") continue;
+    if (s.kind === "STAGE" || s.kind === "HANDOFF_WAIT") continue;
     if (!s.parentId) continue;
     const arr = byParent.get(s.parentId) ?? [];
     arr.push(s);
     byParent.set(s.parentId, arr);
   }
-  // Also bucket children that link by stage name when parent_id is missing.
-  const stageById = new Map<string, TraceSpan>();
-  for (const s of stages) {
-    if (s.id) stageById.set(s.id, s);
-  }
-
   const out: SpanNode[] = [];
   // Tracks every span that has a known home — its parent stage exists and
   // has claimed it as a child. The orphan pass uses this rather than the
@@ -168,13 +169,13 @@ export function buildNodes(
   // bottom of the waterfall.
   const homed = new Set<string>();
 
-  for (const stage of stages) {
-    homed.add(stage.id);
-    const skipped = stage.status === "SKIPPED";
-    const startMs = skipped ? skippedAnchorMs(stage) : spanStartMs(stage);
-    const endMs = skipped ? startMs : spanEndMs(stage, now);
+  for (const row of topLevel) {
+    homed.add(row.id);
+    const skipped = row.status === "SKIPPED";
+    const startMs = skipped ? skippedAnchorMs(row) : spanStartMs(row);
+    const endMs = skipped ? startMs : spanEndMs(row, now);
     out.push({
-      span: stage,
+      span: row,
       depth: 0,
       startMs,
       endMs,
@@ -182,9 +183,9 @@ export function buildNodes(
       skipped,
     });
 
-    if (skipped) continue;
+    if (skipped || row.kind === "HANDOFF_WAIT") continue;
 
-    const children = (byParent.get(stage.id) ?? []).slice().sort(
+    const children = (byParent.get(row.id) ?? []).slice().sort(
       (a, b) => spanStartMs(a) - spanStartMs(b),
     );
     // Every child belongs to this stage, even when we hide it. Mark
@@ -192,7 +193,7 @@ export function buildNodes(
     for (const c of children) homed.add(c.id);
 
     const visibleChildren = collapseSoloAttempts
-      ? filterSoloAttempt(stage, children)
+      ? filterSoloAttempt(row, children)
       : children;
     for (const c of visibleChildren) {
       const window = childWindow(c, startMs, endMs, now);
@@ -326,18 +327,26 @@ function addSkippedRange(skipped: Map<string, number>, start: number, end: numbe
 }
 
 function createSkippedStage(stage: string, anchorMs: number): TraceSpan {
-  return create(TraceSpanSchema, {
+  return {
     id: `skipped:${stage}`,
+    parentId: "",
     kind: "STAGE",
     label: stage,
     status: "SKIPPED",
     stage,
+    resourceClass: "",
+    attemptNo: 0,
+    errorCode: "",
+    errorMessage: "",
     attributes: {
       skipped: "true",
       reason: "stage was bypassed by the recorded FSM transition",
       anchor_ms: String(Math.round(anchorMs)),
     },
-  });
+    durationMs: 0,
+    pk: "",
+    sk: "",
+  };
 }
 
 function skippedAnchorMs(span: TraceSpan): number {
@@ -352,12 +361,14 @@ function skippedAnchorMs(span: TraceSpan): number {
 // FSM setup) instead of leaving it as silent left-padding.
 function withPreviousEndGaps(nodes: SpanNode[], leadingAnchorMs?: number): SpanNode[] {
   let previousEndMs: number | undefined = leadingAnchorMs;
+  let previousWasWait = false;
   return nodes.map((node) => {
     if (node.skipped) return node;
     const previousEnd = previousEndMs;
     const gapFromPreviousEndMs =
-      previousEnd === undefined ? 0 : Math.max(0, node.startMs - previousEnd);
+      previousEnd === undefined || previousWasWait ? 0 : Math.max(0, node.startMs - previousEnd);
     previousEndMs = node.endMs;
+    previousWasWait = node.span.kind === "HANDOFF_WAIT";
     return { ...node, gapFromPreviousEndMs, previousEndMs: previousEnd };
   });
 }

@@ -88,9 +88,7 @@
     font-size: 12px;
     font-weight: 500;
     cursor: pointer;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
   }
   .trigger:hover:not(:disabled) {
     border-color: var(--accent);

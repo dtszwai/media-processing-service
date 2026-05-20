@@ -63,9 +63,22 @@ func EnsureTopic(ctx context.Context, c *sns.Client, name string) (string, error
 
 // Subscribe wires a queue ARN to a topic ARN with an optional JSON filter.
 func Subscribe(ctx context.Context, c *sns.Client, topicARN, queueARN, filterPolicy string) (string, error) {
+	return subscribe(ctx, c, topicARN, queueARN, filterPolicy, false)
+}
+
+// SubscribeRaw wires a queue with SNS raw message delivery enabled so message
+// attributes are exposed directly as SQS message attributes.
+func SubscribeRaw(ctx context.Context, c *sns.Client, topicARN, queueARN, filterPolicy string) (string, error) {
+	return subscribe(ctx, c, topicARN, queueARN, filterPolicy, true)
+}
+
+func subscribe(ctx context.Context, c *sns.Client, topicARN, queueARN, filterPolicy string, rawDelivery bool) (string, error) {
 	attrs := map[string]string{}
 	if filterPolicy != "" {
 		attrs["FilterPolicy"] = filterPolicy
+	}
+	if rawDelivery {
+		attrs["RawMessageDelivery"] = "true"
 	}
 	out, err := c.Subscribe(ctx, &sns.SubscribeInput{
 		TopicArn:              aws.String(topicARN),

@@ -1,10 +1,6 @@
 <script lang="ts">
-  import { create } from "@bufbuild/protobuf";
-  import {
-    ListMediaRequestSchema,
-    type MediaRow,
-  } from "@media-service/api-client/gen/mediaservice/ops/v1/ops_pb.js";
-  import { opsClient } from "../../shared/ops";
+  import { localOpsClient } from "../../shared/local-ops/client";
+  import type { MediaRow } from "../../shared/local-ops/types";
   import { navigate, route } from "../../shared/route.svelte";
   import { fmtDateTime } from "../../shared/time";
   import AssetPreview from "../../lib/AssetPreview.svelte";
@@ -42,14 +38,13 @@
     loading = true;
     lastError = null;
     try {
-      const req = create(ListMediaRequestSchema, {
+      const res = await localOpsClient.listMedia({
         mediaType,
         origin,
         lifecycle,
         includeDeleted,
         limit: 100,
       });
-      const res = await opsClient.listMedia(req);
       rows = res.items;
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
@@ -245,8 +240,7 @@
     padding: 3px 10px;
     cursor: pointer;
     border-radius: 2px;
-    letter-spacing: 0.02em;
-  }
+}
 
   .filter-clear:hover {
     background: var(--accent);

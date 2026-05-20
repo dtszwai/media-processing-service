@@ -64,12 +64,6 @@ func (s *Store) rewritePresignURL(raw string) string {
 // Bucket exposes the configured bucket name.
 func (s *Store) Bucket() string { return s.bucket }
 
-// Client exposes the underlying *s3.Client for the operator console, which
-// uses ListObjectsV2 directly to render bucket trees. Production callers
-// stick to the storage.Storage port; this is an escape hatch for the
-// LOCAL_ONLY ops surface.
-func (s *Store) Client() *s3.Client { return s.client }
-
 func (s *Store) Put(ctx context.Context, in storage.PutInput) (storage.PutOutput, error) {
 	if in.Key == "" {
 		return storage.PutOutput{}, errors.New("s3.Put: key required")
@@ -131,8 +125,8 @@ func (s *Store) PresignGet(ctx context.Context, key string, ttl time.Duration) (
 	// Override the response Content-Type + Content-Disposition based on the
 	// key's extension so the browser plays/displays the asset inline rather
 	// than downloading it as application/octet-stream. Objects uploaded
-	// without a Content-Type otherwise present as a generic blob, which the
-	// ops console's <audio>/<img> tags can't render.
+	// without a Content-Type otherwise present as a generic blob, which
+	// browser previews cannot render inline.
 	if ct := contentTypeFromKey(key); ct != "" {
 		in.ResponseContentType = aws.String(ct)
 		in.ResponseContentDisposition = aws.String("inline")
@@ -225,27 +219,6 @@ func (s *Store) GetObjectAttributes(ctx context.Context, key string) (storage.Ob
 		attrs.ContentType = *head.ContentType
 	}
 	return attrs, nil
-}
-
-// HeadMetadata returns the user-defined object metadata (x-amz-meta-*) for
-// key. AWS lowercases user-defined header keys when serving HEAD responses,
-// so callers compare keys case-insensitively.
-func (s *Store) HeadMetadata(ctx context.Context, key string) (map[string]string, error) {
-	out, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(s.bucket),
-		Key:    aws.String(key),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("s3.HeadObject: %w", err)
-	}
-	if out.Metadata == nil {
-		return map[string]string{}, nil
-	}
-	copied := make(map[string]string, len(out.Metadata))
-	for k, v := range out.Metadata {
-		copied[k] = v
-	}
-	return copied, nil
 }
 
 // EnsureBucket creates the bucket if absent. Local/test only; production owns

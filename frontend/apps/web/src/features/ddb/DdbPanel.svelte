@@ -1,13 +1,6 @@
 <script lang="ts">
-  import { create } from "@bufbuild/protobuf";
-  import {
-    ScanDdbRequestSchema,
-    GetDdbRowRequestSchema,
-    PutDdbAttrRequestSchema,
-    DeleteDdbRowRequestSchema,
-    type DdbRow,
-  } from "@media-service/api-client/gen/mediaservice/ops/v1/ops_pb.js";
-  import { opsClient } from "../../shared/ops";
+  import { localOpsClient } from "../../shared/local-ops/client";
+  import type { DdbRow } from "../../shared/local-ops/types";
   import { navigate, route } from "../../shared/route.svelte";
   import EmptyState from "../../lib/EmptyState.svelte";
   import KeyValueGrid from "../../lib/KeyValueGrid.svelte";
@@ -54,13 +47,12 @@
     scanLoading = true;
     scanError = null;
     try {
-      const req = create(ScanDdbRequestSchema, {
+      const res = await localOpsClient.scanDdb({
         pkPrefix: pkPrefix.trim(),
         skPrefix: skPrefix.trim(),
         limit: 100,
         cursor: useCursor,
       });
-      const res = await opsClient.scanDdb(req);
       pageRows = res.rows;
       nextCursor = res.nextCursor;
       cursor = useCursor;
@@ -118,13 +110,12 @@
     listLoading = true;
     listError = null;
     try {
-      const req = create(ScanDdbRequestSchema, {
+      const res = await localOpsClient.scanDdb({
         pkPrefix: pkParam,
         skPrefix: "",
         limit: 200,
         cursor: "",
       });
-      const res = await opsClient.scanDdb(req);
       // ScanDdb is prefix-based; tighten to exact-PK so list mode only shows
       // rows in the requested partition.
       listRows = res.rows.filter((r) => r.pk === pkParam);
@@ -145,8 +136,7 @@
     detailLoading = true;
     detailError = null;
     try {
-      const req = create(GetDdbRowRequestSchema, { pk: pkParam, sk: skParam });
-      const res = await opsClient.getDdbRow(req);
+      const res = await localOpsClient.getDdbRow({ pk: pkParam, sk: skParam });
       detailRow = res.row ?? null;
     } catch (err) {
       detailError = err instanceof Error ? err.message : String(err);
@@ -237,14 +227,12 @@
     editBusy = true;
     editError = "";
     try {
-      await opsClient.putDdbAttr(
-        create(PutDdbAttrRequestSchema, {
-          pk: pkParam,
-          sk: skParam,
-          attributeName: name,
-          valueJson: editValueJson,
-        }),
-      );
+      await localOpsClient.putDdbAttr({
+        pk: pkParam,
+        sk: skParam,
+        attributeName: name,
+        valueJson: editValueJson,
+      });
       editOpen = false;
       await loadDetail();
     } catch (err) {
@@ -255,9 +243,7 @@
   }
 
   async function deleteRow() {
-    await opsClient.deleteDdbRow(
-      create(DeleteDdbRowRequestSchema, { pk: pkParam, sk: skParam }),
-    );
+    await localOpsClient.deleteDdbRow({ pk: pkParam, sk: skParam });
     navigate("/ddb");
   }
 </script>
@@ -602,9 +588,7 @@
   .dlg-field span {
     font-size: 11.5px;
     color: var(--fg-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
-    font-family: var(--font-sans);
+font-family: var(--font-sans);
     font-weight: 500;
   }
   .dlg-field input,
@@ -661,18 +645,14 @@
   .block-label {
     font-size: 11.5px;
     color: var(--fg-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
-    margin-bottom: 12px;
+margin-bottom: 12px;
     font-family: var(--font-sans);
     font-weight: 500;
   }
 
   .cap {
     font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
-    margin-right: 6px;
+margin-right: 6px;
     font-family: var(--font-sans);
     font-weight: 500;
   }

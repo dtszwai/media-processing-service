@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { GateDecision } from "@media-service/api-client/gen/mediaservice/ops/v1/ops_pb.js";
+  import type { GateDecision } from "../../shared/local-ops/types";
   import Pill from "../../lib/Pill.svelte";
   import { fmtDateTime } from "../../shared/time";
 
@@ -124,9 +124,7 @@
   .gate-eyebrow {
     font-size: 11.5px;
     color: var(--fg-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
-    font-family: var(--font-sans);
+font-family: var(--font-sans);
     font-weight: 500;
   }
 
@@ -200,9 +198,7 @@
     font-family: var(--font-sans);
     font-size: 11.5px;
     color: var(--fg-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    font-weight: 500;
+font-weight: 500;
   }
 
   .ev dd {
@@ -228,8 +224,7 @@
     border: 1px solid var(--border-strong);
     padding: 2px 10px;
     border-radius: 2px;
-    letter-spacing: 0.02em;
-  }
+}
 
   /* The fingerprint is the immutable provenance anchor — it earns its own
      row at the foot of the card. Long monospace value, label above it,
@@ -246,9 +241,7 @@
     font-family: var(--font-sans);
     font-size: 11.5px;
     color: var(--fg-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    font-weight: 500;
+font-weight: 500;
   }
 
   .fp-value {
